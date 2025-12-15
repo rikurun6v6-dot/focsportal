@@ -1,0 +1,243 @@
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  Timestamp,
+  DocumentData,
+  QueryConstraint
+} from 'firebase/firestore';
+import { db } from './firebase';
+import type { 
+  Player, 
+  Match, 
+  Court, 
+  Team, 
+  TeamBattle, 
+  MatchHistory, 
+  Config 
+} from '@/types';
+
+// ===== Collection References =====
+
+const COLLECTIONS = {
+  players: 'players',
+  matches: 'matches',
+  courts: 'courts',
+  teams: 'teams',
+  team_battles: 'team_battles',
+  match_history: 'match_history',
+  config: 'config',
+} as const;
+
+// ===== Generic Helpers =====
+
+export async function getDocument<T>(
+  collectionName: string,
+  docId: string
+): Promise<T | null> {
+  try {
+    const docRef = doc(db, collectionName, docId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as T;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error getting document from ${collectionName}:`, error);
+    return null;
+  }
+}
+
+export async function getAllDocuments<T>(
+  collectionName: string,
+  constraints: QueryConstraint[] = []
+): Promise<T[]> {
+  try {
+    const collectionRef = collection(db, collectionName);
+    const q = constraints.length > 0 ? query(collectionRef, ...constraints) : collectionRef;
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as T[];
+  } catch (error) {
+    console.error(`Error getting documents from ${collectionName}:`, error);
+    return [];
+  }
+}
+
+export async function setDocument<T extends { id: string }>(
+  collectionName: string,
+  data: T
+): Promise<boolean> {
+  try {
+    const { id, ...docData } = data;
+    const docRef = doc(db, collectionName, id);
+    await setDoc(docRef, docData);
+    return true;
+  } catch (error) {
+    console.error(`Error setting document in ${collectionName}:`, error);
+    return false;
+  }
+}
+
+export async function updateDocument(
+  collectionName: string,
+
+export async function deleteDocument(
+  collectionName: string,
+  docId: string
+): Promise<boolean> {
+  try {
+    const docRef = doc(db, collectionName, docId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error(`Error deleting document from ${collectionName}:`, error);
+    return false;
+  }
+}
+
+  docId: string,
+  data: Partial<DocumentData>
+): Promise<boolean> {
+  try {
+    const docRef = doc(db, collectionName, docId);
+    await updateDoc(docRef, data);
+    return true;
+  } catch (error) {
+    console.error(`Error updating document in ${collectionName}:`, error);
+    return false;
+  }
+}
+
+export function subscribeToCollection<T>(
+  collectionName: string,
+  callback: (data: T[]) => void,
+  constraints: QueryConstraint[] = []
+) {
+  const collectionRef = collection(db, collectionName);
+  const q = constraints.length > 0 ? query(collectionRef, ...constraints) : collectionRef;
+  
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as T[];
+    callback(data);
+  }, (error) => {
+    console.error(`Error in ${collectionName} listener:`, error);
+  });
+}
+
+// ===== Player-specific Functions =====
+
+export async function getAllPlayers(): Promise<Player[]> {
+  return getAllDocuments<Player>(COLLECTIONS.players, [orderBy('name')]);
+}
+
+export async function getAllCourts(): Promise<Court[]> {
+  return getAllDocuments<Court>(COLLECTIONS.courts, [orderBy('number')]);
+}
+
+export function subscribeToCourts(callback: (courts: Court[]) => void) {
+  return subscribeToCollection<Court>(
+    COLLECTIONS.courts,
+    callback,
+    [orderBy('number')]
+  );
+}
+
+export async function initializeCourts(): Promise<boolean> {
+  try {
+    const courts: Court[] = [
+      { id: 'court_1', number: 1, preferred_gender: 'male', current_match_id: null, is_active: true },
+      { id: 'court_2', number: 2, preferred_gender: 'male', current_match_id: null, is_active: true },
+      { id: 'court_3', number: 3, preferred_gender: 'male', current_match_id: null, is_active: true },
+      { id: 'court_4', number: 4, preferred_gender: 'female', current_match_id: null, is_active: true },
+      { id: 'court_5', number: 5, preferred_gender: 'female', current_match_id: null, is_active: true },
+      { id: 'court_6', number: 6, preferred_gender: 'female', current_match_id: null, is_active: true },
+    ];
+
+    for (const court of courts) {
+      await setDocument(COLLECTIONS.courts, court);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error initializing courts:', error);
+    return false;
+  }
+}
+
+export async function initializeConfig(): Promise<boolean> {
+  try {
+    const config: Config = {
+      auto_dispatch_enabled: false,
+      current_phase: null,
+      tournament_date: Timestamp.now(),
+      last_operation: null,
+    };
+
+    await setDoc(doc(db, COLLECTIONS.config, 'system'), config);
+    return true;
+  } catch (error) {
+    console.error('Error initializing config:', error);
+    return false;
+  }
+}
+
+
+// ===== Player Bulk Import =====
+
+export async function importPlayers(players: Omit<Player, 'id'>[]): Promise<{
+  success: number;
+  errors: string[];
+}> {
+  let success = 0;
+  const errors: string[] = [];
+  
+  for (let i = 0; i < players.length; i++) {
+    const player = players[i];
+    try {
+      // IDを生成（名前をベースにしたユニークなID）
+      const id = `player_${Date.now()}_${i}_${player.name.replace(/\s+/g, '_')}`;
+      const playerWithId: Player = { id, ...player };
+      
+      const result = await setDocument(COLLECTIONS.players, playerWithId);
+      if (result) {
+        success++;
+      } else {
+        errors.push(`${player.name}: 登録に失敗しました`);
+      }
+    } catch (error) {
+      errors.push(`${player.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  return { success, errors };
+}
+
+export async function deleteAllPlayers(): Promise<boolean> {
+  try {
+    const players = await getAllPlayers();
+    for (const player of players) {
+      await deleteDocument(COLLECTIONS.players, player.id);
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting all players:', error);
+    return false;
+  }
+}
