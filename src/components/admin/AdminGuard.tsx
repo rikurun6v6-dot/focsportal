@@ -59,7 +59,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
                         <div className="space-y-2">
                             <Input
                                 type="password"
-                                placeholder="PINコード (例: 1234)"
+                                placeholder="PINコード"
                                 value={pin}
                                 onChange={(e) => {
                                     setPin(e.target.value);
