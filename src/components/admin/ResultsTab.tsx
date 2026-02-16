@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
-import { Match } from '@/types';
 import {
   subscribeToCourts,
   getMatchWithPlayers,
@@ -21,7 +20,7 @@ import {
   startMatchOnReservedCourt
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
-import type { Court, MatchWithPlayers } from '@/types';
+import type { Match, Court, MatchWithPlayers } from '@/types';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
 import { Clock, Users } from 'lucide-react';

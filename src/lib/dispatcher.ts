@@ -1,4 +1,4 @@
-import { Match, Court, Config, Camp, Player } from '@/types';
+import type { Match, Court, Config, Camp, Player } from '@/types';
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';

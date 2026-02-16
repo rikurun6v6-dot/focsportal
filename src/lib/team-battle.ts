@@ -1,4 +1,4 @@
-import { Team, Player, TeamBattle, SubMatch, TeamStanding } from '@/types';
+import type { Team, Player, TeamBattle, SubMatch, TeamStanding } from '@/types';
 
 export function createTeamsFromPlayers(
   players: Player[],

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Config } from '@/types';
+import type { Config } from '@/types';
 import { autoDispatchAll } from '@/lib/dispatcher';
 import { getDocument } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
