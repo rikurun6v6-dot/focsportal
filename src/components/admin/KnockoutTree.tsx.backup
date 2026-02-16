@@ -1,0 +1,174 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Trophy, Users } from "lucide-react";
+import type { Match } from "@/types";
+
+/**
+ * トーナメント表描画コンポーネント（2の累乗スロット方式対応）
+ * 座標ベースID（round_match形式）に対応し、勝ち上がり線を「狐色（amber-500）」でハイライト
+ */
+interface KnockoutTreeProps {
+  rounds: number[];
+  roundGroups: { [round: number]: Match[] };
+  hasPreliminary: boolean;
+  getRoundName: (round: number) => string;
+  getNextRoundInfo: (round: number) => string | null;
+  getPlayerDisplay: (playerId: string | undefined, match: Match, position: 1 | 2) => string;
+  getPlayerName: (playerId?: string) => string;
+}
+
+export default function KnockoutTree({
+  rounds,
+  roundGroups,
+  hasPreliminary,
+  getRoundName,
+  getNextRoundInfo,
+  getPlayerDisplay,
+  getPlayerName,
+}: KnockoutTreeProps) {
+  return (
+    <div>
+      {hasPreliminary && (
+        <h2 className="text-lg font-bold text-amber-700 mb-4 flex items-center gap-2">
+          <Trophy className="w-5 h-5" />
+          決勝トーナメント
+        </h2>
+      )}
+      <div className="overflow-x-auto pb-4">
+        <div className="flex gap-8 min-w-max p-4">
+          {rounds.map((round, roundIndex) => (
+            <div key={round} className="flex flex-col gap-3 min-w-[220px] relative">
+              <h3 className="text-center font-bold text-slate-800 dark:text-slate-200 text-xs bg-slate-100 dark:bg-slate-800 rounded-md py-1.5 px-2 shadow-sm">
+                {getRoundName(round)}
+              </h3>
+              <div className="flex flex-col gap-3 justify-around" style={{ minHeight: roundIndex === 0 ? 'auto' : `${Math.pow(2, roundIndex) * 80}px` }}>
+                {(roundGroups[round] || []).map((match, matchIndex) => {
+                  // ドキュメント不在時のガード
+                  if (!match || !match.id) {
+                    console.log(`🔍 [KnockoutTree] ⚠️ Missing match data: round=${round}, matchIndex=${matchIndex}`);
+                    return (
+                      <div key={`placeholder-${round}-${matchIndex}`} className="relative">
+                        <Card className="border shadow-sm bg-slate-100 border-slate-300">
+                          <CardContent className="p-3">
+                            <p className="text-xs text-slate-500 text-center">読み込み中...</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    );
+                  }
+                  console.log(`🔍 [KnockoutTree] 表示中: matches/${match.id} (round=${match.round}, match_number=${match.match_number})`);
+                  const isDoubles = match.player3_id !== undefined;
+                  const isLastRound = roundIndex === rounds.length - 1;
+                  return (
+                    <div key={match.id} className="relative">
+                      {/* コネクタ線（右側に次のラウンドへ） */}
+                      {!isLastRound && (
+                        <>
+                          <div
+                            className={`absolute left-full top-1/2 w-4 h-0.5 transition-colors duration-500 ${
+                              match.winner_id ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                            }`}
+                            style={{ zIndex: 0 }}
+                          />
+                          {matchIndex % 2 === 0 && (
+                            <div
+                              className={`absolute left-[calc(100%+1rem)] transition-colors duration-500 ${
+                                match.winner_id ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                              }`}
+                              style={{
+                                width: '2px',
+                                top: '50%',
+                                height: `${Math.pow(2, roundIndex) * 80}px`,
+                                zIndex: 0
+                              }}
+                            />
+                          )}
+                        </>
+                      )}
+                      <Card
+                        className={`border shadow-sm transition-all relative z-10 ${
+                          match.status === 'completed'
+                            ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700'
+                            : match.status === 'playing'
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+                        }`}
+                      >
+                      <CardContent className="p-3 space-y-2">
+                        <div className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
+                          match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
+                            ? 'bg-amber-100 dark:bg-amber-900/30 font-bold'
+                            : 'bg-slate-50 dark:bg-slate-700/50'
+                        }`}>
+                          <Users className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0 text-xs leading-relaxed">
+                            <div className="break-words">
+                              {getPlayerDisplay(match.player1_id || '', match, 1)}
+                              {isDoubles && match.player3_id && (
+                                <span className="text-slate-600 dark:text-slate-400"> / {getPlayerName(match.player3_id)}</span>
+                              )}
+                            </div>
+                            {match.seed_p1 && (
+                              <span className="inline-block mt-1 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">
+                                第{match.seed_p1}
+                              </span>
+                            )}
+                          </div>
+                          {match.status === 'completed' && (
+                            <span className="ml-auto font-bold text-slate-800 dark:text-slate-100 shrink-0">
+                              {match.score_p1}
+                            </span>
+                          )}
+                        </div>
+                        <div className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
+                          match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
+                            ? 'bg-amber-100 dark:bg-amber-900/30 font-bold'
+                            : 'bg-slate-50 dark:bg-slate-700/50'
+                        }`}>
+                          <Users className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0 text-xs leading-relaxed">
+                            <div className="break-words">
+                              {getPlayerDisplay(match.player2_id || '', match, 2)}
+                              {isDoubles && match.player4_id && (
+                                <span className="text-slate-600 dark:text-slate-400"> / {getPlayerName(match.player4_id)}</span>
+                              )}
+                            </div>
+                            {match.seed_p2 && (
+                              <span className="inline-block mt-1 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">
+                                第{match.seed_p2}
+                              </span>
+                            )}
+                          </div>
+                          {match.status === 'completed' && (
+                            <span className="ml-auto font-bold text-slate-800 dark:text-slate-100 shrink-0">
+                              {match.score_p2}
+                            </span>
+                          )}
+                        </div>
+                        {match.status === 'playing' && (
+                          <p className="text-xs text-blue-700 dark:text-blue-400 font-medium text-center bg-blue-100 dark:bg-blue-900/30 rounded py-1">
+                            試合中
+                          </p>
+                        )}
+                        {match.status === 'calling' && (
+                          <p className="text-xs text-orange-700 dark:text-orange-400 font-medium text-center bg-orange-100 dark:bg-orange-900/30 rounded py-1">
+                            呼び出し中
+                          </p>
+                        )}
+                        {getNextRoundInfo(match.round) && (
+                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium text-center mt-1 pt-2 border-t border-slate-200 dark:border-slate-600">
+                            勝者 → {getNextRoundInfo(match.round)}
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

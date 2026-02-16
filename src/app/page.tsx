@@ -1,110 +1,104 @@
+"use client";
+
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Lock, Users } from "lucide-react";
+import { User, Shield, Activity } from "lucide-react";
 
-export default function Home() {
+export default function HomePage() {
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-800">
-            <main className="container mx-auto px-4 py-8 max-w-5xl">
-
-                {/* ヘッダーセクション */}
-                <div className="text-center mb-10 space-y-2">
-                    <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">
-                        Foc's Portal
-                    </h1>
-                    <p className="text-lg md:text-xl font-medium text-sky-600 flex items-center justify-center gap-2">
-                        <span>Foc's🦊</span>
-                        <span>合宿大会運営システム</span>
+        <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-50 flex flex-col items-center justify-center p-4">
+            <div className="max-w-4xl w-full space-y-8">
+                {/* ヘッダー */}
+                <div className="text-center space-y-4">
+                    <div className="flex items-center justify-center gap-3 mb-6">
+                        <Image
+                            src="/new-logo_transparent.png"
+                            alt="Foc's Portal Logo"
+                            width={48}
+                            height={48}
+                            className="object-cover brightness-130 saturate-170"
+                        />
+                        <h1 className="text-4xl md:text-5xl font-black text-slate-800">
+                            Foc's Portal
+                        </h1>
+                    </div>
+                    <p className="text-xl text-slate-600 font-medium">
+                        大会運営システムへようこそ！🏸
                     </p>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto">
+                {/* 選択カード */}
+                <div className="grid md:grid-cols-2 gap-6">
+                    {/* 参加者用 */}
+                    <Link href="/user">
+                        <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer group border-2 border-transparent hover:border-sky-200 h-full">
+                            <CardHeader className="text-center pb-4">
+                                <div className="mx-auto w-16 h-16 bg-sky-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-sky-200 transition-colors">
+                                    <User className="w-8 h-8 text-sky-600" />
+                                </div>
+                                <CardTitle className="text-2xl text-slate-800">
+                                    参加者
+                                </CardTitle>
+                                <CardDescription className="text-base">
+                                    試合状況の確認・待ち時間検索
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-2 text-sm text-slate-600">
+                                <div className="flex items-start gap-2">
+                                    <span className="text-sky-500 font-bold">✓</span>
+                                    <span>自分の試合呼び出し通知</span>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    <span className="text-sky-500 font-bold">✓</span>
+                                    <span>全コートの試合状況</span>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    <span className="text-sky-500 font-bold">✓</span>
+                                    <span>他の選手の待ち時間検索</span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </Link>
 
-                    {/* 1. 参加者用カード (メイン) */}
-                    <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white border-t-4 border-t-sky-400 ring-1 ring-slate-100">
-                        <CardHeader className="pb-4">
-                            <CardTitle className="text-2xl flex items-center gap-2 text-slate-800">
-                                <Users className="w-6 h-6 text-sky-500" />
-                                参加メンバー
-                            </CardTitle>
-                            <CardDescription className="text-slate-500">
-                                試合順・コート状況はこちら
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="bg-sky-50/50 rounded-lg p-4 mb-6 border border-sky-100">
-                                <ul className="space-y-2 text-sm text-slate-600">
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                                        リアルタイムのコート状況
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                                        自分の次の試合・待ち時間
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                                        試合結果の確認
-                                    </li>
-                                </ul>
-                            </div>
-
-                            <Link href="/user" className="block">
-                                <Button className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold h-12 shadow-sm transition-colors">
-                                    参加者ダッシュボードへ
-                                </Button>
-                            </Link>
-                        </CardContent>
-                    </Card>
-
-                    {/* 2. 管理者用カード (サブ) */}
-                    <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-200 bg-slate-50 border-t-4 border-t-slate-300 ring-1 ring-slate-200/50">
-                        <CardHeader className="pb-4">
-                            <CardTitle className="text-2xl flex items-center gap-2 text-slate-700">
-                                <Lock className="w-6 h-6 text-slate-400" />
-                                運営・管理者
-                            </CardTitle>
-                            <CardDescription className="text-slate-500">
-                                進行管理・結果入力
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="bg-white/50 rounded-lg p-4 mb-6 border border-slate-100">
-                                <ul className="space-y-2 text-sm text-slate-500">
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                        トーナメント作成・管理
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                        試合の自動割り当て (Auto)
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                        合宿設定・データ管理
-                                    </li>
-                                </ul>
-                            </div>
-
-                            <Link href="/admin" className="block">
-                                <Button variant="outline" className="w-full border-slate-300 text-slate-600 hover:bg-white hover:text-slate-800 h-12">
-                                    管理者ログイン
-                                </Button>
-                            </Link>
-
-                            <p className="text-xs text-center text-slate-400 mt-3 flex items-center justify-center gap-1">
-                                <Lock className="w-3 h-3" />
-                                アクセスには管理者PINが必要です
-                            </p>
-                        </CardContent>
-                    </Card>
+                    {/* 管理者用 */}
+                    <Link href="/admin">
+                        <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer group border-2 border-transparent hover:border-amber-200 h-full">
+                            <CardHeader className="text-center pb-4">
+                                <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-amber-200 transition-colors">
+                                    <Shield className="w-8 h-8 text-amber-600" />
+                                </div>
+                                <CardTitle className="text-2xl text-slate-800">
+                                    管理者
+                                </CardTitle>
+                                <CardDescription className="text-base">
+                                    大会運営・試合管理
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-2 text-sm text-slate-600">
+                                <div className="flex items-start gap-2">
+                                    <span className="text-amber-500 font-bold">✓</span>
+                                    <span>合宿・トーナメント設定</span>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    <span className="text-amber-500 font-bold">✓</span>
+                                    <span>コート自動割り当て</span>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    <span className="text-amber-500 font-bold">✓</span>
+                                    <span>試合結果入力</span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </Link>
                 </div>
 
-                <div className="text-center mt-12 text-xs text-slate-400">
-                    <p>Powered by Badmin-Ops</p>
+                {/* フッター */}
+                <div className="text-center text-sm text-slate-700 pt-5">
+                    <p>© 2026 Foc's Portal | The 4th executive team</p>
                 </div>
-            </main>
+            </div>
         </div>
     );
 }

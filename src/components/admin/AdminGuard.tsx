@@ -15,7 +15,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
     const [error, setError] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
-    // 初回ロード時にセッションを確認（リロードしてもログイン状態を維持するため）
+    // 初回ロード時にセッションを確認
     useEffect(() => {
         const sessionAuth = sessionStorage.getItem("admin_auth");
         if (sessionAuth === "true") {
@@ -29,7 +29,6 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
         if (pin === CORRECT_PIN) {
             setIsAuthenticated(true);
             setError(false);
-            // ブラウザを閉じるまでログイン状態を保持
             sessionStorage.setItem("admin_auth", "true");
         } else {
             setError(true);
@@ -37,23 +36,20 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
         }
     };
 
-    // 認証チェック中は何も表示しない（ちらつき防止）
     if (isLoading) return null;
 
-    // 認証済みなら、中身（管理者画面）を表示
     if (isAuthenticated) {
         return <>{children}</>;
     }
 
-    // 未認証なら、ロック画面を表示
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-            <Card className="w-full max-w-md shadow-xl">
+            <Card className="w-full max-w-md shadow-xl bg-white">
                 <CardHeader className="text-center space-y-2">
-                    <div className="mx-auto bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center mb-2">
-                        <Lock className="w-6 h-6 text-primary" />
+                    <div className="mx-auto bg-sky-100 w-12 h-12 rounded-full flex items-center justify-center mb-2">
+                        <Lock className="w-6 h-6 text-sky-600" />
                     </div>
-                    <CardTitle className="text-2xl font-bold">管理者認証</CardTitle>
+                    <CardTitle className="text-2xl font-bold text-slate-800">管理者認証</CardTitle>
                     <CardDescription>
                         運営用PINコードを入力してください
                     </CardDescription>
@@ -69,7 +65,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
                                     setPin(e.target.value);
                                     setError(false);
                                 }}
-                                className="text-center text-lg tracking-widest"
+                                className="text-center text-lg tracking-widest bg-white"
                                 autoFocus
                             />
                             {error && (
@@ -78,7 +74,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
                                 </p>
                             )}
                         </div>
-                        <Button type="submit" className="w-full size-lg text-lg">
+                        <Button type="submit" className="w-full size-lg text-lg bg-sky-600 hover:bg-sky-700 text-white">
                             ロック解除
                         </Button>
                     </form>

@@ -7,35 +7,37 @@ export function generateRandomPairs(
   players: Player[],
   tournamentType: TournamentType,
   division: Division
-): { pairs: [Player, Player][]; errors: string[] } {
+): { pairs: ([Player, Player] | [Player, Player, Player])[]; errors: string[] } {
   const errors: string[] = [];
-  const pairs: [Player, Player][] = [];
+  const pairs: ([Player, Player] | [Player, Player, Player])[] = [];
 
-  // フィルタリング: レベルとアクティブ状態
-  let filteredPlayers = players.filter(p => p.division === division && p.is_active);
-
-  // 性別フィルタリング
-  if (tournamentType === 'mens_doubles') {
-    filteredPlayers = filteredPlayers.filter(p => p.gender === 'male');
-  } else if (tournamentType === 'womens_doubles') {
-    filteredPlayers = filteredPlayers.filter(p => p.gender === 'female');
-  }
-
-  if (filteredPlayers.length < 2) {
-    errors.push('参加者が不足しています（最低2名必要）');
+  // playersは既にフィルタ済みと想定（呼び出し元でフィルタリング済み）
+  if (players.length < 2) {
+    errors.push(`参加者が不足しています（最低2名必要、現在${players.length}名）`);
     return { pairs, errors };
   }
 
-  if (filteredPlayers.length % 2 !== 0) {
-    errors.push(`参加者数が奇数です（${filteredPlayers.length}名）。1名を除外します。`);
+  // シャッフル
+  const shuffled = [...players].sort(() => Math.random() - 0.5);
+
+  // 奇数の場合、最後の3人で1組のペアを作成
+  const isOdd = shuffled.length % 2 !== 0;
+  const pairCount = isOdd ? Math.floor(shuffled.length / 2) - 1 : Math.floor(shuffled.length / 2);
+
+  // 通常のペアを作成
+  for (let i = 0; i < pairCount * 2; i += 2) {
+    pairs.push([shuffled[i], shuffled[i + 1]]);
   }
 
-  // シャッフル
-  const shuffled = [...filteredPlayers].sort(() => Math.random() - 0.5);
-
-  // ペアを作成
-  for (let i = 0; i < shuffled.length - 1; i += 2) {
-    pairs.push([shuffled[i], shuffled[i + 1]]);
+  // 奇数の場合、最後の3人を1組にする
+  if (isOdd && shuffled.length >= 3) {
+    const lastThree: [Player, Player, Player] = [
+      shuffled[shuffled.length - 3],
+      shuffled[shuffled.length - 2],
+      shuffled[shuffled.length - 1]
+    ];
+    pairs.push(lastThree);
+    errors.push(`参加者数が奇数（${shuffled.length}名）のため、最後の3名で1組のペアを作成しました。`);
   }
 
   return { pairs, errors };
@@ -51,9 +53,9 @@ export function generateMixedPairs(
   const errors: string[] = [];
   const pairs: [Player, Player][] = [];
 
-  // 男女別にフィルタリング
-  const males = players.filter(p => p.division === division && p.is_active && p.gender === 'male');
-  const females = players.filter(p => p.division === division && p.is_active && p.gender === 'female');
+  // 男女別にフィルタリング（playersは既にdivisionとis_activeでフィルタ済み）
+  const males = players.filter(p => p.gender?.toString().toLowerCase().trim() === 'male');
+  const females = players.filter(p => p.gender?.toString().toLowerCase().trim() === 'female');
 
   if (males.length < 1 || females.length < 1) {
     errors.push('男女それぞれ最低1名必要です');
@@ -80,30 +82,47 @@ export function generateMixedPairs(
 
 /**
  * トーナメント形式のブラケットを生成
- * 参加ペア数に応じて適切なラウンド数を決定
+ * 2回戦以降を2のべき乗にするため、シード配置を計算
  */
 export function generateTournamentBracket(pairCount: number): {
   rounds: number;
   matchesPerRound: number[];
   totalMatches: number;
+  round1Matches: number;
+  seedCount: number;
+  round2Size: number;
 } {
-  // 2のべき乗に近い数を計算
-  const rounds = Math.ceil(Math.log2(pairCount));
-  const bracketSize = Math.pow(2, rounds);
-  
+  if (pairCount === 1) {
+    return { rounds: 0, matchesPerRound: [], totalMatches: 0, round1Matches: 0, seedCount: 1, round2Size: 0 };
+  }
+
+  // M = 2^k where M < pairCount (2回戦のサイズ)
+  const round2Size = Math.pow(2, Math.floor(Math.log2(pairCount)));
+
+  // 1回戦の試合数 = N - M
+  const round1Matches = pairCount - round2Size;
+
+  // シード数 = 2M - N
+  const seedCount = 2 * round2Size - pairCount;
+
+  // 2回戦以降のラウンド数
+  const rounds = round1Matches > 0 ? Math.ceil(Math.log2(round2Size)) + 1 : Math.ceil(Math.log2(round2Size));
+
   const matchesPerRound: number[] = [];
-  let remainingPairs = pairCount;
-  
-  // 各ラウンドの試合数を計算
-  for (let r = 0; r < rounds; r++) {
-    const matchesInRound = Math.ceil(remainingPairs / 2);
-    matchesPerRound.push(matchesInRound);
-    remainingPairs = matchesInRound;
+
+  if (round1Matches > 0) {
+    matchesPerRound.push(round1Matches);
+  }
+
+  let remainingPairs = round2Size;
+  for (let r = 0; r < Math.ceil(Math.log2(round2Size)); r++) {
+    matchesPerRound.push(Math.floor(remainingPairs / 2));
+    remainingPairs = Math.floor(remainingPairs / 2);
   }
 
   const totalMatches = matchesPerRound.reduce((sum, count) => sum + count, 0);
 
-  return { rounds, matchesPerRound, totalMatches };
+  return { rounds, matchesPerRound, totalMatches, round1Matches, seedCount, round2Size };
 }
 
 /**
@@ -114,11 +133,32 @@ export function getEligiblePlayersForSingles(
   gender: Gender,
   division: Division
 ): Player[] {
-  return players.filter(p => 
-    p.gender === gender && 
-    p.division === division && 
+  return players.filter(p =>
+    p.gender?.toString().toLowerCase().trim() === gender &&
+    p.division === division &&
     p.is_active
   );
+}
+
+/**
+ * シングルス用の対戦カードを生成（1対1）
+ */
+export function generateSinglesMatches(
+  players: Player[],
+  tournamentType: TournamentType,
+  division: Division
+): { players: Player[]; errors: string[] } {
+  const errors: string[] = [];
+
+  if (players.length < 2) {
+    errors.push(`参加者が不足しています（最低2名必要、現在${players.length}名）`);
+    return { players: [], errors };
+  }
+
+  // シャッフル
+  const shuffled = [...players].sort(() => Math.random() - 0.5);
+
+  return { players: shuffled, errors };
 }
 
 /**

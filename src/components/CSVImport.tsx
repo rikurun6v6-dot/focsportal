@@ -4,13 +4,16 @@ import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { parsePlayersCSV, generateSampleCSV } from '@/lib/csv-parser';
 import { importPlayers } from '@/lib/firestore-helpers';
+import { useCamp } from '@/context/CampContext';
 
 interface CSVImportProps {
   onSuccess?: (count: number) => void;
   onError?: (errors: string[]) => void;
+  readOnly?: boolean;
 }
 
-export default function CSVImport({ onSuccess, onError }: CSVImportProps) {
+export default function CSVImport({ onSuccess, onError, readOnly = false }: CSVImportProps) {
+  const { camp } = useCamp();
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
@@ -45,9 +48,18 @@ export default function CSVImport({ onSuccess, onError }: CSVImportProps) {
         return;
       }
 
+      if (!camp) {
+        setMessage('✗ 合宿が選択されていません');
+        setUploading(false);
+        return;
+      }
+
+      // playersにcampIdを追加
+      const playersWithCamp = players.map(p => ({ ...p, campId: camp.id }));
+
       // Firestoreに登録
       setMessage(`${players.length}名のデータを登録中...`);
-      const { success, errors: importErrors } = await importPlayers(players);
+      const { success, errors: importErrors } = await importPlayers(playersWithCamp);
 
       if (importErrors.length > 0) {
         setErrors(importErrors);
@@ -89,14 +101,14 @@ export default function CSVImport({ onSuccess, onError }: CSVImportProps) {
         <div className="flex gap-2 justify-center">
           <Button
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || readOnly}
           >
             {uploading ? 'アップロード中...' : 'ファイルを選択'}
           </Button>
           <Button
             onClick={handleDownloadSample}
             variant="outline"
-            disabled={uploading}
+            disabled={uploading || readOnly}
           >
             サンプルCSVをダウンロード
           </Button>

@@ -1,0 +1,78 @@
+import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getAuth, Auth } from 'firebase/auth';
+
+// Firebase configuration from environment variables
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+// ⚠️ 接続先検証ログ（デバッグ用）
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('[Firebase初期化] 接続先プロジェクト:', firebaseConfig.projectId);
+console.log('[Firebase初期化] 認証ドメイン:', firebaseConfig.authDomain);
+console.log('[Firebase初期化] 環境:', process.env.NODE_ENV);
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+// プロジェクトIDの検証
+if (!firebaseConfig.projectId) {
+  throw new Error('❌ NEXT_PUBLIC_FIREBASE_PROJECT_ID が設定されていません');
+}
+
+if (firebaseConfig.projectId !== 'focstournament') {
+  console.warn('⚠️ 警告: プロジェクトIDが "focstournament" ではありません:', firebaseConfig.projectId);
+}
+
+// Initialize Firebase only if not already initialized
+// This prevents multiple initialization attempts during hot reloading
+let app: FirebaseApp;
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
+  console.log('[Firebase] アプリ初期化完了 ✅');
+} else {
+  app = getApps()[0];
+  console.log('[Firebase] 既存のアプリインスタンスを使用');
+}
+
+// Initialize Firestore with offline persistence
+// マルチタブ対応・エラーハンドリング付き
+let db: Firestore;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, 'default');
+  console.log('[Firebase] Firestore初期化完了（マルチタブ永続化有効）');
+} catch (error: any) {
+  // マルチタブ競合やその他のエラーが発生した場合
+  if (error?.code === 'failed-precondition') {
+    console.log('[Firebase] 複数タブで開かれているため、既存のFirestoreインスタンスを使用');
+  } else {
+    console.warn('[Firebase] Firestore初期化エラー:', error?.code || error?.message);
+  }
+
+  // フォールバック: 既存のインスタンスを使用、または永続化なしで初期化
+  const existingApps = getApps();
+  if (existingApps.length > 0) {
+    // 既存のアプリからFirestoreを取得（型アサーション）
+    db = (existingApps[0] as any)._firestore || initializeFirestore(app, {}, 'fallback');
+  } else {
+    // 永続化なしで初期化
+    db = initializeFirestore(app, {}, 'fallback');
+    console.log('[Firebase] Firestore初期化（永続化なし）');
+  }
+}
+
+export { db };
+
+// Get Auth instance
+export const auth: Auth = getAuth(app);
+
+// Export the app for potential future use
+export { app };

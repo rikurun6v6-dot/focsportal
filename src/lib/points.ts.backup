@@ -1,5 +1,6 @@
 import { Match, Player, PointsDistribution, TournamentConfig } from '@/types';
 import { getDocument, updateDocument, getAllDocuments } from './firestore-helpers';
+import { where } from 'firebase/firestore';
 
 export async function calculateTournamentRankings(
   matches: Match[],
@@ -81,10 +82,12 @@ export async function addPointsToPlayer(
 
 export async function getPlayerRankings(
   gender?: 'male' | 'female',
-  division?: 1 | 2
+  division?: 1 | 2,
+  campId?: string
 ): Promise<Player[]> {
-  const players = await getAllDocuments<Player>('players');
-  
+  const constraints = campId ? [where('campId', '==', campId)] : [];
+  const players = await getAllDocuments<Player>('players', constraints);
+
   return players
     .filter(p => {
       if (gender && p.gender !== gender) return false;

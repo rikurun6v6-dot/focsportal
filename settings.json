@@ -1,0 +1,5 @@
+// .vscode/settings.json
+{
+  // Tailwind CSS v4 の @apply, @theme, @custom-variant 警告を非表示にする設定
+  "css.lint.unknownAtRules": "ignore"
+}

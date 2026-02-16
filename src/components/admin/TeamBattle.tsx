@@ -4,13 +4,19 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Loading } from '@/components/ui/loading';
 import { getAllPlayers, setDocument, getAllDocuments, deleteDocument } from '@/lib/firestore-helpers';
 import { createTeamsFromPlayers, generateRoundRobinMatches, calculateStandings, generatePlacementMatches } from '@/lib/team-battle';
+import { where } from 'firebase/firestore';
 // ✅ 修正: TeamBattle を TeamBattleData に名前変更
 import type { Team, Player, TeamBattle as TeamBattleData, TeamStanding } from '@/types';
 import { Users, Trophy } from 'lucide-react';
+import { useCamp } from '@/context/CampContext';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
-export default function TeamBattle() {
+export default function TeamBattle({ readOnly = false }: { readOnly?: boolean }) {
+  const { camp } = useCamp();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   // ✅ 修正: TeamBattleData 型を使用
@@ -21,15 +27,19 @@ export default function TeamBattle() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [camp]);
 
   const loadData = async () => {
+    if (!camp) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const [playersData, teamsData, battlesData] = await Promise.all([
-      getAllPlayers(),
-      getAllDocuments<Team>('teams'),
+      getAllPlayers(camp.id),
+      getAllDocuments<Team>('teams', [where('campId', '==', camp.id)]),
       // ✅ 修正: TeamBattleData 型を使用
-      getAllDocuments<TeamBattleData>('team_battles'),
+      getAllDocuments<TeamBattleData>('team_battles', [where('campId', '==', camp.id)]),
     ]);
 
     setPlayers(playersData.filter(p => p.is_active));
@@ -45,12 +55,23 @@ export default function TeamBattle() {
   };
 
   const handleCreateTeams = async () => {
+    if (!camp) {
+      alert('合宿が選択されていません');
+      return;
+    }
     if (players.length < numTeams * 4) {
       alert(`最低${numTeams * 4}名の選手が必要です`);
       return;
     }
 
-    if (!confirm(`${numTeams}チームを作成してもよろしいですか?`)) return;
+    const confirmed = await confirm({
+      title: 'チームの作成',
+      message: `${numTeams}チームを作成してもよろしいですか？`,
+      confirmText: '作成',
+      cancelText: 'キャンセル',
+      type: 'info',
+    });
+    if (!confirmed) return;
 
     // Delete existing teams and battles
     for (const team of teams) {
@@ -63,29 +84,40 @@ export default function TeamBattle() {
     // Create new teams
     const newTeams = createTeamsFromPlayers(players, numTeams);
     for (const team of newTeams) {
-      await setDocument('teams', team);
+      await setDocument('teams', { ...team, campId: camp.id });
     }
 
     // Generate round-robin matches
     const newBattles = generateRoundRobinMatches(newTeams);
     for (const battle of newBattles) {
-      await setDocument('team_battles', battle);
+      await setDocument('team_battles', { ...battle, campId: camp.id });
     }
 
     await loadData();
   };
 
   const handleGeneratePlacementMatches = async () => {
+    if (!camp) {
+      alert('合宿が選択されていません');
+      return;
+    }
     if (standings.length === 0) {
       alert('まず予選リーグを完了してください');
       return;
     }
 
-    if (!confirm('順位戦を生成してもよろしいですか?')) return;
+    const confirmed = await confirm({
+      title: '順位戦の生成',
+      message: '順位戦を生成してもよろしいですか？',
+      confirmText: '生成',
+      cancelText: 'キャンセル',
+      type: 'info',
+    });
+    if (!confirmed) return;
 
     const placementBattles = generatePlacementMatches(standings);
     for (const battle of placementBattles) {
-      await setDocument('team_battles', battle);
+      await setDocument('team_battles', { ...battle, campId: camp.id });
     }
 
     await loadData();
@@ -135,11 +167,13 @@ export default function TeamBattle() {
   };
 
   if (loading) {
-    return <p className="text-gray-600 dark:text-gray-400">読み込み中...</p>;
+    return <Loading />;
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      <ConfirmDialog />
+      <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-sm md:text-base">チーム編成</CardTitle>
@@ -164,7 +198,7 @@ export default function TeamBattle() {
               {players.length}名登録済み
             </Badge>
           </div>
-          <Button onClick={handleCreateTeams} className="w-full">
+          <Button onClick={handleCreateTeams} disabled={readOnly} className="w-full">
             チームを作成 (予選リーグも自動生成)
           </Button>
         </CardContent>
@@ -214,6 +248,7 @@ export default function TeamBattle() {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleUpdateBattleResult(battle.id, team1!.id)}
+                                    disabled={readOnly}
                                   >
                                     {team1?.name} 勝利
                                   </Button>
@@ -221,6 +256,7 @@ export default function TeamBattle() {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleUpdateBattleResult(battle.id, team2!.id)}
+                                    disabled={readOnly}
                                   >
                                     {team2?.name} 勝利
                                   </Button>
@@ -282,7 +318,7 @@ export default function TeamBattle() {
               <CardDescription>予選リーグの同順位同士で対戦</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button onClick={handleGeneratePlacementMatches} variant="outline" className="w-full">
+              <Button onClick={handleGeneratePlacementMatches} disabled={readOnly} variant="outline" className="w-full">
                 順位戦を生成
               </Button>
               <div className="mt-4 space-y-2">
@@ -312,6 +348,7 @@ export default function TeamBattle() {
                               size="sm"
                               variant="outline"
                               onClick={() => handleUpdateBattleResult(battle.id, team1!.id)}
+                              disabled={readOnly}
                             >
                               {team1?.name} 勝利
                             </Button>
@@ -319,6 +356,7 @@ export default function TeamBattle() {
                               size="sm"
                               variant="outline"
                               onClick={() => handleUpdateBattleResult(battle.id, team2!.id)}
+                              disabled={readOnly}
                             >
                               {team2?.name} 勝利
                             </Button>
@@ -332,6 +370,7 @@ export default function TeamBattle() {
           </Card>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }

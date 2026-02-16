@@ -1,100 +1,9 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-}
-
+/* * Tailwind CSS v4 では @theme ブロックや CSS変数を使って設定します。
+ * shadcn/ui を使用されているようなので、以下の変数はそのまま維持します。
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -110,13 +19,152 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* 以下、shadcn/ui に必要なその他の変数（background, foregroundなど）も
+     もし消えてしまっていたら、元のglobals.cssから戻す必要があります */
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
+/* もしダークモード対応などが消えている場合は、ここに追加してください */
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
   }
-  body {
-    @apply bg-background text-foreground;
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* ===== モダンなトースト通知スタイル ===== */
+/* 高コントラスト、視認性重視のデザイン */
+
+/* 基本スタイル */
+[data-sonner-toaster] {
+  --normal-bg: rgb(15, 23, 42) !important; /* slate-900 */
+  --normal-text: rgb(255, 255, 255) !important;
+  --normal-border: rgb(30, 41, 59) !important; /* slate-800 */
+}
+
+[data-sonner-toast] {
+  background: var(--normal-bg) !important;
+  color: var(--normal-text) !important;
+  border: 2px solid var(--normal-border) !important;
+  border-radius: 0.75rem !important; /* rounded-lg */
+  padding: 1rem 1.25rem !important;
+  font-size: 1rem !important; /* text-base */
+  font-weight: 500 !important;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3) !important;
+  min-width: 320px !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-content] {
+  gap: 0.75rem !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-icon] {
+  font-size: 1.5rem !important;
+  flex-shrink: 0 !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-title] {
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-description] {
+  font-size: 0.875rem !important;
+  opacity: 0.9 !important;
+  margin-top: 0.25rem !important;
+}
+
+/* 成功通知（グリーン） */
+.toast-success,
+[data-sonner-toast][data-type="success"] {
+  background: rgb(15, 23, 42) !important; /* slate-900 */
+  border-color: rgb(34, 197, 94) !important; /* green-500 */
+}
+
+.toast-success [data-icon],
+[data-sonner-toast][data-type="success"] [data-icon] {
+  color: rgb(34, 197, 94) !important;
+}
+
+/* エラー通知（レッド） */
+.toast-error,
+[data-sonner-toast][data-type="error"] {
+  background: rgb(15, 23, 42) !important;
+  border-color: rgb(239, 68, 68) !important; /* red-500 */
+}
+
+.toast-error [data-icon],
+[data-sonner-toast][data-type="error"] [data-icon] {
+  color: rgb(239, 68, 68) !important;
+}
+
+/* 情報通知（ブルー） */
+.toast-info,
+[data-sonner-toast][data-type="info"] {
+  background: rgb(15, 23, 42) !important;
+  border-color: rgb(59, 130, 246) !important; /* blue-500 */
+}
+
+.toast-info [data-icon],
+[data-sonner-toast][data-type="info"] [data-icon] {
+  color: rgb(59, 130, 246) !important;
+}
+
+/* 進行中通知（パープル） */
+.toast-loading,
+[data-sonner-toast][data-type="loading"] {
+  background: rgb(15, 23, 42) !important;
+  border-color: rgb(168, 85, 247) !important; /* purple-500 */
+}
+
+.toast-loading [data-icon],
+[data-sonner-toast][data-type="loading"] [data-icon] {
+  color: rgb(168, 85, 247) !important;
+}
+
+/* 試合更新通知（特大） */
+.toast-match-update {
+  min-width: 400px !important;
+  padding: 1.5rem !important;
+  border-width: 3px !important;
+  border-color: rgb(251, 191, 36) !important; /* amber-400 */
+}
+
+.toast-match-update [data-title] {
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+}
+
+/* カード点滅アニメーション */
+@keyframes card-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.4);
+  }
+}
+
+.animate-card-pulse {
+  animation: card-pulse 2s ease-in-out 3;
+}
+
+/* スクロールバー非表示 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

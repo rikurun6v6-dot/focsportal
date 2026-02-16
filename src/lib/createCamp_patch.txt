@@ -1,0 +1,66 @@
+export const createCamp = async (title: string, courtCount: number = 6, ownerId?: string) => {
+  try {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[createCamp] 🚀 書き込み開始');
+    console.log('[createCamp]   タイトル:', title);
+    console.log('[createCamp]   コート数:', courtCount);
+    console.log('[createCamp]   オーナーUID:', ownerId || '(未設定)');
+    
+    const campsRef = collection(db, 'camps');
+    const newCampRef = doc(campsRef); // IDを自動生成
+
+    const newCamp: Camp = {
+      id: newCampRef.id,
+      title: title,
+      court_count: courtCount,
+      status: 'setup', // 最初はセットアップ中
+      created_at: serverTimestamp() as any,
+      owner_id: ownerId, // 作成者のUIDを保存
+      config: {
+        default_match_points: 15, // デフォルト15点
+      },
+    };
+
+    console.log('[createCamp]   生成されたID:', newCampRef.id);
+    console.log('[createCamp]   書き込みデータ:', JSON.stringify(newCamp, null, 2));
+    console.log('[createCamp] 📤 Firebaseへ setDoc() 実行中...');
+    
+    // ⚠️ Task 2: オフライン・フォールバックなしの素の状態で実行
+    await setDoc(newCampRef, newCamp);
+    
+    console.log('[createCamp] ✅ 書き込み成功！');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    return newCampRef.id;
+  } catch (error: any) {
+    // ⚠️ Task 2: エラーを画面にデカデカと表示
+    const errorCode = error?.code || 'unknown';
+    const errorMessage = error?.message || 'エラー詳細不明';
+    const errorName = error?.name || 'Error';
+    
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('[createCamp] ❌ 書き込み失敗！');
+    console.error('[createCamp]   エラーコード:', errorCode);
+    console.error('[createCamp]   エラー名:', errorName);
+    console.error('[createCamp]   エラーメッセージ:', errorMessage);
+    console.error('[createCamp]   完全なエラーオブジェクト:', error);
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
+    // 画面にデカデカとalert表示
+    const alertMessage = `
+🔥🔥🔥 FIREBASE 書き込みエラー 🔥🔥🔥
+
+エラーコード: ${errorCode}
+エラー名: ${errorName}
+
+詳細メッセージ:
+${errorMessage}
+
+---
+コンソールログも確認してください
+    `.trim();
+    
+    alert(alertMessage);
+    
+    return null;
+  }
+};

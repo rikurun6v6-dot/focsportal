@@ -11,7 +11,7 @@ export type TournamentFormat =
   | 'group-stage-knockout';
 export type EventType = 'MD' | 'WD' | 'XD' | 'MS' | 'WS' | 'TEAM';
 export type Gender = 'male' | 'female';
-export type Division = 1 | 2;
+export type Division = number; // カスタム部門対応のためnumberに変更
 export type MatchStatus = 'waiting' | 'calling' | 'playing' | 'completed';
 export type TournamentType = 'mens_singles' | 'womens_singles' | 'mens_doubles' | 'womens_doubles' | 'mixed_doubles' | 'team_battle';
 export type TeamGroup = 'A' | 'B' | 'C' | 'D';
@@ -25,6 +25,7 @@ export interface Camp {
   court_count: number;    // その合宿で使うコート数 (例: 6)
   status: 'setup' | 'active' | 'archived'; // 状態
   created_at: Timestamp;
+  owner_id?: string;      // 合宿作成者のUID (認証ユーザー)
   config: {
     default_match_points: 15 | 21; // 基本点数
   };
@@ -44,6 +45,7 @@ export interface Player {
   team_id: string; // Team ID for team battles
   is_active: boolean; // false if player has withdrawn
   total_points?: number; // Phase 9: Accumulated points
+  last_match_finished_at?: Timestamp | null; // 👈 最終試合終了時刻（休息管理用）
 }
 
 /**
@@ -54,12 +56,18 @@ export interface Match {
   id: string;
   campId?: string; // 👈 追加: 合宿ID
   tournament_type: TournamentType;
+  division?: Division; // 👈 追加: 1部 or 2部
   round: number; // 1 = first round, 2 = quarter-final, etc.
+  match_number?: number; // 👈 試合の通し番号
   player1_id: string;
   player2_id: string;
   player3_id?: string; // For doubles: partner of player1
   player4_id?: string; // For doubles: partner of player2
+  player5_id?: string; // For 3-person teams: 3rd member of player1's side
+  player6_id?: string; // For 3-person teams: 3rd member of player2's side
   status: MatchStatus;
+  available_at?: Timestamp | null; // 👈 試合が利用可能になる時刻（休息時間後）
+  reserved_court_id?: string | null; // 👈 休憩時に予約する元のコートID
   court_id: string | null; // null if not assigned to a court
   score_p1: number;
   score_p2: number;
@@ -70,6 +78,17 @@ export interface Match {
   updated_at: Timestamp;
   tournament_config_id?: string; // Phase 9: Link to tournament config
   points_awarded?: boolean; // Phase 9: Points distribution status
+  group?: TeamGroup; // 👈 予選リーグのグループ (A/B/C/D)
+  phase?: 'preliminary' | 'knockout'; // 👈 予選リーグ or 決勝トーナメント
+  seed_p1?: number; // 👈 ペア1のシードランク (1=第1シード, 2=第2シード...)
+  seed_p2?: number; // 👈 ペア2のシードランク
+  next_match_id?: string; // 👈 勝者が進む次の試合のID
+  next_match_number?: number; // 👈 勝者が進む次の試合番号
+  next_match_position?: 1 | 2; // 👈 次の試合での位置 (1=上側, 2=下側)
+  is_walkover?: boolean; // 👈 棄権試合かどうか
+  walkover_winner?: 1 | 2; // 👈 棄権時の勝者 (1=player1側, 2=player2側)
+  points_per_match?: number; // 👈 この試合の点数設定（カスタム点数対応）
+  subtitle?: string; // 👈 試合カードの補足情報（例：「敗者復活戦」「1部」）
 }
 
 /**
@@ -78,11 +97,13 @@ export interface Match {
  */
 export interface Court {
   id: string;
-  number: 1 | 2 | 3 | 4 | 5 | 6; // ※ Phase 10以降は可変になる可能性あり
-  preferred_gender: Gender; // Courts 1-3 prefer male, 4-6 prefer female
+  number: number;
+  preferred_gender: Gender;
   current_match_id: string | null;
-  is_active: boolean; // Can be disabled for maintenance
-  // ※ Courtは物理的な場所なので campId は必須ではないが、構造上持たせても良い
+  is_active: boolean;
+  campId?: string;
+  manually_freed?: boolean; // 👈 管理者が手動でフリーに設定したコート（自動割り当て対象外）
+  freed_match_id?: string | null; // 👈 フリーにされた試合のID（復帰用）
 }
 
 /**
@@ -153,8 +174,49 @@ export interface Config {
   auto_dispatch_enabled: boolean;
   current_phase: TournamentType | null;
   tournament_date: Timestamp;
-  last_operation: Operation | null; // For undo functionality
-  activeCampId?: string; // 👈 追加: 現在アクティブな合宿ID
+  last_operation: Operation | null;
+  activeCampId?: string;
+  enabled_tournaments?: TournamentType[];
+  is_sequential_mode?: boolean; // 種目の完全順次進行モード
+  finals_wait_mode?: { [key: string]: boolean }; // 決勝戦の待機モード ("mens_doubles_1" -> true)
+  min_rest_interval?: number; // 👈 最低休息時間（分）デフォルト10分
+  default_rest_minutes?: number; // デフォルト休息時間（分）Admin画面で設定
+  avg_match_duration_11?: number; // 11点マッチの平均時間
+  avg_match_duration_15?: number; // 15点マッチの平均時間
+  avg_match_duration_21?: number; // 21点マッチの平均時間
+  recent_durations_11?: number[]; // 直近10試合の11点マッチ時間
+  recent_durations_15?: number[]; // 直近10試合の15点マッチ時間
+  recent_durations_21?: number[]; // 直近10試合の21点マッチ時間
+  temporary_category_boost?: Record<string, number>; // AIアドバイザーによる一時的な優先度ブースト
+}
+
+/**
+ * Settings entity
+ * Global settings including chat feature toggle
+ */
+export interface Settings {
+  id: string;
+  campId: string;
+  isChatEnabled: boolean; // チャット機能の有効/無効
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * Message entity
+ * Represents a message in the chat system
+ */
+export interface Message {
+  id: string;
+  campId: string;
+  type: 'individual' | 'broadcast'; // 個別メッセージ or 一斉送信
+  sender_type: 'admin' | 'user'; // 送信者タイプ
+  sender_id?: string; // 送信者のプレイヤーID（ユーザーの場合）
+  recipient_ids?: string[]; // 受信者のプレイヤーID（個別メッセージの場合）
+  content: string; // メッセージ本文
+  created_at: Timestamp;
+  read_by?: string[]; // 既読したプレイヤーIDの配列
+  is_announcement?: boolean; // 重要なアナウンスかどうか
 }
 
 /**
@@ -207,6 +269,8 @@ export interface MatchWithPlayers extends Match {
   player2: Player;
   player3?: Player;
   player4?: Player;
+  player5?: Player; // 3人ペア用
+  player6?: Player; // 3人ペア用
 }
 
 /**
@@ -230,15 +294,12 @@ export interface TournamentConfig {
   event_type: EventType;
   division: Division;
   format: TournamentFormat;
-  points_per_game: 11 | 15 | 21;
-  points_by_round?: Record<number, 11 | 15 | 21>;
-  points_distribution: PointsDistribution[];
+  points_per_game: number; // カスタム点数対応
+  points_by_round?: Record<number, number>; // カスタム点数対応
+  group_count?: number; // 予選リーグのグループ数
+  qualifiers_per_group?: number; // 各グループから予選通過する人数
+  priority?: number; // 👈 進行順位（小さいほど優先、デフォルト999）
   created_at: Timestamp;
-}
-
-export interface PointsDistribution {
-  rank: number;
-  points: number;
 }
 
 export const SCORE_CONFIG: Record<EventType, (round: number, maxRound: number) => 11 | 15 | 21> = {
@@ -249,3 +310,4 @@ export const SCORE_CONFIG: Record<EventType, (round: number, maxRound: number) =
   WS: (round, maxRound) => (maxRound - round >= 2 ? 15 : 21),
   TEAM: () => 11,
 };
+

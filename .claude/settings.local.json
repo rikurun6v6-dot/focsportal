@@ -1,10 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cat:*)",
-      "Bash(npm run build:*)",
-      "Bash(dir:*)",
-      "Bash(ls:*)"
+      "Bash(cat *)",
+      "Bash(npm run build *)",
+      "Bash(dir *)",
+      "Bash(ls *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run dev *)",
+      "Bash(taskkill //F //PID 24056)",
+      "Bash(npx shadcn@latest add toast *)"
     ]
   }
 }

@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#3b82f6" rx="64"/>
+  <g fill="white">
+    <!-- バドミントンラケット1 -->
+    <ellipse cx="200" cy="180" rx="50" ry="70" stroke="white" stroke-width="8" fill="none"/>
+    <rect x="195" y="240" width="10" height="120" fill="white"/>
+
+    <!-- バドミントンラケット2 -->
+    <ellipse cx="312" cy="180" rx="50" ry="70" stroke="white" stroke-width="8" fill="none"/>
+    <rect x="307" y="240" width="10" height="120" fill="white"/>
+
+    <!-- シャトル -->
+    <circle cx="256" cy="320" r="12" fill="white"/>
+    <path d="M 256 308 L 240 280 L 272 280 Z" fill="white"/>
+  </g>
+
+  <!-- テキスト -->
+  <text x="256" y="420" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white" text-anchor="middle">
+    Badmin
+  </text>
+  <text x="256" y="465" font-family="Arial, sans-serif" font-size="32" font-weight="normal" fill="white" text-anchor="middle" opacity="0.9">
+    Ops
+  </text>
+</svg>

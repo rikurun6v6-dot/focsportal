@@ -1,7 +1,7 @@
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { getFirestore, initializeFirestore, Firestore } from "firebase/firestore";
+import { getAuth, signInAnonymously, Auth } from "firebase/auth";
 
-// Firebase configuration from environment variables
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -11,17 +11,31 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase only if not already initialized
-// This prevents multiple initialization attempts during hot reloading
 let app: FirebaseApp;
+let db: Firestore;
+
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
+  // Task 2: 通信の「超」安定化 - Long Polling
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+  });
 } else {
-  app = getApps()[0];
+  app = getApp();
+  db = getFirestore(app);
 }
 
-// Get Firestore instance
-export const db: Firestore = getFirestore(app);
+const auth = getAuth(app);
 
-// Export the app for potential future use
-export { app };
+// Task 1: 起動時に匿名認証を実行し、書き込み権限を確立
+if (typeof window !== "undefined") {
+  signInAnonymously(auth)
+    .then(() => {
+      // 認証成功 - 通知なし（UIに表示しない）
+    })
+    .catch((error) => {
+      console.error("認証失敗:", error);
+    });
+}
+
+export { app, db, auth };

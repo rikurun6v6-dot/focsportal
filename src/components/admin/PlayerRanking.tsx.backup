@@ -6,8 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Player } from '@/types';
 import { getPlayerRankings } from '@/lib/points';
 import { Trophy } from 'lucide-react';
+import { useCamp } from '@/context/CampContext';
 
 export default function PlayerRanking() {
+  const { camp } = useCamp();
   const [maleDiv1, setMaleDiv1] = useState<Player[]>([]);
   const [maleDiv2, setMaleDiv2] = useState<Player[]>([]);
   const [femaleDiv1, setFemaleDiv1] = useState<Player[]>([]);
@@ -15,14 +17,15 @@ export default function PlayerRanking() {
 
   useEffect(() => {
     loadRankings();
-  }, []);
+  }, [camp]);
 
   const loadRankings = async () => {
+    if (!camp) return;
     const [md1, md2, fd1, fd2] = await Promise.all([
-      getPlayerRankings('male', 1),
-      getPlayerRankings('male', 2),
-      getPlayerRankings('female', 1),
-      getPlayerRankings('female', 2)
+      getPlayerRankings('male', 1, camp.id),
+      getPlayerRankings('male', 2, camp.id),
+      getPlayerRankings('female', 1, camp.id),
+      getPlayerRankings('female', 2, camp.id)
     ]);
     setMaleDiv1(md1);
     setMaleDiv2(md2);

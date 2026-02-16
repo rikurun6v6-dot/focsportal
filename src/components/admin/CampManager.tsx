@@ -5,53 +5,105 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { createCamp, getAllCamps, activateCamp, setupCampCourts } from "@/lib/firestore-helpers";
+import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData } from "@/lib/firestore-helpers";
+import { auth } from "@/lib/firebase";
 import { useCamp } from "@/context/CampContext";
 import type { Camp } from "@/types";
-import { Plus, Play, Settings, CheckCircle, Calendar, ArrowRight } from "lucide-react";
+import { Plus, Play, Settings, CheckCircle, Calendar, ArrowRight, Archive, ArchiveRestore, Trash2, AlertTriangle } from "lucide-react";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { toastSuccess, toastError } from "@/lib/toast";
 
 export default function CampManager() {
     const { refreshCamp, setManualCamp } = useCamp();
+    const { confirm, ConfirmDialog } = useConfirmDialog();
 
     const [camps, setCamps] = useState<Camp[]>([]);
     const [newTitle, setNewTitle] = useState("");
     const [courtCount, setCourtCount] = useState(6);
     const [loading, setLoading] = useState(false);
+    const [deleting, setDeleting] = useState<string | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-    // 一覧を読み込む
-    const loadCamps = async () => {
-        const data = await getAllCamps();
-        setCamps(data);
-    };
-
+    // 認証ユーザーを取得
     useEffect(() => {
-        loadCamps();
+        const unsubscribe = auth.onAuthStateChanged((user) => {
+            if (user) {
+                setCurrentUserId(user.uid);
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('[CampManager] 🔐 認証ユーザー情報');
+                console.log('[CampManager]   UID:', user.uid);
+                console.log('[CampManager]   Email:', user.email || '(匿名)');
+                console.log('[CampManager]   表示名:', user.displayName || '(未設定)');
+                console.log('[CampManager]   匿名ログイン:', user.isAnonymous ? 'YES' : 'NO');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            }
+        });
+        return () => unsubscribe();
     }, []);
+
+    // 一覧をリアルタイム購読
+    useEffect(() => {
+        const loadCamps = async () => {
+            try {
+                const data = await getAllCamps(currentUserId || undefined);
+                
+                // データ蒸発防止: 空データでの上書きを防ぐ
+                if (data.length === 0 && camps.length > 0) {
+                    console.log('[CampManager] 空データを検知、既存データを保持');
+                    return; // 既存のcampsを維持
+                }
+                
+                // データがある場合、または初回読み込みの場合は更新
+                setCamps(data);
+                console.log('[CampManager] 合宿リスト更新:', data.length, '件');
+            } catch (error) {
+                console.error('[CampManager] 合宿リスト取得エラー:', error);
+                // エラー時は既存データを維持（上書きしない）
+            }
+        };
+
+        // 初回読み込み
+        loadCamps();
+
+        // 5秒ごとに再読み込み（リアルタイム更新）
+        const interval = setInterval(() => {
+            loadCamps();
+        }, 5000);
+
+        return () => clearInterval(interval);
+    }, [currentUserId, camps.length]);
 
     // 新規作成
     const handleCreate = async () => {
         if (!newTitle.trim()) return;
         setLoading(true);
 
-        // 合宿データ作成
-        const newId = await createCamp(newTitle, courtCount);
+        // 合宿データ作成（owner_idを渡す）
+        const newId = await createCamp(newTitle, courtCount, currentUserId || undefined);
 
         if (newId) {
             setNewTitle("");
-            await loadCamps(); // リスト更新
+            // リストは自動更新されるため、手動更新は不要
         }
         setLoading(false);
     };
 
     // 「この合宿を開催する」ボタン (Activeにする)
     const handleActivate = async (campId: string, courts: number) => {
-        if (!confirm("この合宿を「開催中」にしますか？\n参加者の画面がこの合宿に切り替わります。")) return;
+        const confirmed = await confirm({
+            title: '🎯 合宿を開催中にする',
+            message: 'この合宿を「開催中」にしますか？\n参加者の画面がこの合宿に切り替わります。',
+            confirmText: '開催する',
+            cancelText: 'キャンセル',
+            type: 'info',
+        });
+        if (!confirmed) return;
 
         setLoading(true);
         // 1. 合宿をActiveに
         await activateCamp(campId);
-        // 2. コート数をセットアップ（物理コートの上書き）
-        await setupCampCourts(courts);
+        // 2. コート数をセットアップ（Camp専用コートを作成）
+        await setupCampCourts(courts, campId);
         // 3. アプリ全体のContextを更新
         await refreshCamp();
 
@@ -65,11 +117,96 @@ export default function CampManager() {
         setManualCamp(camp);
     };
 
-    return (
-        <div className="container mx-auto px-4 py-8 max-w-4xl space-y-8">
+    // アーカイブ
+    const handleArchive = async (campId: string) => {
+        const confirmed = await confirm({
+            title: '📦 合宿をアーカイブ',
+            message: 'この合宿をアーカイブしますか？\nアーカイブ後は閲覧専用になります。',
+            confirmText: 'アーカイブする',
+            cancelText: 'キャンセル',
+            type: 'warning',
+        });
+        if (!confirmed) return;
+        setLoading(true);
+        await archiveCamp(campId);
+        setLoading(false);
+    };
 
-            {/* ヘッダー */}
-            <div className="text-center space-y-2">
+    // アーカイブ解除
+    const handleUnarchive = async (campId: string) => {
+        const confirmed = await confirm({
+            title: '📂 アーカイブを解除',
+            message: 'この合宿のアーカイブを解除しますか？',
+            confirmText: '解除する',
+            cancelText: 'キャンセル',
+            type: 'info',
+        });
+        if (!confirmed) return;
+        setLoading(true);
+        await unarchiveCamp(campId);
+        setLoading(false);
+    };
+
+    // 通常削除（Camp本体のみ）
+    const handleDelete = async (campId: string) => {
+        const confirmed = await confirm({
+            title: '🗑️ 合宿を削除',
+            message: 'この合宿を削除しますか？\nこの操作は取り消せません。',
+            confirmText: '削除する',
+            cancelText: 'キャンセル',
+            type: 'danger',
+        });
+        if (!confirmed) return;
+        setLoading(true);
+        await deleteCamp(campId);
+        setLoading(false);
+    };
+
+    // 完全削除（全関連データ含む）
+    const handleCompleteDelete = async (campId: string, campTitle: string) => {
+        const firstConfirm = await confirm({
+            title: '⚠️ 警告: 完全削除の実行',
+            message: `合宿「${campTitle}」に紐づく以下のデータをすべて削除します：\n\n• 選手データ\n• 試合データ\n• コートデータ\n• トーナメント設定\n• 合宿本体\n\nこの操作は取り消せません。本当に実行しますか？`,
+            confirmText: '次へ',
+            cancelText: 'キャンセル',
+            type: 'danger',
+        });
+        if (!firstConfirm) return;
+
+        const secondConfirm = await confirm({
+            title: '🚨 最終確認',
+            message: 'すべてのデータが完全に削除されます。\n本当によろしいですか？',
+            confirmText: '完全削除する',
+            cancelText: 'キャンセル',
+            type: 'danger',
+        });
+        if (!secondConfirm) return;
+
+        setDeleting(campId);
+        try {
+            const result = await deleteCompleteCampData(campId);
+
+            if (result.success) {
+                alert(`✓ 削除完了\n\n削除件数：\n• 選手: ${result.deletedCounts.players}件\n• 試合: ${result.deletedCounts.matches}件\n• コート: ${result.deletedCounts.courts}件\n• トーナメント設定: ${result.deletedCounts.tournamentConfigs}件`);
+            } else {
+                alert(`⚠️ 削除中にエラーが発生しました\n\n${result.errors.join('\n')}`);
+            }
+
+            await refreshCamp();
+            window.location.reload();
+        } catch (error) {
+            alert(`✗ 予期せぬエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        setDeleting(null);
+    };
+
+    return (
+        <>
+            <ConfirmDialog />
+            <div className="container mx-auto px-4 py-8 max-w-4xl space-y-8">
+
+                {/* ヘッダー */}
+                <div className="text-center space-y-2">
                 <h1 className="text-3xl font-bold text-slate-800">合宿管理メニュー</h1>
                 <p className="text-slate-500">
                     新しい合宿を作成するか、管理する合宿を選択してください
@@ -124,7 +261,16 @@ export default function CampManager() {
                 </h2>
 
                 <div className="grid gap-4">
-                    {camps.map((camp) => (
+                    {camps.length === 0 ? (
+                        <Card className="border-slate-200">
+                            <CardContent className="p-8 text-center space-y-3">
+                                <Calendar className="w-12 h-12 mx-auto text-slate-300" />
+                                <p className="text-slate-600 font-medium">合宿がまだ作成されていません</p>
+                                <p className="text-sm text-slate-500">上のフォームから新規作成してください</p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        camps.map((camp) => (
                         <Card key={camp.id} className={`transition-all hover:shadow-md ${camp.status === 'active' ? 'border-emerald-400 ring-1 ring-emerald-100' : 'border-slate-200'}`}>
                             <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
 
@@ -134,6 +280,8 @@ export default function CampManager() {
                                         <h3 className="text-lg font-bold text-slate-900">{camp.title}</h3>
                                         {camp.status === 'active' ? (
                                             <Badge className="bg-emerald-500 hover:bg-emerald-600">開催中</Badge>
+                                        ) : camp.status === 'archived' ? (
+                                            <Badge variant="outline" className="text-amber-600 border-amber-300">アーカイブ済み</Badge>
                                         ) : (
                                             <Badge variant="outline" className="text-slate-500">準備中</Badge>
                                         )}
@@ -144,41 +292,93 @@ export default function CampManager() {
                                 </div>
 
                                 {/* ボタン部分 */}
-                                <div className="flex gap-2 w-full md:w-auto">
-                                    {/* Activeにするボタン */}
-                                    {camp.status !== 'active' && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => handleActivate(camp.id, camp.court_count)}
-                                            disabled={loading}
-                                            className="flex-1 md:flex-none border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                                        >
-                                            <Play className="w-4 h-4 mr-1" />
-                                            これを開催する
-                                        </Button>
-                                    )}
+                                <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+                                    <div className="flex gap-2">
+                                        {/* Activeにするボタン */}
+                                        {camp.status === 'setup' && (
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => handleActivate(camp.id, camp.court_count)}
+                                                disabled={loading || deleting === camp.id}
+                                                className="flex-1 md:flex-none border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                            >
+                                                <Play className="w-4 h-4 mr-1" />
+                                                これを開催する
+                                            </Button>
+                                        )}
 
-                                    {/* 管理画面に入るボタン */}
-                                    <Button
-                                        onClick={() => handleEnter(camp)}
-                                        className="flex-1 md:flex-none bg-slate-800 text-white hover:bg-slate-700"
-                                    >
-                                        管理画面へ
-                                        <ArrowRight className="w-4 h-4 ml-1" />
-                                    </Button>
+                                        {/* アーカイブボタン */}
+                                        {camp.status === 'archived' ? (
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => handleUnarchive(camp.id)}
+                                                disabled={loading || deleting === camp.id}
+                                                className="flex-1 md:flex-none border-amber-200 text-amber-700 hover:bg-amber-50"
+                                            >
+                                                <ArchiveRestore className="w-4 h-4 mr-1" />
+                                                解除
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => handleArchive(camp.id)}
+                                                disabled={loading || deleting === camp.id}
+                                                className="flex-1 md:flex-none border-slate-300 text-slate-600 hover:bg-slate-50"
+                                            >
+                                                <Archive className="w-4 h-4 mr-1" />
+                                                {camp.status === 'active' ? '合宿を終了' : 'アーカイブ'}
+                                            </Button>
+                                        )}
+
+                                        {/* 管理画面に入るボタン */}
+                                        <Button
+                                            onClick={() => handleEnter(camp)}
+                                            disabled={deleting === camp.id}
+                                            className="flex-1 md:flex-none bg-slate-800 text-white hover:bg-slate-700"
+                                        >
+                                            {camp.status === 'archived' ? '閲覧する' : '管理画面へ'}
+                                            <ArrowRight className="w-4 h-4 ml-1" />
+                                        </Button>
+                                    </div>
+
+                                    {/* 削除ボタン（アクティブでない場合のみ） */}
+                                    {camp.status !== 'active' && (
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => handleDelete(camp.id)}
+                                                disabled={loading || deleting === camp.id}
+                                                className="flex-1 border-rose-200 text-rose-600 hover:bg-rose-50"
+                                            >
+                                                <Trash2 className="w-4 h-4 mr-1" />
+                                                削除
+                                            </Button>
+                                            <Button
+                                                variant="destructive"
+                                                onClick={() => handleCompleteDelete(camp.id, camp.title)}
+                                                disabled={loading || deleting === camp.id}
+                                                className="flex-1 bg-red-600 hover:bg-red-700"
+                                            >
+                                                {deleting === camp.id ? (
+                                                    "削除中..."
+                                                ) : (
+                                                    <>
+                                                        <AlertTriangle className="w-4 h-4 mr-1" />
+                                                        完全削除
+                                                    </>
+                                                )}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
 
                             </CardContent>
                         </Card>
-                    ))}
-
-                    {camps.length === 0 && (
-                        <div className="text-center py-10 bg-slate-50 rounded-lg text-slate-400">
-                            まだ合宿が作成されていません
-                        </div>
+                        ))
                     )}
                 </div>
             </div>
-        </div>
+            </div>
+        </>
     );
 }

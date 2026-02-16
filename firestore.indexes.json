@@ -1,0 +1,59 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "campId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tournament_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "round",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "campId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "campId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "gender",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "division",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

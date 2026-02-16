@@ -1,0 +1,1056 @@
+import {
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch,
+  query, where, orderBy, limit, onSnapshot, Timestamp, DocumentData, serverTimestamp, QueryConstraint,
+  getDocsFromCache, getDocsFromServer, getDocFromCache, getDocFromServer, Query, QuerySnapshot, DocumentSnapshot
+} from 'firebase/firestore';
+import { db } from './firebase';
+import type { Player, Match, Court, MatchHistory, Config, TournamentType, MatchStatus, TournamentConfig, Camp, MatchWithPlayers } from '@/types';
+
+const COLLECTIONS = {
+  players: 'players',
+  matches: 'matches',
+  courts: 'courts',
+  teams: 'teams',
+  team_battles: 'team_battles',
+  match_history: 'match_history',
+  config: 'config',
+} as const;
+
+// オフライン系エラーかどうかを判定
+function isOfflineError(error: any): boolean {
+  const code = error?.code;
+  const message = error?.message || '';
+  return (
+    code === 'unavailable' ||
+    code === 'failed-precondition' ||
+    message.includes('offline') ||
+    message.includes('Failed to get document because the client is offline')
+  );
+}
+
+/**
+ * ハイブリッド取得ラッパー: サーバー取得を試み、失敗したらキャッシュにフォールバック
+ * オフライン系エラーは絶対に外に投げない
+ * サーバー取得は5秒でタイムアウト
+ */
+export async function safeGetDocs<T = DocumentData>(q: Query<T>): Promise<QuerySnapshot<T>> {
+  // まずサーバー取得を試みる（5秒タイムアウト付き）
+  try {
+    const serverPromise = getDocsFromServer(q);
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Server request timeout after 5s')), 5000)
+    );
+    
+    return await Promise.race([serverPromise, timeoutPromise]);
+  } catch (serverError: any) {
+    // タイムアウトまたはオフラインエラーの場合
+    const isTimeout = serverError?.message?.includes('timeout');
+    if (isTimeout) {
+      console.log('[safeGetDocs] サーバー取得タイムアウト(5秒)、キャッシュにフォールバック');
+    } else if (serverError?.code === 'unavailable' || isOfflineError(serverError)) {
+      console.log('[safeGetDocs] オフライン検知、キャッシュにフォールバック');
+    } else {
+      console.warn('[safeGetDocs] サーバー取得失敗:', serverError?.code || serverError?.message);
+    }
+  }
+
+  // サーバー失敗時はキャッシュから取得を試みる
+  try {
+    const cacheSnapshot = await getDocsFromCache(q);
+    console.log('[safeGetDocs] キャッシュから取得成功:', cacheSnapshot.size, '件');
+    return cacheSnapshot;
+  } catch (cacheError: any) {
+    // キャッシュがない場合は情報レベルのログ
+    console.log('[safeGetDocs] キャッシュなし、空結果を返却');
+  }
+
+  // 最終フォールバック: 通常のgetDocs（エラーは握りつぶす）
+  try {
+    return await getDocs(q);
+  } catch (finalError: any) {
+    // 最終的なエラーのみ警告を出す
+    console.warn('[safeGetDocs] 全ての取得方法が失敗、空結果を返却:', finalError?.code || finalError?.message);
+    // 空のスナップショット相当を返す（エラーを外に投げない）
+    return {
+      docs: [],
+      empty: true,
+      size: 0,
+      metadata: { fromCache: true, hasPendingWrites: false },
+      forEach: () => {},
+      docChanges: () => [],
+    } as unknown as QuerySnapshot<T>;
+  }
+}
+
+/**
+ * 単一ドキュメント取得ラッパー: サーバー取得を試み、失敗したらキャッシュにフォールバック
+ * オフライン系エラーは絶対に外に投げない
+ * サーバー取得は5秒でタイムアウト
+ */
+export async function safeGetDoc(docRef: any): Promise<DocumentSnapshot> {
+  // まずサーバー取得を試みる（5秒タイムアウト付き）
+  try {
+    const serverPromise = getDocFromServer(docRef);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Server request timeout after 5s')), 5000)
+    );
+
+    return await Promise.race([serverPromise, timeoutPromise]);
+  } catch (serverError: any) {
+    // タイムアウトまたはオフラインエラーの場合
+    const isTimeout = serverError?.message?.includes('timeout');
+    if (isTimeout) {
+      console.log('[safeGetDoc] サーバー取得タイムアウト(5秒)、キャッシュにフォールバック');
+    } else if (serverError?.code === 'unavailable' || isOfflineError(serverError)) {
+      console.log('[safeGetDoc] オフライン検知、キャッシュにフォールバック');
+    } else {
+      console.log('[safeGetDoc] サーバー取得失敗:', serverError?.code || serverError?.message);
+    }
+  }
+
+  // サーバー失敗時はキャッシュから取得を試みる
+  try {
+    const cacheSnapshot = await getDocFromCache(docRef);
+    console.log('[safeGetDoc] キャッシュから取得成功');
+    return cacheSnapshot;
+  } catch (cacheError: any) {
+    // キャッシュがない場合は情報レベルのログ
+    console.log('[safeGetDoc] キャッシュなし');
+  }
+
+  // 最終フォールバック: 通常のgetDoc（エラーは握りつぶす）
+  try {
+    return await getDoc(docRef);
+  } catch (finalError: any) {
+    // 最終的なエラーは警告ではなくログに
+    console.log('[safeGetDoc] 全ての取得方法が失敗、存在しないドキュメントとして扱う');
+    // 存在しないドキュメントとして扱う（エラーを外に投げない）
+    return {
+      exists: () => false,
+      data: () => undefined,
+      id: docRef.id,
+      ref: docRef,
+      metadata: { fromCache: false, hasPendingWrites: false },
+    } as unknown as DocumentSnapshot;
+  }
+}
+
+
+// Generic helpers
+export async function getAllDocuments<T>(collectionName: string, constraints: QueryConstraint[] = []): Promise<T[]> {
+  try {
+    const collectionRef = collection(db, collectionName);
+    const q = constraints.length > 0 ? query(collectionRef, ...constraints) : query(collectionRef);
+    const querySnapshot = await safeGetDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as T[];
+  } catch (error) {
+    console.warn(`[getAllDocuments] エラー発生、空配列を返却 (${collectionName}):`, error);
+    return [];
+  }
+}
+
+export async function setDocument<T extends { id: string }>(collectionName: string, data: T): Promise<boolean> {
+  try {
+    const { id, ...docData } = data;
+    if (!id) {
+      console.error(`Error: Missing ID for setDocument in ${collectionName}`);
+      return false;
+    }
+    const docRef = doc(db, collectionName, id);
+    await setDoc(docRef, docData);
+    return true;
+  } catch (error) {
+    console.error(`Error setting document in ${collectionName}:`, error);
+    return false;
+  }
+}
+
+export async function getDocument<T>(collectionName: string, docId: string): Promise<T | null> {
+  try {
+    if (!docId) return null;
+    const docRef = doc(db, collectionName, docId);
+    const docSnap = await safeGetDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as T;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error getting document from ${collectionName}:`, error);
+    return null;
+  }
+}
+
+export async function updateDocument(collectionName: string, docId: string, updates: Record<string, unknown>): Promise<void> {
+  if (!docId) {
+    console.error(`Error: Missing ID for updateDocument in ${collectionName}`);
+    return;
+  }
+  const docRef = doc(db, collectionName, docId);
+  const docSnap = await safeGetDoc(docRef);
+  if (!docSnap.exists()) {
+    return;
+  }
+  await updateDoc(docRef, { ...updates, updated_at: Timestamp.now() });
+}
+
+export async function deleteDocument(collectionName: string, docId: string): Promise<boolean> {
+  try {
+    if (!docId) {
+      return false;
+    }
+    const docRef = doc(db, collectionName, docId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error(`Error deleting document from ${collectionName}:`, error);
+    return false;
+  }
+}
+
+export function subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void, constraints: QueryConstraint[] = []) {
+  const collectionRef = collection(db, collectionName);
+  const q = constraints.length > 0 ? query(collectionRef, ...constraints) : collectionRef;
+  return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+    // hasPendingWritesやfromCacheに関係なく、常にUIを即座に更新
+    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as T[];
+    callback(data);
+  }, (error: any) => {
+    if (isOfflineError(error)) {
+      console.warn(`[subscribeToCollection] オフラインエラー (${collectionName}):`, error?.code || error?.message);
+    } else {
+      console.error(`Error in ${collectionName} listener:`, error);
+    }
+  });
+}
+
+export function subscribeToDocument<T>(collectionName: string, docId: string, callback: (data: T | null) => void) {
+  if (!docId) {
+    callback(null);
+    return () => { }; // Return empty unsubscribe function
+  }
+  const docRef = doc(db, collectionName, docId);
+  return onSnapshot(docRef, { includeMetadataChanges: true }, (snapshot) => {
+    // hasPendingWritesやfromCacheに関係なく、常にUIを即座に更新
+    if (snapshot.exists()) {
+      const data = { id: snapshot.id, ...snapshot.data() } as T;
+      callback(data);
+    } else {
+      callback(null);
+    }
+  }, (error: any) => {
+    if (isOfflineError(error)) {
+      console.warn(`[subscribeToDocument] オフラインエラー (${collectionName}/${docId}):`, error?.code || error?.message);
+    } else {
+      console.error(`Error in ${collectionName}/${docId} listener:`, error);
+    }
+  });
+}
+
+// Court functions
+export async function getAllCourts(): Promise<Court[]> {
+  return getAllDocuments<Court>(COLLECTIONS.courts, [orderBy('number')]);
+}
+
+export function subscribeToCourts(callback: (courts: Court[]) => void, campId?: string) {
+  const constraints = campId
+    ? [where('campId', '==', campId), orderBy('number')]
+    : [orderBy('number')];
+  return subscribeToCollection<Court>(COLLECTIONS.courts, callback, constraints);
+}
+
+export async function initializeCourts(courtCount: number, campId: string): Promise<boolean> {
+  try {
+    const courts: Court[] = [];
+    for (let i = 1; i <= courtCount; i++) {
+      courts.push({
+        id: `court_${campId}_${i}`,
+        number: i,
+        preferred_gender: i <= Math.floor(courtCount / 2) ? 'male' : 'female',
+        current_match_id: null,
+        is_active: true,
+        campId
+      });
+    }
+    for (const court of courts) { await setDocument(COLLECTIONS.courts, court); }
+    return true;
+  } catch (error) {
+    console.error('Error initializing courts:', error);
+    return false;
+  }
+}
+
+export async function initializeConfig(): Promise<boolean> {
+  try {
+    const config: Config = {
+      auto_dispatch_enabled: false,
+      current_phase: null,
+      tournament_date: Timestamp.now(),
+      last_operation: null,
+    };
+    await setDoc(doc(db, COLLECTIONS.config, 'system'), config);
+    return true;
+  } catch (error) {
+    console.error('Error initializing config:', error);
+    return false;
+  }
+}
+
+// Player functions
+export async function getAllPlayers(campId?: string): Promise<Player[]> {
+  const constraints = campId
+    ? [where('campId', '==', campId), orderBy('name')]
+    : [orderBy('name')];
+  return getAllDocuments<Player>(COLLECTIONS.players, constraints);
+}
+
+export async function importPlayers(players: Omit<Player, 'id'>[]): Promise<{ success: number; errors: string[]; }> {
+  const errors: string[] = [];
+  
+  if (players.length === 0) {
+    return { success: 0, errors: [] };
+  }
+
+  try {
+    const batch = writeBatch(db);
+    const timestamp = Date.now();
+
+    for (let i = 0; i < players.length; i++) {
+      const player = players[i];
+      const safeName = player.name.replace(/\s+/g, '_');
+      const id = `player_${timestamp}_${i}_${safeName}`;
+      const docRef = doc(db, COLLECTIONS.players, id);
+      batch.set(docRef, player);
+    }
+
+    await batch.commit();
+    return { success: players.length, errors: [] };
+  } catch (error) {
+    console.error('[importPlayers] バッチ保存失敗:', error);
+    errors.push(`一括保存に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    return { success: 0, errors };
+  }
+}
+
+export async function deleteAllPlayers(): Promise<boolean> {
+  try {
+    const players = await getAllPlayers();
+    for (const player of players) { await deleteDocument(COLLECTIONS.players, player.id); }
+    return true;
+  } catch (error) {
+    console.error('Error deleting all players:', error);
+    return false;
+  }
+}
+
+// Match functions
+export async function createMatches(matches: Omit<Match, 'id'>[]): Promise<{ success: number; errors: string[]; }> {
+  const errors: string[] = [];
+
+  if (matches.length === 0) {
+    return { success: 0, errors: [] };
+  }
+
+  try {
+    const timestamp = Date.now();
+    const BATCH_SIZE = 500;
+
+    // 500件ごとにバッチを分割して保存
+    for (let batchStart = 0; batchStart < matches.length; batchStart += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, matches.length);
+
+      for (let i = batchStart; i < batchEnd; i++) {
+        const match = matches[i];
+        const id = `match_${timestamp}_${i}`;
+        const docRef = doc(db, COLLECTIONS.matches, id);
+        batch.set(docRef, {
+          id,
+          ...match,
+          created_at: Timestamp.now(),
+          updated_at: Timestamp.now()
+        });
+      }
+
+      await batch.commit();
+    }
+
+    return { success: matches.length, errors: [] };
+  } catch (error) {
+    console.error('[createMatches] バッチ保存失敗:', error);
+    errors.push(`一括保存に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    return { success: 0, errors };
+  }
+}
+
+export async function getAllMatches(campId?: string): Promise<Match[]> {
+  const constraints = campId
+    ? [where('campId', '==', campId), orderBy('created_at')]
+    : [orderBy('created_at')];
+  return getAllDocuments<Match>(COLLECTIONS.matches, constraints);
+}
+
+export async function getMatchesByTournament(tournamentType: TournamentType, campId?: string): Promise<Match[]> {
+  const constraints = campId
+    ? [
+        where('campId', '==', campId),
+        where('tournament_type', '==', tournamentType),
+        orderBy('round'),
+        orderBy('created_at')
+      ]
+    : [
+        where('tournament_type', '==', tournamentType),
+        orderBy('round'),
+        orderBy('created_at')
+      ];
+  return getAllDocuments<Match>(COLLECTIONS.matches, constraints);
+}
+
+export function subscribeToMatchesByTournament(
+  tournamentType: TournamentType,
+  callback: (matches: Match[]) => void,
+  campId?: string
+) {
+  const constraints = campId
+    ? [
+        where('campId', '==', campId),
+        where('tournament_type', '==', tournamentType),
+        orderBy('round'),
+        orderBy('created_at')
+      ]
+    : [
+        where('tournament_type', '==', tournamentType),
+        orderBy('round'),
+        orderBy('created_at')
+      ];
+  return subscribeToCollection<Match>(COLLECTIONS.matches, callback, constraints);
+}
+
+export function subscribeToPlayers(callback: (players: Player[]) => void, campId?: string) {
+  const constraints = campId ? [where('campId', '==', campId)] : [];
+  return subscribeToCollection<Player>(COLLECTIONS.players, callback, constraints);
+}
+
+export async function startMatch(matchId: string): Promise<void> {
+  await updateDocument('matches', matchId, {
+    status: 'playing',
+    started_at: Timestamp.now()
+  });
+}
+
+export async function updateMatchResult(
+  matchId: string,
+  scoreP1: number,
+  scoreP2: number,
+  winnerId: string
+): Promise<boolean> {
+  try {
+    if (!matchId) return false;
+
+    // 現在の試合データを取得
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return false;
+
+    // 試合結果を更新
+    const matchRef = doc(db, COLLECTIONS.matches, matchId);
+    await updateDoc(matchRef, {
+      score_p1: scoreP1,
+      score_p2: scoreP2,
+      winner_id: winnerId,
+      status: 'completed',
+      end_time: Timestamp.now(),
+      updated_at: Timestamp.now(),
+    });
+
+    // 次の試合がある場合、勝者を設定
+    if (currentMatch.next_match_id && currentMatch.next_match_position) {
+      const nextMatchRef = doc(db, COLLECTIONS.matches, currentMatch.next_match_id);
+      const isWinner1 = winnerId === currentMatch.player1_id;
+
+      // 勝者のプレイヤーIDを取得（ダブルスの場合はパートナーも）
+      const winnerMainId = isWinner1 ? currentMatch.player1_id : currentMatch.player2_id;
+      const winnerPartnerId = isWinner1 ? currentMatch.player3_id : currentMatch.player4_id;
+
+      // 次の試合での位置に応じてプレイヤーを設定
+      const nextMatchUpdate: Record<string, unknown> = {
+        updated_at: Timestamp.now(),
+      };
+
+      if (currentMatch.next_match_position === 1) {
+        // 上側（player1側）に設定
+        nextMatchUpdate.player1_id = winnerMainId;
+        if (winnerPartnerId) {
+          nextMatchUpdate.player3_id = winnerPartnerId;
+        }
+      } else if (currentMatch.next_match_position === 2) {
+        // 下側（player2側）に設定
+        nextMatchUpdate.player2_id = winnerMainId;
+        if (winnerPartnerId) {
+          nextMatchUpdate.player4_id = winnerPartnerId;
+        }
+      }
+
+      await updateDoc(nextMatchRef, nextMatchUpdate);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating match result:', error);
+    return false;
+  }
+}
+
+export async function getActiveMatches(): Promise<Match[]> {
+  return getAllDocuments<Match>(COLLECTIONS.matches, [
+    where('status', 'in', ['waiting', 'calling', 'playing']),
+    orderBy('created_at')
+  ]);
+}
+
+export async function updateMatchStatus(
+  matchId: string,
+  status: MatchStatus
+): Promise<boolean> {
+  try {
+    if (!matchId) return false;
+    const matchRef = doc(db, COLLECTIONS.matches, matchId);
+    const updateData: Record<string, unknown> = {
+      status,
+      updated_at: Timestamp.now(),
+    };
+
+    if (status === 'playing' && !updateData.start_time) {
+      updateData.start_time = Timestamp.now();
+    }
+
+    await updateDoc(matchRef, updateData);
+    return true;
+  } catch (error) {
+    console.error('Error updating match status:', error);
+    return false;
+  }
+}
+
+export async function getPlayerById(playerId: string): Promise<Player | null> {
+  try {
+    if (!playerId) return null;
+    const docRef = doc(db, COLLECTIONS.players, playerId);
+    const docSnap = await safeGetDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Player;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting player:', error);
+    return null;
+  }
+}
+
+export function subscribeToActiveMatches(callback: (matches: Match[]) => void, campId?: string) {
+  const constraints = [
+    where('status', 'in', ['waiting', 'calling', 'playing']),
+    orderBy('created_at')
+  ];
+  if (campId) {
+    constraints.unshift(where('campId', '==', campId));
+  }
+  return subscribeToCollection<Match>(COLLECTIONS.matches, callback, constraints);
+}
+
+export function subscribeToCompletedMatches(callback: (matches: Match[]) => void, campId?: string) {
+  const constraints = [
+    where('status', '==', 'completed'),
+    orderBy('updated_at', 'desc')
+  ];
+  if (campId) {
+    constraints.unshift(where('campId', '==', campId));
+  }
+  return subscribeToCollection<Match>(COLLECTIONS.matches, callback, constraints);
+}
+
+export async function resetMatchResult(matchId: string): Promise<boolean> {
+  try {
+    if (!matchId) return false;
+
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return false;
+
+    // 次の試合から勝者情報を削除
+    if (currentMatch.next_match_id && currentMatch.next_match_position) {
+      const nextMatchRef = doc(db, COLLECTIONS.matches, currentMatch.next_match_id);
+      const nextMatchUpdate: any = { updated_at: Timestamp.now() };
+
+      if (currentMatch.next_match_position === 1) {
+        nextMatchUpdate.player1_id = '';
+        if (currentMatch.player3_id) nextMatchUpdate.player3_id = '';
+      } else if (currentMatch.next_match_position === 2) {
+        nextMatchUpdate.player2_id = '';
+        if (currentMatch.player4_id) nextMatchUpdate.player4_id = '';
+      }
+
+      await updateDoc(nextMatchRef, nextMatchUpdate);
+    }
+
+    // 試合を未実施に戻す
+    const matchRef = doc(db, COLLECTIONS.matches, matchId);
+    await updateDoc(matchRef, {
+      score_p1: 0,
+      score_p2: 0,
+      winner_id: null,
+      status: 'waiting',
+      end_time: null,
+      is_walkover: false,
+      walkover_winner: null,
+      updated_at: Timestamp.now(),
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error resetting match:', error);
+    return false;
+  }
+}
+
+export async function recordWalkover(
+  matchId: string,
+  winnerSide: 1 | 2
+): Promise<boolean> {
+  try {
+    if (!matchId) return false;
+
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return false;
+
+    const winnerId = winnerSide === 1 ? currentMatch.player1_id : currentMatch.player2_id;
+
+    // 試合を棄権として完了
+    const matchRef = doc(db, COLLECTIONS.matches, matchId);
+    await updateDoc(matchRef, {
+      is_walkover: true,
+      walkover_winner: winnerSide,
+      winner_id: winnerId,
+      status: 'completed',
+      end_time: Timestamp.now(),
+      updated_at: Timestamp.now(),
+    });
+
+    // 次の試合がある場合、勝者を設定
+    if (currentMatch.next_match_id && currentMatch.next_match_position) {
+      const nextMatchRef = doc(db, COLLECTIONS.matches, currentMatch.next_match_id);
+      const winnerMainId = winnerSide === 1 ? currentMatch.player1_id : currentMatch.player2_id;
+      const winnerPartnerId = winnerSide === 1 ? currentMatch.player3_id : currentMatch.player4_id;
+
+      const nextMatchUpdate: any = { updated_at: Timestamp.now() };
+
+      if (currentMatch.next_match_position === 1) {
+        nextMatchUpdate.player1_id = winnerMainId;
+        if (winnerPartnerId) nextMatchUpdate.player3_id = winnerPartnerId;
+      } else if (currentMatch.next_match_position === 2) {
+        nextMatchUpdate.player2_id = winnerMainId;
+        if (winnerPartnerId) nextMatchUpdate.player4_id = winnerPartnerId;
+      }
+
+      await updateDoc(nextMatchRef, nextMatchUpdate);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error recording walkover:', error);
+    return false;
+  }
+}
+
+
+// Phase 9: Tournament Config CRUD
+export async function getTournamentConfigs(campId?: string): Promise<TournamentConfig[]> {
+  const constraints = campId ? [where('campId', '==', campId)] : [];
+  return getAllDocuments<TournamentConfig>('tournament_configs', constraints);
+}
+
+export async function getTournamentConfig(id: string): Promise<TournamentConfig | null> {
+  return getDocument<TournamentConfig>('tournament_configs', id);
+}
+
+export async function createTournamentConfig(config: Omit<TournamentConfig, 'id' | 'created_at'>): Promise<string> {
+  const docRef = doc(collection(db, 'tournament_configs'));
+  const newConfig: TournamentConfig = {
+    ...config,
+    id: docRef.id,
+    created_at: Timestamp.now()
+  };
+  await setDoc(docRef, newConfig);
+  return docRef.id;
+}
+
+export async function updateTournamentConfig(id: string, updates: Partial<TournamentConfig>): Promise<void> {
+  return updateDocument('tournament_configs', id, updates);
+}
+
+export async function deleteTournamentConfig(id: string): Promise<boolean> {
+  return deleteDocument('tournament_configs', id);
+}
+
+export function subscribeToTournamentConfigs(callback: (configs: TournamentConfig[]) => void, campId?: string) {
+  const constraints = campId ? [where('campId', '==', campId)] : [];
+  return subscribeToCollection<TournamentConfig>('tournament_configs', callback, constraints);
+}
+
+export async function getMatchWithPlayers(matchId: string): Promise<MatchWithPlayers | null> {
+  const match = await getDocument<Match>(COLLECTIONS.matches, matchId);
+  if (!match) return null;
+
+  const player1 = await getPlayerById(match.player1_id);
+  const player2 = await getPlayerById(match.player2_id);
+  if (!player1 || !player2) return null;
+
+  const result: MatchWithPlayers = { ...match, player1, player2 };
+
+  if (match.player3_id) {
+    const player3 = await getPlayerById(match.player3_id);
+    if (player3) result.player3 = player3;
+  }
+
+  if (match.player4_id) {
+    const player4 = await getPlayerById(match.player4_id);
+    if (player4) result.player4 = player4;
+  }
+
+  return result;
+}
+
+// 👇 必要なimportが足りない場合は、ファイルの先頭に追加してください
+// import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, where, orderBy, serverTimestamp } from "firebase/firestore";
+// import { db } from "./firebase";
+// import type { Camp, Config } from "@/types";
+
+// ==========================================
+// ✅ Phase 10: 合宿 (Camp) 管理用・新機能
+// ==========================================
+
+/**
+ * 新しい合宿を作成する
+ */
+export const createCamp = async (title: string, courtCount: number = 6, ownerId?: string) => {
+  try {
+    const campsRef = collection(db, 'camps');
+    const newCampRef = doc(campsRef); // IDを自動生成
+
+    const newCamp: Camp = {
+      id: newCampRef.id,
+      title: title,
+      court_count: courtCount,
+      status: 'setup', // 最初はセットアップ中
+      created_at: serverTimestamp() as any,
+      owner_id: ownerId, // 作成者のUIDを保存
+      config: {
+        default_match_points: 15, // デフォルト15点
+      },
+    };
+
+    console.log('[createCamp] 新規合宿作成:', { title, owner_id: ownerId, id: newCampRef.id });
+    await setDoc(newCampRef, newCamp);
+    return newCampRef.id;
+  } catch (error) {
+    console.error("Error creating camp:", error);
+    return null;
+  }
+};
+
+/**
+ * すべての合宿を取得する
+ */
+export const getAllCamps = async (currentUserId?: string): Promise<Camp[]> => {
+  try {
+    const campsRef = collection(db, 'camps');
+    // 作成日順に並べる（新しいものが上）
+    const q = query(campsRef, orderBy('created_at', 'desc'));
+    const snapshot = await safeGetDocs(q);
+
+    const camps = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Camp));
+
+    // デバッグ: owner_idと現在のユーザーUIDを比較
+    if (currentUserId) {
+      console.log('[getAllCamps] 現在のログインユーザーUID:', currentUserId);
+      camps.forEach(camp => {
+        const match = camp.owner_id === currentUserId;
+        console.log('[getAllCamps]', {
+          camp_id: camp.id,
+          camp_title: camp.title,
+          owner_id: camp.owner_id || '(未設定)',
+          current_user: currentUserId,
+          match: match ? '✓' : '✗'
+        });
+      });
+    }
+
+    // 注: 開発中はowner_id未設定の合宿も全て表示
+    // 本番環境ではフィルタリングを検討
+    // 例: return camps.filter(c => !c.owner_id || c.owner_id === currentUserId);
+    return camps;
+  } catch (error) {
+    console.error("Error getting all camps:", error);
+    return [];
+  }
+};
+
+/**
+ * 特定の合宿を「アクティブ（開催中）」にする
+ * ユーザー画面にはこの合宿が表示されるようになる
+ */
+export const activateCamp = async (campId: string) => {
+  try {
+    // 1. 指定された合宿のステータスを active にする
+    // (他を archived にするかは運用次第だが、ここではシンプルにアクティブIDをConfigに記録する方式をとる)
+
+    // Config/system に activeCampId を書き込む
+    const configRef = doc(db, 'config', 'system');
+    await setDoc(configRef, { activeCampId: campId }, { merge: true });
+
+    // 合宿自体のステータスも更新
+    await updateDocument('camps', campId, { status: 'active' });
+
+    return true;
+  } catch (error) {
+    console.error("Error activating camp:", error);
+    return false;
+  }
+};
+
+/**
+ * 現在アクティブな合宿のIDを取得する
+ */
+export const getActiveCampId = async (): Promise<string | null> => {
+  try {
+    const config = await getDocument<Config>('config', 'system');
+    return config?.activeCampId || null;
+  } catch (error) {
+    console.error("Error getting active camp ID:", error);
+    return null;
+  }
+};
+
+/**
+ * 合宿用のコートを初期化する
+ * (既存の initializeCourts は6面固定だったが、こちらは可変対応)
+ */
+export const archiveCamp = async (campId: string) => {
+  try {
+    const campRef = doc(db, 'camps', campId);
+    await updateDoc(campRef, { status: 'archived' });
+  } catch (error) {
+    console.error('Error archiving camp:', error);
+    throw error;
+  }
+};
+
+export const unarchiveCamp = async (campId: string) => {
+  try {
+    const campRef = doc(db, 'camps', campId);
+    await updateDoc(campRef, { status: 'setup' });
+  } catch (error) {
+    console.error('Error unarchiving camp:', error);
+    throw error;
+  }
+};
+
+export const deleteCamp = async (campId: string) => {
+  try {
+    const campRef = doc(db, 'camps', campId);
+    await deleteDoc(campRef);
+  } catch (error) {
+    console.error('Error deleting camp:', error);
+    throw error;
+  }
+};
+
+/**
+ * 合宿に紐づく全データを完全削除する
+ * - Players
+ * - Matches
+ * - Courts
+ * - Tournament Configs
+ * - Camp自体
+ */
+export const deleteCompleteCampData = async (campId: string): Promise<{
+  success: boolean;
+  deletedCounts: {
+    players: number;
+    matches: number;
+    courts: number;
+    tournamentConfigs: number;
+  };
+  errors: string[];
+}> => {
+  const errors: string[] = [];
+  const deletedCounts = {
+    players: 0,
+    matches: 0,
+    courts: 0,
+    tournamentConfigs: 0,
+  };
+
+  try {
+    // 1. 選手（Players）の削除
+    try {
+      const playersQuery = query(collection(db, 'players'), where('campId', '==', campId));
+      const playersSnapshot = await safeGetDocs(playersQuery);
+
+      if (playersSnapshot.docs.length > 0) {
+        const playersBatch = writeBatch(db);
+        playersSnapshot.docs.forEach(doc => {
+          playersBatch.delete(doc.ref);
+        });
+        await playersBatch.commit();
+        deletedCounts.players = playersSnapshot.docs.length;
+      }
+    } catch (error) {
+      errors.push(`選手の削除に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // 2. 試合（Matches）の削除
+    try {
+      const matchesQuery = query(collection(db, 'matches'), where('campId', '==', campId));
+      const matchesSnapshot = await safeGetDocs(matchesQuery);
+
+      if (matchesSnapshot.docs.length > 0) {
+        const matchesBatch = writeBatch(db);
+        matchesSnapshot.docs.forEach(doc => {
+          matchesBatch.delete(doc.ref);
+        });
+        await matchesBatch.commit();
+        deletedCounts.matches = matchesSnapshot.docs.length;
+      }
+    } catch (error) {
+      errors.push(`試合の削除に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // 3. コート（Courts）の削除
+    try {
+      const courtsQuery = query(collection(db, 'courts'), where('campId', '==', campId));
+      const courtsSnapshot = await safeGetDocs(courtsQuery);
+
+      if (courtsSnapshot.docs.length > 0) {
+        const courtsBatch = writeBatch(db);
+        courtsSnapshot.docs.forEach(doc => {
+          courtsBatch.delete(doc.ref);
+        });
+        await courtsBatch.commit();
+        deletedCounts.courts = courtsSnapshot.docs.length;
+      }
+    } catch (error) {
+      errors.push(`コートの削除に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // 4. トーナメント設定（Tournament Configs）の削除
+    try {
+      const configsQuery = query(collection(db, 'tournament_configs'), where('campId', '==', campId));
+      const configsSnapshot = await safeGetDocs(configsQuery);
+
+      if (configsSnapshot.docs.length > 0) {
+        const configsBatch = writeBatch(db);
+        configsSnapshot.docs.forEach(doc => {
+          configsBatch.delete(doc.ref);
+        });
+        await configsBatch.commit();
+        deletedCounts.tournamentConfigs = configsSnapshot.docs.length;
+      }
+    } catch (error) {
+      errors.push(`トーナメント設定の削除に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // 5. 合宿本体（Camp）の削除
+    try {
+      const campRef = doc(db, 'camps', campId);
+      await deleteDoc(campRef);
+    } catch (error) {
+      errors.push(`合宿本体の削除に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return {
+      success: errors.length === 0,
+      deletedCounts,
+      errors
+    };
+  } catch (error) {
+    console.error('Error in deleteCompleteCampData:', error);
+    return {
+      success: false,
+      deletedCounts,
+      errors: [...errors, `予期せぬエラー: ${error instanceof Error ? error.message : String(error)}`]
+    };
+  }
+};
+
+export const deleteAllMatches = async (campId: string) => {
+  try {
+    const matchesQuery = query(collection(db, 'matches'), where('campId', '==', campId));
+    const snapshot = await safeGetDocs(matchesQuery);
+    const batch = snapshot.docs.reduce((b, doc) => {
+      b.delete(doc.ref);
+      return b;
+    }, writeBatch(db));
+    await batch.commit();
+  } catch (error) {
+    console.error('Error deleting all matches:', error);
+    throw error;
+  }
+};
+
+export const deleteTournamentMatches = async (campId: string, eventType: string, division: number) => {
+  try {
+    const matchesQuery = query(
+      collection(db, 'matches'),
+      where('campId', '==', campId),
+      where('tournament_type', '==', eventType),
+      where('division', '==', division)
+    );
+    const snapshot = await safeGetDocs(matchesQuery);
+    if (snapshot.docs.length === 0) return;
+    const batch = writeBatch(db);
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  } catch (error) {
+    console.warn('[deleteTournamentMatches] エラー:', error);
+  }
+};
+
+export const setupCampCourts = async (courtCount: number) => {
+  try {
+    // 既存のコートを削除する処理が必要だが、
+    // Campアーキテクチャでは「Campごとにコートを持つ」か「物理コートは共有するか」の判断が必要。
+    // 今回は「物理コートは共有（上書き）」とする（Phase 10仕様）
+
+    // 一旦全コート削除はせず、上書きで対応
+    // 余分なコートがある場合は削除が必要だが、まずは指定数分を作成/更新
+
+    for (let i = 1; i <= courtCount; i++) {
+      const courtId = `court_${i}`;
+      const courtRef = doc(db, 'courts', courtId);
+
+      // 既存データを取得してマージしないと、進行中の試合が消える恐れがあるが
+      // 「合宿切り替え時」前提なので上書きでリセットする
+      await setDoc(courtRef, {
+        id: courtId,
+        number: i,
+        // 1-3は男子優先、4以降は女子優先（簡易ロジック）
+        preferred_gender: i <= (courtCount / 2) ? 'male' : 'female',
+        status: 'vacant',
+        match: null,
+        is_active: true
+      });
+    }
+
+    // もし既存のコート数が新しい設定より多かった場合（例: 6面→4面）、
+    // court_5, court_6 を無効化または削除する処理が必要
+    // ここでは簡易的に「is_active: false」にする処理を入れると安全
+    // (実装省略: 運用でカバー)
+
+    return true;
+  } catch (error) {
+    console.error("Error setting up camp courts:", error);
+    return false;
+  }
+};
+
