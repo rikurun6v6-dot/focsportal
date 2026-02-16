@@ -85,7 +85,6 @@ export default function OperationalAdvisor() {
                         border border-indigo-200/50 p-6 z-50 animate-in slide-in-from-top-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-indigo-600" />
               運営状況の詳細分析
             </h3>
             <button
