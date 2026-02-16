@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
+import { Match } from '@/types';
 import {
   subscribeToCourts,
   getMatchWithPlayers,
@@ -429,380 +430,91 @@ export default function ResultsTab() {
       <div className="space-y-4">
         <div className="mb-4">
           <h2 className="text-2xl font-bold text-slate-800">コート別結果入力</h2>
-        <p className="text-sm text-slate-600 mt-1">各コートで進行中の試合のスコアを直接入力できます</p>
-      </div>
-
-      {/* 休憩中の試合 */}
-      {breakingMatches.length > 0 && (
-        <div className="mb-4">
-          <h3 className="text-lg font-bold text-orange-700 mb-2 flex items-center gap-2">
-            <Clock className="w-5 h-5" />
-            休憩中の試合
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {breakingMatches.map((match) => {
-              const remainingMinutes = match.available_at
-                ? Math.max(0, Math.ceil((match.available_at.toMillis() - currentTime) / (1000 * 60)))
-                : 0;
-              const courtNumber = match.reserved_court_id
-                ? courts.find(c => c.id === match.reserved_court_id)?.number || '?'
-                : '?';
-
-              return (
-                <Card key={match.id} className="border-orange-300 bg-orange-50">
-                  <CardHeader className="pb-2 bg-gradient-to-r from-orange-100 to-yellow-50">
-                    <CardTitle className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-orange-700">
-                        {courtNumber}コート予約
-                      </span>
-                      <div className="flex flex-col items-end gap-0.5">
-                        <span className="text-[10px] font-bold text-white bg-orange-500 px-1.5 py-0.5 rounded-full">
-                          {getCategoryLabel(match.tournament_type)}
-                        </span>
-                        <span className="text-[10px] font-medium text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">
-                          {getRoundLabel(match)}
-                        </span>
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-2">
-                    <div className="space-y-2">
-                      <div className="bg-white p-2 rounded border border-orange-200">
-                        <p className="font-bold text-slate-800 text-center text-xs">
-                          {match.player1?.name || "未登録"}
-                          {match.player3?.id && ` / ${match.player3.name}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <span className="text-[10px] font-bold text-slate-400">VS</span>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-orange-200">
-                        <p className="font-bold text-slate-800 text-center text-xs">
-                          {match.player2?.name || "未登録"}
-                          {match.player4?.id && ` / ${match.player4.name}`}
-                        </p>
-                      </div>
-
-                      <div className={`flex items-center justify-center gap-2 px-2 py-1 rounded text-xs ${
-                        remainingMinutes > 0
-                          ? 'text-orange-600 bg-orange-100'
-                          : 'text-green-600 bg-green-100'
-                      }`}>
-                        <Clock className="w-3 h-3" />
-                        <span className="font-bold">
-                          {remainingMinutes > 0 ? `あと${remainingMinutes}分` : '✓ 休憩完了'}
-                        </span>
-                      </div>
-
-                      {remainingMinutes > 0 ? (
-                        // 休憩中（まだ時間が残っている）
-                        <Button
-                          onClick={() => handleCancelBreak(match.id)}
-                          variant="outline"
-                          size="sm"
-                          className="w-full border-orange-400 text-orange-700 hover:bg-orange-100 h-7 text-xs"
-                        >
-                          ⏭️ 休憩をスキップ（即時復帰可能）
-                        </Button>
-                      ) : (
-                        // 休憩完了（復帰可能）
-                        <>
-                          {showAddBreakFor === match.id ? (
-                            <div className="bg-orange-50 border border-orange-200 rounded p-2 space-y-1.5">
-                              <p className="text-[10px] font-bold text-orange-800">追加休憩時間を選択:</p>
-                              <div className="grid grid-cols-4 gap-1">
-                                {[5, 10, 15, 20].map(minutes => (
-                                  <Button
-                                    key={minutes}
-                                    onClick={() => handleAddBreak(match.id, match.reserved_court_id!, minutes)}
-                                    size="sm"
-                                    variant="outline"
-                                    className="border-orange-300 text-orange-700 hover:bg-orange-100 h-7 text-xs px-1"
-                                  >
-                                    {minutes}分
-                                  </Button>
-                                ))}
-                              </div>
-                              <Button
-                                onClick={() => setShowAddBreakFor(null)}
-                                variant="ghost"
-                                size="sm"
-                                className="w-full text-[10px] h-6"
-                              >
-                                キャンセル
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <Button
-                                onClick={() => handleStartOnReservedCourt(match.id)}
-                                variant="default"
-                                size="sm"
-                                className="bg-green-500 hover:bg-green-600 text-white h-7 text-xs"
-                              >
-                                ▶️ 試合開始
-                              </Button>
-                              <Button
-                                onClick={() => setShowAddBreakFor(match.id)}
-                                variant="outline"
-                                size="sm"
-                                className="border-orange-400 text-orange-700 hover:bg-orange-100 h-7 text-xs"
-                              >
-                                ➕ 休憩延長
-                              </Button>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <p className="text-sm text-slate-600 mt-1">各コートで進行中の試合のスコアを直接入力できます</p>
         </div>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {courts.map((court) => {
-          const courtNumber = court.number || court.id.replace('court_', '');
-          const isOccupied = !!court.current_match_id;
-          const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
+        {/* 休憩中の試合 */}
+        {breakingMatches.length > 0 && (
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-orange-700 mb-2 flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              休憩中の試合
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {breakingMatches.map((match) => {
+                const remainingMinutes = match.available_at
+                  ? Math.max(0, Math.ceil((match.available_at.toMillis() - currentTime) / (1000 * 60)))
+                  : 0;
+                const courtNumber = match.reserved_court_id
+                  ? courts.find(c => c.id === match.reserved_court_id)?.number || '?'
+                  : '?';
 
-          return (
-            <Card key={court.id} className={`relative ${isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
-              <CardHeader className={`pb-2 ${isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}>
-                <CardTitle className="flex items-center justify-between">
-                  <span className={`text-xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
-                    {courtNumber}コート
-                  </span>
-                  {match && (
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full">
-                        {getCategoryLabel(match.tournament_type)}
-                      </span>
-                      <span className="text-[10px] font-medium text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded-full">
-                        {getRoundLabel(match)}
-                      </span>
-                      {match.division && (
-                        <span className="text-[10px] font-medium text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
-                          {match.division}部
+                return (
+                  <Card key={match.id} className="border-orange-300 bg-orange-50">
+                    <CardHeader className="pb-2 bg-gradient-to-r from-orange-100 to-yellow-50">
+                      <CardTitle className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-orange-700">
+                          {courtNumber}コート予約
                         </span>
-                      )}
-                    </div>
-                  )}
-                </CardTitle>
-              </CardHeader>
-
-              <CardContent className="pt-2">
-                {isOccupied && match ? (
-                  <div className="space-y-2">
-                    {/* 選手表示 */}
-                    <div className="space-y-1.5">
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <p className="font-bold text-slate-800 text-center text-sm">
-                          {match.player1?.name || "未登録"}
-                          {match.player3?.id && ` / ${match.player3.name}`}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-center">
-                        <span className="text-[10px] font-bold text-slate-400">VS</span>
-                      </div>
-
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <p className="font-bold text-slate-800 text-center text-sm">
-                          {match.player2?.name || "未登録"}
-                          {match.player4?.id && ` / ${match.player4.name}`}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* ステータス表示（管理者画面：callingも「試合中」と表示） */}
-                    {match.status === 'calling' && (
-                      <div className="flex items-center justify-center gap-2 text-yellow-600 bg-yellow-50 px-2 py-1 rounded text-xs">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-500"></span>
-                        </span>
-                        <span className="font-bold">試合中</span>
-                        {getElapsedTime(match) && (
-                          <>
-                            <Clock className="w-3 h-3 ml-1" />
-                            <span className="font-mono">{getElapsedTime(match)}</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {match.status === 'playing' && (
-                      <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 px-2 py-1 rounded text-xs">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span className="font-bold">試合中</span>
-                        {getElapsedTime(match) && (
-                          <>
-                            <span className="font-mono font-bold">{getElapsedTime(match)}</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {/* スコア入力（結果入力ボタンクリック時に表示） */}
-                    {match.status === 'completed' ? (
-                      <div className="bg-green-50 border border-green-200 rounded p-2">
-                        <p className="text-center text-green-800 font-bold text-xs mb-1">試合終了</p>
-                        <div className="flex justify-center gap-3 text-xl font-bold">
-                          <span className={match.winner_id === match.player1_id ? 'text-green-600' : 'text-gray-400'}>
-                            {match.score_p1}
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[10px] font-bold text-white bg-orange-500 px-1.5 py-0.5 rounded-full">
+                            {getCategoryLabel(match.tournament_type)}
                           </span>
-                          <span className="text-gray-400">-</span>
-                          <span className={match.winner_id === match.player2_id ? 'text-green-600' : 'text-gray-400'}>
-                            {match.score_p2}
+                          <span className="text-[10px] font-medium text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">
+                            {getRoundLabel(match)}
                           </span>
                         </div>
-                      </div>
-                    ) : (
-                      <>
-                        {showInputFor === match.id ? (
-                          <div className="space-y-2 mt-2">
-                            <div className="flex gap-1.5 items-center">
-                              <Input
-                                type="number"
-                                min="0"
-                                placeholder="0"
-                                value={scores[match.id]?.p1 || ''}
-                                onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
-                                className="text-center text-base font-bold h-8"
-                                disabled={submitting === match.id}
-                              />
-                              <span className="text-slate-400 font-bold text-sm">-</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                placeholder="0"
-                                value={scores[match.id]?.p2 || ''}
-                                onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
-                                className="text-center text-base font-bold h-8"
-                                disabled={submitting === match.id}
-                              />
-                            </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      <div className="space-y-2">
+                        <div className="bg-white p-2 rounded border border-orange-200">
+                          <p className="font-bold text-slate-800 text-center text-xs">
+                            {match.player1?.name || "未登録"}
+                            {match.player3?.id && ` / ${match.player3.name}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-400">VS</span>
+                        </div>
+                        <div className="bg-white p-2 rounded border border-orange-200">
+                          <p className="font-bold text-slate-800 text-center text-xs">
+                            {match.player2?.name || "未登録"}
+                            {match.player4?.id && ` / ${match.player4.name}`}
+                          </p>
+                        </div>
 
-                            <Button
-                              onClick={() => handleSubmit(match, court.id)}
-                              disabled={submitting === match.id}
-                              className="w-full bg-sky-500 hover:bg-sky-600 h-8 text-xs"
-                              size="sm"
-                            >
-                              {submitting === match.id ? '送信中...' : '結果を確定'}
-                            </Button>
+                        <div className={`flex items-center justify-center gap-2 px-2 py-1 rounded text-xs ${remainingMinutes > 0
+                            ? 'text-orange-600 bg-orange-100'
+                            : 'text-green-600 bg-green-100'
+                          }`}>
+                          <Clock className="w-3 h-3" />
+                          <span className="font-bold">
+                            {remainingMinutes > 0 ? `あと${remainingMinutes}分` : '✓ 休憩完了'}
+                          </span>
+                        </div>
 
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <Button
-                                onClick={() => handleWalkover(match, court.id, 1)}
-                                disabled={submitting === match.id}
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs"
-                              >
-                                上側 WO
-                              </Button>
-                              <Button
-                                onClick={() => handleWalkover(match, court.id, 2)}
-                                disabled={submitting === match.id}
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs"
-                              >
-                                下側 WO
-                              </Button>
-                            </div>
-
-                            <Button
-                              onClick={() => setShowInputFor(null)}
-                              variant="ghost"
-                              size="sm"
-                              className="w-full h-7 text-xs"
-                            >
-                              閉じる
-                            </Button>
-                          </div>
+                        {remainingMinutes > 0 ? (
+                          // 休憩中（まだ時間が残っている）
+                          <Button
+                            onClick={() => handleCancelBreak(match.id)}
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-orange-400 text-orange-700 hover:bg-orange-100 h-7 text-xs"
+                          >
+                            ⏭️ 休憩をスキップ（即時復帰可能）
+                          </Button>
                         ) : (
-                          <div className="space-y-2 mt-2">
-                            <div className="grid grid-cols-4 gap-1.5">
-                              <Button
-                                onClick={() => setShowInputFor(match.id)}
-                                variant="outline"
-                                size="sm"
-                                className="border-sky-300 text-sky-700 hover:bg-sky-50 text-xs px-1"
-                              >
-                                結果入力
-                              </Button>
-                              <Button
-                                onClick={() => handleShowCourtChange(match.id)}
-                                variant="outline"
-                                size="sm"
-                                className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs px-1"
-                              >
-                                コート変更
-                              </Button>
-                              <Button
-                                onClick={() => setShowBreakFor(match.id)}
-                                variant="outline"
-                                size="sm"
-                                className="border-orange-300 text-orange-700 hover:bg-orange-50 text-xs px-1"
-                              >
-                                休憩
-                              </Button>
-                              <Button
-                                onClick={() => handleFreeCourt(court.id)}
-                                variant="outline"
-                                size="sm"
-                                className="border-slate-300 text-slate-600 hover:bg-slate-50 text-xs px-1"
-                              >
-                                フリー
-                              </Button>
-                            </div>
-
-                            {/* コート変更ダイアログ */}
-                            {showCourtChangeFor === match.id && (
-                              <div className="bg-purple-50 border border-purple-200 rounded p-2 space-y-1.5">
-                                <p className="text-[10px] font-bold text-purple-800">移動先のコートを選択:</p>
-                                <div className="grid grid-cols-4 gap-1">
-                                  {availableCourts.map(c => {
-                                    const num = c.number || c.id.replace('court_', '');
-                                    return (
-                                      <Button
-                                        key={c.id}
-                                        onClick={() => handleCourtChange(match.id, c.id)}
-                                        size="sm"
-                                        variant="outline"
-                                        className="border-purple-300 text-purple-700 hover:bg-purple-100 h-7 text-xs px-1"
-                                      >
-                                        {num}
-                                      </Button>
-                                    );
-                                  })}
-                                </div>
-                                <Button
-                                  onClick={() => setShowCourtChangeFor(null)}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full text-[10px] h-6"
-                                >
-                                  キャンセル
-                                </Button>
-                              </div>
-                            )}
-
-                            {/* 休憩時間選択ダイアログ */}
-                            {showBreakFor === match.id && (
+                          // 休憩完了（復帰可能）
+                          <>
+                            {showAddBreakFor === match.id ? (
                               <div className="bg-orange-50 border border-orange-200 rounded p-2 space-y-1.5">
-                                <p className="text-[10px] font-bold text-orange-800">休憩時間を選択:</p>
+                                <p className="text-[10px] font-bold text-orange-800">追加休憩時間を選択:</p>
                                 <div className="grid grid-cols-4 gap-1">
                                   {[5, 10, 15, 20].map(minutes => (
                                     <Button
                                       key={minutes}
-                                      onClick={() => handleSetBreak(match.id, court.id, minutes)}
+                                      onClick={() => handleAddBreak(match.id, match.reserved_court_id!, minutes)}
                                       size="sm"
                                       variant="outline"
                                       className="border-orange-300 text-orange-700 hover:bg-orange-100 h-7 text-xs px-1"
@@ -812,7 +524,7 @@ export default function ResultsTab() {
                                   ))}
                                 </div>
                                 <Button
-                                  onClick={() => setShowBreakFor(null)}
+                                  onClick={() => setShowAddBreakFor(null)}
                                   variant="ghost"
                                   size="sm"
                                   className="w-full text-[10px] h-6"
@@ -820,40 +532,328 @@ export default function ResultsTab() {
                                   キャンセル
                                 </Button>
                               </div>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <Button
+                                  onClick={() => handleStartOnReservedCourt(match.id)}
+                                  variant="default"
+                                  size="sm"
+                                  className="bg-green-500 hover:bg-green-600 text-white h-7 text-xs"
+                                >
+                                  ▶️ 試合開始
+                                </Button>
+                                <Button
+                                  onClick={() => setShowAddBreakFor(match.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-orange-400 text-orange-700 hover:bg-orange-100 h-7 text-xs"
+                                >
+                                  ➕ 休憩延長
+                                </Button>
+                              </div>
                             )}
-                          </div>
+                          </>
                         )}
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-3">
-                    <Users className={`w-8 h-8 mb-1.5 ${court.manually_freed ? 'text-amber-300' : 'text-slate-300'}`} />
-                    <span className={`text-xs font-medium ${court.manually_freed ? 'text-amber-600' : 'text-slate-400'}`}>
-                      フリー
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {courts.map((court) => {
+            const courtNumber = court.number || court.id.replace('court_', '');
+            const isOccupied = !!court.current_match_id;
+            const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
+
+            return (
+              <Card key={court.id} className={`relative ${isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
+                <CardHeader className={`pb-2 ${isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}>
+                  <CardTitle className="flex items-center justify-between">
+                    <span className={`text-xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
+                      {courtNumber}コート
                     </span>
-                    {court.manually_freed ? (
-                      <>
-                        <span className="text-[10px] text-amber-500 mt-0.5 font-medium">🔒 自動割り当て無効</span>
-                        <Button
-                          onClick={() => handleResumeAllocation(court.id)}
-                          variant="outline"
-                          size="sm"
-                          className="mt-2 border-amber-400 text-amber-700 hover:bg-amber-50 h-7 text-xs px-2"
-                        >
-                          ▶️ 割り当て再開
-                        </Button>
-                      </>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 mt-0.5">自由に使用できます</span>
+                    {match && (
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full">
+                          {getCategoryLabel(match.tournament_type)}
+                        </span>
+                        <span className="text-[10px] font-medium text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded-full">
+                          {getRoundLabel(match)}
+                        </span>
+                        {match.division && (
+                          <span className="text-[10px] font-medium text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                            {match.division}部
+                          </span>
+                        )}
+                      </div>
                     )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                  </CardTitle>
+                </CardHeader>
+
+                <CardContent className="pt-2">
+                  {isOccupied && match ? (
+                    <div className="space-y-2">
+                      {/* 選手表示 */}
+                      <div className="space-y-1.5">
+                        <div className="bg-white p-2 rounded border border-slate-200">
+                          <p className="font-bold text-slate-800 text-center text-sm">
+                            {match.player1?.name || "未登録"}
+                            {match.player3?.id && ` / ${match.player3.name}`}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-400">VS</span>
+                        </div>
+
+                        <div className="bg-white p-2 rounded border border-slate-200">
+                          <p className="font-bold text-slate-800 text-center text-sm">
+                            {match.player2?.name || "未登録"}
+                            {match.player4?.id && ` / ${match.player4.name}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* ステータス表示（管理者画面：callingも「試合中」と表示） */}
+                      {match.status === 'calling' && (
+                        <div className="flex items-center justify-center gap-2 text-yellow-600 bg-yellow-50 px-2 py-1 rounded text-xs">
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-500"></span>
+                          </span>
+                          <span className="font-bold">試合中</span>
+                          {getElapsedTime(match) && (
+                            <>
+                              <Clock className="w-3 h-3 ml-1" />
+                              <span className="font-mono">{getElapsedTime(match)}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {match.status === 'playing' && (
+                        <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 px-2 py-1 rounded text-xs">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span className="font-bold">試合中</span>
+                          {getElapsedTime(match) && (
+                            <>
+                              <span className="font-mono font-bold">{getElapsedTime(match)}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* スコア入力（結果入力ボタンクリック時に表示） */}
+                      {match.status === 'completed' ? (
+                        <div className="bg-green-50 border border-green-200 rounded p-2">
+                          <p className="text-center text-green-800 font-bold text-xs mb-1">試合終了</p>
+                          <div className="flex justify-center gap-3 text-xl font-bold">
+                            <span className={match.winner_id === match.player1_id ? 'text-green-600' : 'text-gray-400'}>
+                              {match.score_p1}
+                            </span>
+                            <span className="text-gray-400">-</span>
+                            <span className={match.winner_id === match.player2_id ? 'text-green-600' : 'text-gray-400'}>
+                              {match.score_p2}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {showInputFor === match.id ? (
+                            <div className="space-y-2 mt-2">
+                              <div className="flex gap-1.5 items-center">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  placeholder="0"
+                                  value={scores[match.id]?.p1 || ''}
+                                  onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
+                                  className="text-center text-base font-bold h-8"
+                                  disabled={submitting === match.id}
+                                />
+                                <span className="text-slate-400 font-bold text-sm">-</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  placeholder="0"
+                                  value={scores[match.id]?.p2 || ''}
+                                  onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
+                                  className="text-center text-base font-bold h-8"
+                                  disabled={submitting === match.id}
+                                />
+                              </div>
+
+                              <Button
+                                onClick={() => handleSubmit(match, court.id)}
+                                disabled={submitting === match.id}
+                                className="w-full bg-sky-500 hover:bg-sky-600 h-8 text-xs"
+                                size="sm"
+                              >
+                                {submitting === match.id ? '送信中...' : '結果を確定'}
+                              </Button>
+
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <Button
+                                  onClick={() => handleWalkover(match, court.id, 1)}
+                                  disabled={submitting === match.id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                >
+                                  上側 WO
+                                </Button>
+                                <Button
+                                  onClick={() => handleWalkover(match, court.id, 2)}
+                                  disabled={submitting === match.id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                >
+                                  下側 WO
+                                </Button>
+                              </div>
+
+                              <Button
+                                onClick={() => setShowInputFor(null)}
+                                variant="ghost"
+                                size="sm"
+                                className="w-full h-7 text-xs"
+                              >
+                                閉じる
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="space-y-2 mt-2">
+                              <div className="grid grid-cols-4 gap-1.5">
+                                <Button
+                                  onClick={() => setShowInputFor(match.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-sky-300 text-sky-700 hover:bg-sky-50 text-xs px-1"
+                                >
+                                  結果入力
+                                </Button>
+                                <Button
+                                  onClick={() => handleShowCourtChange(match.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs px-1"
+                                >
+                                  コート変更
+                                </Button>
+                                <Button
+                                  onClick={() => setShowBreakFor(match.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-orange-300 text-orange-700 hover:bg-orange-50 text-xs px-1"
+                                >
+                                  休憩
+                                </Button>
+                                <Button
+                                  onClick={() => handleFreeCourt(court.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-slate-300 text-slate-600 hover:bg-slate-50 text-xs px-1"
+                                >
+                                  フリー
+                                </Button>
+                              </div>
+
+                              {/* コート変更ダイアログ */}
+                              {showCourtChangeFor === match.id && (
+                                <div className="bg-purple-50 border border-purple-200 rounded p-2 space-y-1.5">
+                                  <p className="text-[10px] font-bold text-purple-800">移動先のコートを選択:</p>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {availableCourts.map(c => {
+                                      const num = c.number || c.id.replace('court_', '');
+                                      return (
+                                        <Button
+                                          key={c.id}
+                                          onClick={() => handleCourtChange(match.id, c.id)}
+                                          size="sm"
+                                          variant="outline"
+                                          className="border-purple-300 text-purple-700 hover:bg-purple-100 h-7 text-xs px-1"
+                                        >
+                                          {num}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                  <Button
+                                    onClick={() => setShowCourtChangeFor(null)}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full text-[10px] h-6"
+                                  >
+                                    キャンセル
+                                  </Button>
+                                </div>
+                              )}
+
+                              {/* 休憩時間選択ダイアログ */}
+                              {showBreakFor === match.id && (
+                                <div className="bg-orange-50 border border-orange-200 rounded p-2 space-y-1.5">
+                                  <p className="text-[10px] font-bold text-orange-800">休憩時間を選択:</p>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {[5, 10, 15, 20].map(minutes => (
+                                      <Button
+                                        key={minutes}
+                                        onClick={() => handleSetBreak(match.id, court.id, minutes)}
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-orange-300 text-orange-700 hover:bg-orange-100 h-7 text-xs px-1"
+                                      >
+                                        {minutes}分
+                                      </Button>
+                                    ))}
+                                  </div>
+                                  <Button
+                                    onClick={() => setShowBreakFor(null)}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full text-[10px] h-6"
+                                  >
+                                    キャンセル
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-3">
+                      <Users className={`w-8 h-8 mb-1.5 ${court.manually_freed ? 'text-amber-300' : 'text-slate-300'}`} />
+                      <span className={`text-xs font-medium ${court.manually_freed ? 'text-amber-600' : 'text-slate-400'}`}>
+                        フリー
+                      </span>
+                      {court.manually_freed ? (
+                        <>
+                          <span className="text-[10px] text-amber-500 mt-0.5 font-medium">🔒 自動割り当て無効</span>
+                          <Button
+                            onClick={() => handleResumeAllocation(court.id)}
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 border-amber-400 text-amber-700 hover:bg-amber-50 h-7 text-xs px-2"
+                          >
+                            ▶️ 割り当て再開
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 mt-0.5">自由に使用できます</span>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </>
   );
