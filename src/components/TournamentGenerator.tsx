@@ -68,7 +68,7 @@ interface MatchData {
  * 予選グループの試合データを生成（総当たり戦）
  */
 function generateGroupStageMatches(
-  pairs: [Player, Player][],
+  pairs: ([Player, Player] | [Player, Player, Player])[],
   groupCount: number,
   campId: string,
   tournamentType: TournamentType,
@@ -79,7 +79,7 @@ function generateGroupStageMatches(
   const groupLabels: TeamGroup[] = ['A', 'B', 'C', 'D'];
 
   // ペアをグループに振り分け
-  const groups: { [key in TeamGroup]?: [Player, Player][] } = {};
+  const groups: { [key in TeamGroup]?: ([Player, Player] | [Player, Player, Player])[] } = {};
   const pairsPerGroup = Math.ceil(pairs.length / groupCount);
 
   for (let i = 0; i < groupCount; i++) {
@@ -112,8 +112,10 @@ function generateGroupStageMatches(
           court_id: null,
           player1_id: pair1[0].id,
           player3_id: pair1[1].id,
+          ...(pair1.length === 3 && { player5_id: pair1[2].id }),
           player2_id: pair2[0].id,
           player4_id: pair2[1].id,
+          ...(pair2.length === 3 && { player6_id: pair2[2].id }),
           score_p1: 0,
           score_p2: 0,
           winner_id: null,
@@ -366,10 +368,9 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
       if (currentState.format === 'group-stage-knockout') {
         // ===== 予選リーグ + 決勝トーナメント =====
 
-        // 予選グループの試合を生成（3人ペアは除外）
-        const pairsForGroup = pairs.filter(p => p.length === 2) as [Player, Player][];
+        // 予選グループの試合を生成（3人ペアも含む）
         const groupMatches = generateGroupStageMatches(
-          pairsForGroup,
+          pairs,
           groupCount,
           camp.id,
           currentState.tournamentType,
@@ -568,14 +569,13 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
             matchData.player4_id = slot.player4?.id || "";
 
             // 3人ペアの場合、5人目と6人目も配置
-            const slotAny = slot as any;
-            if (slotAny.player5) {
-              (matchData as any).player5_id = slotAny.player5.id || "";
-              console.log(`[3人ペア] Match ${matchData.id}: player5_id = ${slotAny.player5.name}`);
+            if (slot.player5) {
+              matchData.player5_id = slot.player5.id || "";
+              console.log(`[3人ペア] Match ${matchData.id}: player5_id = ${slot.player5.name}`);
             }
-            if (slotAny.player6) {
-              (matchData as any).player6_id = slotAny.player6.id || "";
-              console.log(`[3人ペア] Match ${matchData.id}: player6_id = ${slotAny.player6.name}`);
+            if (slot.player6) {
+              matchData.player6_id = slot.player6.id || "";
+              console.log(`[3人ペア] Match ${matchData.id}: player6_id = ${slot.player6.name}`);
             }
           } else {
             // シングルス: player3_id, player4_id は省略（undefinedを避ける）
@@ -622,16 +622,19 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
               const nextMatchRef = doc(db, 'matches', nextMatchDocId);
 
               // 次の試合のデータを準備（位置に応じて設定）
+              // ※ この updateDoc は実際には実行されない（第2ループで処理する）
+              const isByeWinnerTeamA = byeWinner === slot.player1;
+              const byePartner = isByeWinnerTeamA ? slot.player3 : slot.player4;
               const nextMatchUpdate: any = {};
               if (nextPosition === 1) {
                 nextMatchUpdate.player1_id = byeWinner.id;
-                if (isDoubles && slot.player3) {
-                  nextMatchUpdate.player3_id = slot.player3.id;
+                if (isDoubles && byePartner) {
+                  nextMatchUpdate.player3_id = byePartner.id;
                 }
               } else {
                 nextMatchUpdate.player2_id = byeWinner.id;
-                if (isDoubles && slot.player3) {
-                  nextMatchUpdate.player4_id = slot.player3.id;
+                if (isDoubles && byePartner) {
+                  nextMatchUpdate.player4_id = byePartner.id;
                 }
               }
 
@@ -696,27 +699,29 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
             updated_at: Timestamp.now(),
           };
 
+          // byeWinner がどちらのチームか（Team A = player1 側、Team B = player2 側）で
+          // パートナーと3人目を正しく選択する
+          const isByeWinnerTeamA = byeWinner === byeSlot.player1;
+          const byePartner = isByeWinnerTeamA ? byeSlot.player3 : byeSlot.player4;
+          const byeThirdMember = isByeWinnerTeamA ? byeSlot.player5 : byeSlot.player6;
+
           if (nextPosition === 1) {
             nextMatchUpdate.player1_id = byeWinner.id;
-            if (isDoubles && byeSlot.player3) {
-              nextMatchUpdate.player3_id = byeSlot.player3.id;
+            if (isDoubles && byePartner) {
+              nextMatchUpdate.player3_id = byePartner.id;
             }
-            // 3人ペアの場合、5人目も進出
-            const byeSlotAny = byeSlot as any;
-            if (isDoubles && byeSlotAny.player5) {
-              nextMatchUpdate.player5_id = byeSlotAny.player5.id;
-              console.log(`[Bye進出] 3人ペアの5人目: ${byeSlotAny.player5.name}`);
+            if (isDoubles && byeThirdMember) {
+              nextMatchUpdate.player5_id = byeThirdMember.id;
+              console.log(`[Bye進出] 3人ペアの3人目(→player5): ${byeThirdMember.name}`);
             }
           } else {
             nextMatchUpdate.player2_id = byeWinner.id;
-            if (isDoubles && byeSlot.player3) {
-              nextMatchUpdate.player4_id = byeSlot.player3.id;
+            if (isDoubles && byePartner) {
+              nextMatchUpdate.player4_id = byePartner.id;
             }
-            // 3人ペアの場合、6人目も進出
-            const byeSlotAny = byeSlot as any;
-            if (isDoubles && byeSlotAny.player6) {
-              nextMatchUpdate.player6_id = byeSlotAny.player6.id;
-              console.log(`[Bye進出] 3人ペアの6人目: ${byeSlotAny.player6.name}`);
+            if (isDoubles && byeThirdMember) {
+              nextMatchUpdate.player6_id = byeThirdMember.id;
+              console.log(`[Bye進出] 3人ペアの3人目(→player6): ${byeThirdMember.name}`);
             }
           }
 

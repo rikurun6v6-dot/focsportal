@@ -14,6 +14,8 @@ export interface TournamentSlot {
   player2?: Player;
   player3?: Player;       // ダブルスのペア
   player4?: Player;       // ダブルスのペア
+  player5?: Player;       // 3人ペア用（player1チームの3人目）
+  player6?: Player;       // 3人ペア用（player2チームの3人目）
   isBye: boolean;         // 不戦勝かどうか
   nextMatchId?: string;   // 次の試合のID（例: "2_1"）
 }
@@ -177,10 +179,8 @@ export function generatePowerOf2Bracket(
       if (isDoubles && Array.isArray(p1)) {
         slot.player1 = p1[0];
         slot.player3 = p1[1];
-        // 3人ペアの場合、3人目を player5 に配置（暫定）
-        // 注: TournamentSlot型にplayer5フィールドが必要
         if (p1.length === 3) {
-          (slot as any).player5 = p1[2];
+          slot.player5 = p1[2];
           console.log(`[3人ペア検出] Slot ${slot.slotId}: ${p1[0].name} / ${p1[1].name} / ${p1[2].name}`);
         }
       } else if (!Array.isArray(p1)) {
@@ -194,9 +194,8 @@ export function generatePowerOf2Bracket(
       if (isDoubles && Array.isArray(p2)) {
         slot.player2 = p2[0];
         slot.player4 = p2[1];
-        // 3人ペアの場合、3人目を player6 に配置（暫定）
         if (p2.length === 3) {
-          (slot as any).player6 = p2[2];
+          slot.player6 = p2[2];
           console.log(`[3人ペア検出] Slot ${slot.slotId}: ${p2[0].name} / ${p2[1].name} / ${p2[2].name}`);
         }
       } else if (!Array.isArray(p2)) {
