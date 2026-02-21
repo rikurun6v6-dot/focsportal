@@ -136,7 +136,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
 
             // シングルス・ダブルスの自動判定
             const isSingles = tournamentType.includes('singles');
-            const isDoubles = !isSingles && (match.player3_id !== undefined || match.player4_id !== undefined);
+            const isDoubles = !isSingles && (!!match.player3_id || !!match.player4_id);
 
             // ダブルスの場合のみ、ペア選手の名前も含める
             if (isDoubles) {
@@ -168,7 +168,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                         const mainPlayerName = getPlayerName(byePlayerId);
                         // ダブルスの場合はペア選手も表示
                         const isSingles = tournamentType.includes('singles');
-                        const isDoubles = !isSingles && (sourceMatch.player3_id !== undefined || sourceMatch.player4_id !== undefined);
+                        const isDoubles = !isSingles && (!!sourceMatch.player3_id || !!sourceMatch.player4_id);
 
                         if (isDoubles) {
                             const pairPlayerId = sourceMatch.player1_id ? sourceMatch.player3_id : sourceMatch.player4_id;

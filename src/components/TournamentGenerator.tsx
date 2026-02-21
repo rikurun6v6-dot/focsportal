@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { collection, query, where, writeBatch, doc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
-import { generateRandomPairs, generateMixedPairs, generateTournamentBracket, generateSinglesMatches } from "@/lib/tournament-generator";
+import { generateRandomPairs, generateMixedPairs, generateSinglesMatches } from "@/lib/tournament-generator";
 import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-helpers";
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
@@ -60,6 +60,9 @@ interface MatchData {
   next_match_id?: string;
   next_match_number?: number;
   next_match_position?: number;
+  is_walkover?: boolean;
+  walkover_winner?: 1 | 2;
+  subtitle?: string;
   created_at?: unknown;
   updated_at?: unknown;
 }
@@ -378,71 +381,133 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
           defaultPoints
         );
 
-        // 決勝トーナメントの枠を生成（プレースホルダー）
+        // ===== 決勝トーナメント枠を生成（2^k >= N アルゴリズム）=====
+        // N人の予選通過者に対し最小の2^k枠を計算し、余った枠をBYEとして上位シードに配置する。
+        // これにより「決勝が必ず単独で最終ラウンドに1試合だけ存在する」構造が保証される。
         const qualifierCount = groupCount * qualifiersPerGroup;
-        const bracket = generateTournamentBracket(qualifierCount);
+        const bracketSize = calculateBracketSize(qualifierCount);  // 2^k >= N
+        const totalRounds = calculateRounds(bracketSize);           // log2(bracketSize)
+        const byeCount = bracketSize - qualifierCount;              // 上位シードが得るBYE数
+        const round1Total = bracketSize / 2;                        // 1回戦の総スロット数
 
-        let knockoutMatches: MatchData[] = [];
-        let matchNumber = groupMatches.length + 1; // 予選の後から番号を継続
+        // 試合番号マップを事前計算（"round_pos" -> match_number）
+        const matchNumMap = new Map<string, number>();
+        let nextMN = groupMatches.length + 1;
+        for (let pos = 1; pos <= round1Total; pos++) {
+          matchNumMap.set(`1_${pos}`, nextMN++);
+        }
+        for (let round = 2; round <= totalRounds; round++) {
+          const count = bracketSize / Math.pow(2, round);
+          for (let pos = 1; pos <= count; pos++) {
+            matchNumMap.set(`${round}_${pos}`, nextMN++);
+          }
+        }
+        const has3rdPlace = totalRounds >= 2;
+        if (has3rdPlace) {
+          matchNumMap.set('3rd', nextMN++);
+        }
 
-        for (let round = 1; round <= bracket.rounds; round++) {
-          const matchesInRound = bracket.matchesPerRound[round - 1];
+        const knockoutMatches: MatchData[] = [];
+
+        // --- 1回戦 ---
+        // 最初の byeCount 枠が上位シードのBYE。残りは予選後に選手が入るプレースホルダー。
+        for (let pos = 1; pos <= round1Total; pos++) {
+          const isBye = pos <= byeCount;
+          const pointsForRound = pointsByRound[1] || defaultPoints;
+          const nextPos = Math.ceil(pos / 2);
+          const nextMatchNum = totalRounds >= 2 ? matchNumMap.get(`2_${nextPos}`) : undefined;
+          const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
+
+          knockoutMatches.push({
+            campId: camp.id,
+            tournament_type: currentState.tournamentType,
+            division: division,
+            round: 1,
+            match_number: matchNumMap.get(`1_${pos}`)!,
+            phase: 'knockout' as const,
+            status: 'waiting',
+            court_id: null,
+            player1_id: '',
+            player2_id: '',
+            player3_id: '',
+            player4_id: '',
+            score_p1: 0,
+            score_p2: 0,
+            winner_id: null,
+            start_time: null,
+            end_time: null,
+            points_per_match: pointsForRound,
+            // BYE枠：is_walkover=true でKnockoutTreeがシード表示する
+            ...(isBye ? { is_walkover: true, walkover_winner: 1 as const } : {}),
+            ...(totalRounds >= 2 ? { next_match_number: nextMatchNum, next_match_position: nextMatchPos } : {}),
+          });
+        }
+
+        // --- 2回戦以降（準々決勝・準決勝・決勝）---
+        for (let round = 2; round <= totalRounds; round++) {
+          const matchesInRound = bracketSize / Math.pow(2, round);
           const pointsForRound = pointsByRound[round] || defaultPoints;
+          const isLastRound = round === totalRounds;
 
-          for (let m = 0; m < matchesInRound; m++) {
+          for (let pos = 1; pos <= matchesInRound; pos++) {
+            const nextPos = Math.ceil(pos / 2);
+            const nextMatchNum = !isLastRound ? matchNumMap.get(`${round + 1}_${nextPos}`) : undefined;
+            const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
+
             knockoutMatches.push({
               campId: camp.id,
               tournament_type: currentState.tournamentType,
               division: division,
               round: round,
-              match_number: matchNumber++,
+              match_number: matchNumMap.get(`${round}_${pos}`)!,
               phase: 'knockout' as const,
               status: 'waiting',
               court_id: null,
-              player1_id: '', // 予選後に決定
-              player2_id: '', // 予選後に決定
-              player3_id: '', // ダブルスの場合
-              player4_id: '', // ダブルスの場合
+              player1_id: '',
+              player2_id: '',
+              player3_id: '',
+              player4_id: '',
               score_p1: 0,
               score_p2: 0,
               winner_id: null,
               start_time: null,
               end_time: null,
               points_per_match: pointsForRound,
+              ...(!isLastRound ? { next_match_number: nextMatchNum, next_match_position: nextMatchPos } : {}),
             });
           }
         }
 
-        // 3位決定戦を追加（準決勝が2試合以上ある場合）
-        const semiFinalRound = bracket.rounds - 1; // 準決勝のラウンド番号
-        const semiFinalMatches = bracket.matchesPerRound[semiFinalRound - 1];
-
-        if (semiFinalMatches >= 2) {
-          const pointsFor3rdPlace = pointsByRound[bracket.rounds] || pointsByRound[bracket.rounds - 1] || defaultPoints;
-
+        // --- 3位決定戦 ---
+        // subtitle: '3位決定戦' を付けることでVisualBracketのフィルターが正しく除外し、
+        // 決勝は round=totalRounds に唯一の1試合として表示される
+        if (has3rdPlace) {
+          const pointsFor3rd = pointsByRound[totalRounds] || pointsByRound[totalRounds - 1] || defaultPoints;
           knockoutMatches.push({
             campId: camp.id,
             tournament_type: currentState.tournamentType,
             division: division,
-            round: bracket.rounds, // 決勝と同じラウンド（3位決定戦）
-            match_number: matchNumber++,
+            round: totalRounds,
+            match_number: matchNumMap.get('3rd')!,
             phase: 'knockout' as const,
             status: 'waiting',
             court_id: null,
-            player1_id: '', // 準決勝敗者1
-            player2_id: '', // 準決勝敗者2
-            player3_id: '', // ダブルスの場合
-            player4_id: '', // ダブルスの場合
+            player1_id: '',
+            player2_id: '',
+            player3_id: '',
+            player4_id: '',
             score_p1: 0,
             score_p2: 0,
             winner_id: null,
             start_time: null,
             end_time: null,
-            points_per_match: pointsFor3rdPlace,
+            points_per_match: pointsFor3rd,
+            subtitle: '3位決定戦',
           });
-
-          console.log('[トーナメント生成] 3位決定戦を追加しました');
+          console.log(`[トーナメント生成] 3位決定戦を追加 (round=${totalRounds})`);
         }
+
+        console.log(`[トーナメント生成] knockout: qualifiers=${qualifierCount}, bracket=${bracketSize}枠, rounds=${totalRounds}, byes=${byeCount}`)
 
         // すべての試合をFirestoreに保存（500件ごとにバッチ分割）
         const allMatches = [...groupMatches, ...knockoutMatches];
@@ -490,7 +555,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
           loading: false,
           result: {
             matchCount: allMatches.length,
-            roundCount: bracket.rounds
+            roundCount: totalRounds
           }
         }));
 

@@ -494,7 +494,7 @@ export async function updateMatchResult(
           nextMatchUpdate.player3_id = winnerPartnerId;
         }
         // 3人ペアの場合、5人目も進出
-        const winner3rdId = isWinner1 ? (currentMatch as any).player5_id : (currentMatch as any).player6_id;
+        const winner3rdId = isWinner1 ? currentMatch.player5_id : currentMatch.player6_id;
         if (winner3rdId) {
           nextMatchUpdate.player5_id = winner3rdId;
           console.log(`[進出処理] 3人ペアの5人目を進出: ${winner3rdId}`);
@@ -506,7 +506,7 @@ export async function updateMatchResult(
           nextMatchUpdate.player4_id = winnerPartnerId;
         }
         // 3人ペアの場合、6人目も進出
-        const winner3rdId = isWinner1 ? (currentMatch as any).player5_id : (currentMatch as any).player6_id;
+        const winner3rdId = isWinner1 ? currentMatch.player5_id : currentMatch.player6_id;
         if (winner3rdId) {
           nextMatchUpdate.player6_id = winner3rdId;
           console.log(`[進出処理] 3人ペアの6人目を進出: ${winner3rdId}`);
@@ -749,15 +749,15 @@ export async function getMatchWithPlayers(matchId: string): Promise<MatchWithPla
   }
 
   // 3人ペアの場合
-  const matchAny = match as any;
-  if (matchAny.player5_id) {
-    const player5 = await getPlayerById(matchAny.player5_id);
-    if (player5) (result as any).player5 = player5;
+
+  if (match.player5_id) {
+    const player5 = await getPlayerById(match.player5_id);
+    if (player5) result.player5 = player5;
   }
 
-  if (matchAny.player6_id) {
-    const player6 = await getPlayerById(matchAny.player6_id);
-    if (player6) (result as any).player6 = player6;
+  if (match.player6_id) {
+    const player6 = await getPlayerById(match.player6_id);
+    if (player6) result.player6 = player6;
   }
 
   return result;

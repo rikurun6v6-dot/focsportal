@@ -208,7 +208,13 @@ function calculateConnectionLines(
 function isMatchBye(match: Match, round: number): boolean {
   // Round 1 のみ Bye 判定を行う
   if (round === 1) {
-    return !match.player1_id || !match.player2_id;
+    // is_walkover=true は生成時に明示的にBYEとしてマークされた上位シード枠
+    if (match.is_walkover) return true;
+    // 片方だけ選手が存在する = グループ順位管理後のシード枠（XOR判定）
+    // 両方空 = 予選結果待ちのプレースホルダー（BYEではない）
+    const hasP1 = !!match.player1_id;
+    const hasP2 = !!match.player2_id;
+    return hasP1 !== hasP2;
   }
   // Round 2 以降は常に実戦として扱う
   return false;
@@ -403,7 +409,7 @@ export default function KnockoutTree({
                       );
                     }
 
-                    const isDoubles = match.player3_id !== undefined;
+                    const isDoubles = !!match.player3_id;
                     const isLastRound = roundIndex === rounds.length - 1;
                     const isBye = isMatchBye(match, round);
 
@@ -462,9 +468,9 @@ export default function KnockoutTree({
                                 </span>
                               )}
                               {/* Subtitle（補足情報）の表示 - 最大3行で折り返し */}
-                              {(match as any).subtitle && (
-                                <span className="inline-block bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded-full max-w-[120px] truncate" title={(match as any).subtitle}>
-                                  {(match as any).subtitle}
+                              {match.subtitle && (
+                                <span className="inline-block bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded-full max-w-[120px] truncate" title={match.subtitle}>
+                                  {match.subtitle}
                                 </span>
                               )}
                               {/* コート番号表示（進行中または完了時） */}
