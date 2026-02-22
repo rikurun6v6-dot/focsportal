@@ -12,7 +12,7 @@ import { autoDispatchAll } from "@/lib/dispatcher";
 import { auth, db, app } from "@/lib/firebase";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { collection, query, terminate, clearIndexedDbPersistence, where, doc, setDoc, Timestamp } from "firebase/firestore";
-import TournamentGenerator from "@/components/TournamentGenerator";
+import TournamentGenerator from "@/components/admin/TournamentGenerator";
 import AutoDispatchEngine from "@/components/AutoDispatchEngine";
 import MatchResultInput from "@/components/admin/MatchResultInput";
 import ResultsTab from "@/components/admin/ResultsTab";

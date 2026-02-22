@@ -32,11 +32,11 @@ export default function PreliminaryGroup({
                     <Card
                       key={match.id}
                       className={`bg-white border shadow-sm transition-all ${
-                        match.status === 'completed'
-                          ? 'border-emerald-300'
-                          : match.status === 'playing'
-                          ? 'border-blue-400'
-                          : 'border-slate-200'
+                        match.status === "completed"
+                          ? "border-emerald-300"
+                          : match.status === "playing"
+                          ? "border-blue-400"
+                          : "border-slate-200"
                       }`}
                     >
                       <CardContent className="p-3 space-y-2 bg-white">
@@ -44,8 +44,8 @@ export default function PreliminaryGroup({
                         <div
                           className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
                             match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
-                              ? 'bg-amber-50'
-                              : 'bg-slate-50'
+                              ? "bg-amber-50"
+                              : "bg-slate-50"
                           }`}
                         >
                           <Users className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -53,6 +53,7 @@ export default function PreliminaryGroup({
                             <div className="break-words font-medium">
                               {getPlayerName(match.player1_id)}
                               {match.player3_id && ` / ${getPlayerName(match.player3_id)}`}
+                              {match.player5_id && ` / ${getPlayerName(match.player5_id)}`}
                             </div>
                             {match.seed_p1 && (
                               <span className="inline-block mt-1 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">
@@ -60,7 +61,7 @@ export default function PreliminaryGroup({
                               </span>
                             )}
                           </div>
-                          {match.status === 'completed' && (
+                          {match.status === "completed" && (
                             <span className="ml-auto font-bold shrink-0 text-slate-900">
                               {match.score_p1}
                             </span>
@@ -71,8 +72,8 @@ export default function PreliminaryGroup({
                         <div
                           className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
                             match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
-                              ? 'bg-amber-50'
-                              : 'bg-slate-50'
+                              ? "bg-amber-50"
+                              : "bg-slate-50"
                           }`}
                         >
                           <Users className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -80,6 +81,7 @@ export default function PreliminaryGroup({
                             <div className="break-words font-medium">
                               {getPlayerName(match.player2_id)}
                               {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
+                              {match.player6_id && ` / ${getPlayerName(match.player6_id)}`}
                             </div>
                             {match.seed_p2 && (
                               <span className="inline-block mt-1 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">
@@ -87,24 +89,24 @@ export default function PreliminaryGroup({
                               </span>
                             )}
                           </div>
-                          {match.status === 'completed' && (
+                          {match.status === "completed" && (
                             <span className="ml-auto font-bold shrink-0 text-slate-900">
                               {match.score_p2}
                             </span>
                           )}
                         </div>
 
-                        {match.status === 'playing' && (
+                        {match.status === "playing" && (
                           <p className="text-xs text-blue-700 font-medium text-center bg-blue-50 border border-blue-200 rounded py-1">
                             試合中
                           </p>
                         )}
-                        {match.status === 'calling' && (
+                        {match.status === "calling" && (
                           <p className="text-xs text-orange-700 font-medium text-center bg-orange-50 border border-orange-200 rounded py-1">
                             呼出中
                           </p>
                         )}
-                        {match.phase === 'preliminary' && (
+                        {match.phase === "preliminary" && (
                           <p className="text-xs text-violet-600 font-medium text-center mt-1 pt-2 border-t border-slate-200">
                             予選リーグ戦
                           </p>
@@ -128,10 +130,15 @@ export default function PreliminaryGroup({
               const matches = groupMatches[group] || [];
               const pairIds = new Set<string>();
               matches.forEach(m => {
-                pairIds.add(m.player1_id + (m.player3_id ? `-${m.player3_id}` : ''));
-                pairIds.add(m.player2_id + (m.player4_id ? `-${m.player4_id}` : ''));
+                const key1 = [m.player1_id, m.player3_id, m.player5_id].filter(Boolean).join("-");
+                const key2 = [m.player2_id, m.player4_id, m.player6_id].filter(Boolean).join("-");
+                pairIds.add(key1);
+                pairIds.add(key2);
               });
               const pairs = Array.from(pairIds);
+
+              const pairLabel = (pairId: string) =>
+                pairId.split("-").map(id => getPlayerName(id)).join(" / ");
 
               return (
                 <div key={group} className="min-w-max">
@@ -140,45 +147,44 @@ export default function PreliminaryGroup({
                     <thead>
                       <tr>
                         <th className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700"></th>
-                        {pairs.map((pairId, idx) => {
-                          const [p1, p3] = pairId.split('-');
-                          return (
-                            <th key={idx} className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700">
-                              {getPlayerName(p1)}{p3 && `/${getPlayerName(p3)}`}
-                            </th>
-                          );
-                        })}
+                        {pairs.map((pairId, idx) => (
+                          <th key={idx} className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700">
+                            {pairLabel(pairId)}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {pairs.map((pairId1, rowIdx) => {
-                        const [p1, p3] = pairId1.split('-');
+                        const [p1, p3, p5] = pairId1.split("-");
                         return (
                           <tr key={rowIdx}>
                             <td className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700">
-                              {getPlayerName(p1)}{p3 && `/${getPlayerName(p3)}`}
+                              {pairLabel(pairId1)}
                             </td>
                             {pairs.map((pairId2, colIdx) => {
                               if (pairId1 === pairId2) {
                                 return <td key={colIdx} className="border border-slate-200 p-2 text-center text-xs font-bold bg-slate-100 text-slate-400">-</td>;
                               }
-                              const [p2, p4] = pairId2.split('-');
+                              const [p2, p4, p6] = pairId2.split("-");
                               const match = matches.find(m =>
-                                (m.player1_id === p1 && (m.player3_id || '') === (p3 || '') && m.player2_id === p2 && (m.player4_id || '') === (p4 || '')) ||
-                                (m.player2_id === p1 && (m.player4_id || '') === (p3 || '') && m.player1_id === p2 && (m.player3_id || '') === (p4 || ''))
+                                (m.player1_id === p1 && (m.player3_id || "") === (p3 || "") && (m.player5_id || "") === (p5 || "") &&
+                                  m.player2_id === p2 && (m.player4_id || "") === (p4 || "") && (m.player6_id || "") === (p6 || "")) ||
+                                (m.player2_id === p1 && (m.player4_id || "") === (p3 || "") && (m.player6_id || "") === (p5 || "") &&
+                                  m.player1_id === p2 && (m.player3_id || "") === (p4 || "") && (m.player5_id || "") === (p6 || ""))
                               );
-                              if (!match || match.status !== 'completed') {
+                              if (!match || match.status !== "completed") {
                                 return <td key={colIdx} className="border border-slate-200 p-2 text-center text-xs bg-white text-slate-300">-</td>;
                               }
                               const isWin = (match.player1_id === p1 && match.winner_id === match.player1_id) ||
-                                            (match.player2_id === p1 && match.winner_id === match.player2_id);
+                                (match.player2_id === p1 && match.winner_id === match.player2_id);
                               return (
                                 <td key={colIdx} className={`border border-slate-200 p-2 text-center text-xs font-bold ${
                                   isWin
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-red-50 text-red-700'
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-red-50 text-red-700"
                                 }`}>
-                                  {isWin ? '○' : '●'}
+                                  {isWin ? "○" : "●"}
                                 </td>
                               );
                             })}
