@@ -34,20 +34,18 @@ export default function PreliminaryGroup({
                   return (
                     <Card
                       key={match.id}
-                      className={`border shadow-sm transition-all ${
-                        match.status === 'completed'
+                      className={`border shadow-sm transition-all ${match.status === 'completed'
                           ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700'
                           : match.status === 'playing'
-                          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
-                          : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
-                      }`}
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+                        }`}
                     >
                       <CardContent className="p-3 space-y-2">
-                        <div className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
-                          match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
+                        <div className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
                             ? 'bg-amber-100 dark:bg-amber-900/30 font-bold'
                             : 'bg-slate-50 dark:bg-slate-700/50'
-                        }`}>
+                          }`}>
                           <Users className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0 text-xs leading-relaxed">
                             <div className="break-words">
@@ -68,11 +66,10 @@ export default function PreliminaryGroup({
                             </span>
                           )}
                         </div>
-                        <div className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
-                          match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
+                        <div className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
                             ? 'bg-amber-100 dark:bg-amber-900/30 font-bold'
                             : 'bg-slate-50 dark:bg-slate-700/50'
-                        }`}>
+                          }`}>
                           <Users className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0 text-xs leading-relaxed">
                             <div className="break-words">
@@ -170,11 +167,10 @@ export default function PreliminaryGroup({
                                 return <td key={colIdx} className="border border-slate-300 p-2 text-center text-xs text-slate-400">-</td>;
                               }
                               const isWin = (match.player1_id === p1 && match.winner_id === match.player1_id) ||
-                                            (match.player2_id === p1 && match.winner_id === match.player2_id);
+                                (match.player2_id === p1 && match.winner_id === match.player2_id);
                               return (
-                                <td key={colIdx} className={`border border-slate-300 p-2 text-center text-xs font-bold ${
-                                  isWin ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                }`}>
+                                <td key={colIdx} className={`border border-slate-300 p-2 text-center text-xs font-bold ${isWin ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                  }`}>
                                   {isWin ? '○' : '●'}
                                 </td>
                               );
