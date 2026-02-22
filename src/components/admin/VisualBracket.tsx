@@ -437,7 +437,6 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                 <PreliminaryGroup
                                     groups={groups}
                                     groupMatches={groupMatches}
-                                    getPlayerDisplay={getPlayerDisplay}
                                     getPlayerName={getPlayerName}
                                 />
                             )}
