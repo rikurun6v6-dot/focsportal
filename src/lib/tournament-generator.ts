@@ -45,13 +45,14 @@ export function generateRandomPairs(
 
 /**
  * 混合ダブルス用のペアを生成（男女1名ずつ）
+ * 余った同性選手はペア同士で組み、1名余った場合は既存ペアの3人目に追加する
  */
 export function generateMixedPairs(
   players: Player[],
   division: Division
-): { pairs: [Player, Player][]; errors: string[] } {
+): { pairs: ([Player, Player] | [Player, Player, Player])[]; errors: string[] } {
   const errors: string[] = [];
-  const pairs: [Player, Player][] = [];
+  const pairs: ([Player, Player] | [Player, Player, Player])[] = [];
 
   // 男女別にフィルタリング（playersは既にdivisionとis_activeでフィルタ済み）
   const males = players.filter(p => p.gender?.toString().toLowerCase().trim() === 'male');
@@ -62,19 +63,44 @@ export function generateMixedPairs(
     return { pairs, errors };
   }
 
-  const minCount = Math.min(males.length, females.length);
-  
-  if (males.length !== females.length) {
-    errors.push(`男女の人数が異なります（男性${males.length}名、女性${females.length}名）。${minCount}組のみ作成します。`);
-  }
-
   // シャッフル
   const shuffledMales = [...males].sort(() => Math.random() - 0.5);
   const shuffledFemales = [...females].sort(() => Math.random() - 0.5);
 
-  // ペアを作成
+  const minCount = Math.min(shuffledMales.length, shuffledFemales.length);
+
+  // 混合ペアを作成
   for (let i = 0; i < minCount; i++) {
     pairs.push([shuffledMales[i], shuffledFemales[i]]);
+  }
+
+  // 余った選手を処理（多い方の性別が余る）
+  const leftoverMales = shuffledMales.slice(minCount);
+  const leftoverFemales = shuffledFemales.slice(minCount);
+  const leftovers = [...leftoverMales, ...leftoverFemales];
+
+  if (leftovers.length > 0) {
+    const genderLabel = leftoverMales.length > 0 ? '男性' : '女性';
+    // 2名以上余った場合：同性同士でペアを組む
+    for (let i = 0; i + 1 < leftovers.length; i += 2) {
+      pairs.push([leftovers[i], leftovers[i + 1]]);
+    }
+    // 奇数余り（1名残る）: 既存ペアの3人目として追加
+    if (leftovers.length % 2 === 1) {
+      const solo = leftovers[leftovers.length - 1];
+      if (pairs.length > 0) {
+        const target = pairs[pairs.length - 1] as [Player, Player];
+        pairs[pairs.length - 1] = [target[0], target[1], solo] as [Player, Player, Player];
+        errors.push(`${genderLabel}が1名余りました。${target[0].name}/${target[1].name} ペアの3人目として ${solo.name} を追加しました。`);
+      } else {
+        errors.push(`${solo.name} はペアを組める相手がいないため試合に参加できません。`);
+      }
+    } else if (leftovers.length > 0) {
+      errors.push(`${genderLabel}が${leftovers.length}名余りました。同性ペア${Math.floor(leftovers.length / 2)}組を追加しました。`);
+    }
+    if (males.length !== females.length) {
+      errors.push(`男女の人数が異なります（男性${males.length}名、女性${females.length}名）。全員を割り当てました。`);
+    }
   }
 
   return { pairs, errors };

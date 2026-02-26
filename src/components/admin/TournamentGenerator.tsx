@@ -576,7 +576,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
         console.log('[トーナメント生成] 参加者数:', participants.length);
 
         // 2の累乗ブラケットを生成
-        const bracket = generatePowerOf2Bracket(participants as (Player | [Player, Player])[], isDoubles);
+        const bracket = generatePowerOf2Bracket(participants as (Player | [Player, Player] | [Player, Player, Player])[], isDoubles);
 
         console.log('[トーナメント生成] ブラケット生成完了:', {
           totalSlots: bracket.totalSlots,

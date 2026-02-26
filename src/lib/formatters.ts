@@ -14,7 +14,7 @@ export function getRoundName(currentRound: number, totalRounds: number): string 
   if (currentRound === totalRounds - 2) {
     return '準々決勝';
   }
-  return `第${currentRound}回戦`;
+  return `${currentRound}回戦`;
 }
 
 /**

@@ -219,6 +219,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         if (!roundGroups[m.round]) roundGroups[m.round] = [];
         roundGroups[m.round].push(m);
     });
+    // ブラケット接続線を正しくするためにラウンド内をmatch_number順にソート
+    Object.keys(roundGroups).forEach(r => {
+        roundGroups[Number(r)].sort((a, b) => (a.match_number || 0) - (b.match_number || 0));
+    });
 
     const maxRound = Math.max(...Object.keys(roundGroups).map(Number), 0);
     const rounds = Array.from({ length: maxRound }, (_, i) => i + 1);

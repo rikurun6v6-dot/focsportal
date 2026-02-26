@@ -42,6 +42,8 @@ export default function ResultsTab() {
   const [showBreakFor, setShowBreakFor] = useState<string | null>(null);
   const [breakingMatches, setBreakingMatches] = useState<MatchWithPlayers[]>([]);
   const [showAddBreakFor, setShowAddBreakFor] = useState<string | null>(null);
+  // 種目ごとの最大ラウンド数（全試合から算出）
+  const [maxRoundByType, setMaxRoundByType] = useState<Record<string, number>>({});
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -58,6 +60,16 @@ export default function ResultsTab() {
     const fetchBreakingMatches = async () => {
       try {
         const allMatches = await getAllDocuments<Match>('matches');
+
+        // 種目ごとの最大ラウンドを計算（全試合ベース）
+        const byType: Record<string, number> = {};
+        allMatches.forEach(m => {
+          if (!m.tournament_type || !m.division || !m.round) return;
+          const key = `${m.tournament_type}_${m.division}`;
+          if (!byType[key] || m.round > byType[key]) byType[key] = m.round;
+        });
+        setMaxRoundByType(byType);
+
         const breaking = allMatches.filter(m =>
           m.campId === camp.id &&
           m.status === 'waiting' &&
@@ -381,15 +393,9 @@ export default function ResultsTab() {
 
   const getRoundLabel = (match: MatchWithPlayers | null) => {
     if (!match) return "-";
-
-    // 種目ごとにtotalRoundsを計算
-    const allMatches = courts.flatMap(c => c.current_match_id ? [matchesCache[c.current_match_id]] : []).filter(Boolean) as MatchWithPlayers[];
-    const sameTypeMatches = allMatches.filter(m =>
-      m.tournament_type === match.tournament_type &&
-      m.division === match.division
-    );
-    const maxRound = sameTypeMatches.length > 0 ? Math.max(...sameTypeMatches.map(m => m.round)) : match.round;
-
+    // 全試合から計算したmaxRoundByTypeを使用（現在コート上の試合のみではなく全体から算出）
+    const key = `${match.tournament_type}_${match.division}`;
+    const maxRound = maxRoundByType[key] || match.round;
     return getRoundName(match.round, maxRound);
   };
 
