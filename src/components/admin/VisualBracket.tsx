@@ -131,14 +131,44 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     };
 
     const getPlayerDisplay = (playerId: string | undefined, match: Match, position: 1 | 2) => {
+        const isSingles = tournamentType.includes('singles');
+
+        // 2回戦以降: 前ラウンドのソース試合を特定
+        // next_match_number（グループステージ方式）と next_match_id（シンプルブラケット方式）の両方を参照
+        let sourceMatch: Match | undefined;
+        if (match.phase === 'knockout' && match.round > 1) {
+            const prevRoundMatches = knockoutMatches.filter(m => m.round === match.round - 1);
+            sourceMatch = prevRoundMatches.find(m =>
+                (m.next_match_number === match.match_number && m.next_match_position === position) ||
+                (m.next_match_id === match.id && m.next_match_position === position)
+            );
+        }
+
+        // ソース試合がBYEの場合: 常にソース試合から選手名を再計算（保存済みの古いplayer_idを無視）
+        // これにより PairSeedManager でペアを変更した直後も正しい選手名が即座に表示される
+        if (sourceMatch && isByeMatch(sourceMatch)) {
+            const byePlayerId = sourceMatch.player1_id || sourceMatch.player2_id;
+            if (byePlayerId) {
+                const mainPlayerName = getPlayerName(byePlayerId);
+                const byeIsDoubles = !isSingles && (!!sourceMatch.player3_id || !!sourceMatch.player4_id);
+                if (byeIsDoubles) {
+                    const isP1Side = !!sourceMatch.player1_id;
+                    const pairPlayerId = isP1Side ? sourceMatch.player3_id : sourceMatch.player4_id;
+                    const thirdPlayerId = isP1Side ? sourceMatch.player5_id : sourceMatch.player6_id;
+                    if (pairPlayerId) {
+                        const pairPlayerName = getPlayerName(pairPlayerId);
+                        const thirdPlayerName = thirdPlayerId ? ` / ${getPlayerName(thirdPlayerId)}` : '';
+                        return `${mainPlayerName} / ${pairPlayerName}${thirdPlayerName}`;
+                    }
+                }
+                return mainPlayerName;
+            }
+        }
+
+        // Firestoreに保存済みのplayer_idがある場合（実際の試合結果で確定した選手）
         if (playerId && playerId !== '') {
             const mainPlayerName = getPlayerName(playerId);
-
-            // シングルス・ダブルスの自動判定
-            const isSingles = tournamentType.includes('singles');
             const isDoubles = !isSingles && (!!match.player3_id || !!match.player4_id);
-
-            // ダブルスの場合のみ、ペア選手の名前も含める（3人ペアにも対応）
             if (isDoubles) {
                 const pairPlayerId = position === 1 ? match.player3_id : match.player4_id;
                 const thirdPlayerId = position === 1 ? match.player5_id : match.player6_id;
@@ -148,51 +178,16 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     return `${mainPlayerName} / ${pairPlayerName}${thirdPlayerName}`;
                 }
             }
-
-            // シングルスの場合は1人の名前のみ返す
             return mainPlayerName;
         }
 
-        // 空の場合、前の試合から来ることを表示
-        if (match.phase === 'knockout' && match.round > 1) {
-            // 前ラウンドの試合を探す
-            const prevRoundMatches = knockoutMatches.filter(m => m.round === match.round - 1);
-            const sourceMatch = prevRoundMatches.find(m =>
-                m.next_match_number === match.match_number && m.next_match_position === position
-            );
-
-            if (sourceMatch) {
-                // 前の試合がBye（シード）の場合、選手名を直接表示
-                if (isByeMatch(sourceMatch)) {
-                    // Bye試合の選手を特定（player1_id または player2_id のどちらかが存在）
-                    const byePlayerId = sourceMatch.player1_id || sourceMatch.player2_id;
-                    if (byePlayerId) {
-                        const mainPlayerName = getPlayerName(byePlayerId);
-                        // ダブルスの場合はペア選手も表示
-                        const isSingles = tournamentType.includes('singles');
-                        const isDoubles = !isSingles && (!!sourceMatch.player3_id || !!sourceMatch.player4_id);
-
-                        if (isDoubles) {
-                            const isP1Side = !!sourceMatch.player1_id;
-                            const pairPlayerId = isP1Side ? sourceMatch.player3_id : sourceMatch.player4_id;
-                            const thirdPlayerId = isP1Side ? sourceMatch.player5_id : sourceMatch.player6_id;
-                            if (pairPlayerId) {
-                                const pairPlayerName = getPlayerName(pairPlayerId);
-                                const thirdPlayerName = thirdPlayerId ? ` / ${getPlayerName(thirdPlayerId)}` : '';
-                                return `${mainPlayerName} / ${pairPlayerName}${thirdPlayerName}`;
-                            }
-                        }
-                        return mainPlayerName;
-                    }
-                }
-
-                // Byeでない場合は従来通り「第○試合の勝者」と表示
-                const actualMatchNum = getActualMatchNumber(sourceMatch);
-                return `${getUnifiedRoundName(sourceMatch, maxRound)} 第${actualMatchNum}試合の勝者`;
-            }
+        // player_idが空: 非BYEのソース試合からの勝者表示
+        if (sourceMatch) {
+            const actualMatchNum = getActualMatchNumber(sourceMatch);
+            return `${getUnifiedRoundName(sourceMatch, maxRound)} 第${actualMatchNum}試合の勝者`;
         }
 
-        // 予選リーグからの勝ち上がりの場合
+        // 予選リーグからの勝ち上がり
         if (match.phase === 'knockout' && match.round === 1 && match.group) {
             return `予選 [${match.group}] ${position}位`;
         }

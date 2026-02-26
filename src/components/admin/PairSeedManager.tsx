@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getMatchesByTournament, getAllPlayers, updateDocument } from "@/lib/firestore-helpers";
+import { getMatchesByTournament, getAllPlayers, updateDocument, propagateByePlayerChange } from "@/lib/firestore-helpers";
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType } from "@/types";
 import { Users, Award, Save } from "lucide-react";
@@ -54,6 +54,9 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
         setMessage("");
         let savedCount = 0;
         try {
+            // 全試合データを取得（BYE伝播の構造参照に使用）
+            const allMatches = await getMatchesByTournament(tournamentType, camp!.id);
+
             for (const match of matches) {
                 if (!match.id) {
                     console.warn('[PairSeedManager] match.id が空のためスキップ:', match);
@@ -72,6 +75,14 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                 console.log(`[PairSeedManager] 保存: matches/${match.id}`, payload);
                 await updateDocument('matches', match.id, payload);
                 savedCount++;
+
+                // BYE試合（片方のみ選手がいる）の場合、次ラウンドに変更を伝播
+                const hasP1 = !!match.player1_id;
+                const hasP2 = !!match.player2_id;
+                if ((hasP1 !== hasP2) && match.next_match_id) {
+                    const updatedMatch = { ...match, ...payload } as Match;
+                    await propagateByePlayerChange(updatedMatch, allMatches);
+                }
             }
             setMessage(`✓ ${savedCount}試合のペア・シード設定を保存しました`);
         } catch (error: any) {

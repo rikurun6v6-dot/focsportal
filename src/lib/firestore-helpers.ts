@@ -536,6 +536,57 @@ export async function getActiveMatches(): Promise<Match[]> {
   ]);
 }
 
+/**
+ * BYE試合（不戦勝）のプレイヤー変更を次ラウンドに連動させる。
+ * PairSeedManagerで1回戦のペアを変更した後に呼び出す。
+ * 次のラウンドもBYEであれば再帰的に伝播する。
+ *
+ * @param changedMatch 変更済みの試合データ（新しいplayer_idを含む）
+ * @param allMatches   同一トーナメントの全試合（構造参照用）
+ */
+export async function propagateByePlayerChange(
+  changedMatch: Match,
+  allMatches: Match[]
+): Promise<void> {
+  // BYE判定: 片方のみ選手が存在する
+  const hasPlayer1 = !!changedMatch.player1_id;
+  const hasPlayer2 = !!changedMatch.player2_id;
+  const isBye = hasPlayer1 !== hasPlayer2;
+
+  if (!isBye) return;
+  if (!changedMatch.next_match_id) return;
+
+  // 次の試合を構造参照で探す
+  const nextMatch = allMatches.find(m => m.id === changedMatch.next_match_id);
+  if (!nextMatch) return;
+
+  // 進出者はプレイヤーが存在する側
+  const isPlayer1Winner = hasPlayer1;
+
+  // 次の試合での位置（1=上側 / 2=下側）
+  const position: 1 | 2 = changedMatch.next_match_position ??
+    ((changedMatch.match_number ?? 0) % 2 === 1 ? 1 : 2);
+
+  // 更新フィールドを構築
+  const update: Record<string, unknown> = {};
+  if (position === 1) {
+    update.player1_id = isPlayer1Winner ? changedMatch.player1_id : changedMatch.player2_id;
+    update.player3_id = (isPlayer1Winner ? changedMatch.player3_id : changedMatch.player4_id) || null;
+    update.player5_id = (isPlayer1Winner ? changedMatch.player5_id : changedMatch.player6_id) || null;
+  } else {
+    update.player2_id = isPlayer1Winner ? changedMatch.player1_id : changedMatch.player2_id;
+    update.player4_id = (isPlayer1Winner ? changedMatch.player3_id : changedMatch.player4_id) || null;
+    update.player6_id = (isPlayer1Winner ? changedMatch.player5_id : changedMatch.player6_id) || null;
+  }
+
+  console.log(`[BYE伝播] ${changedMatch.id} → ${changedMatch.next_match_id} (pos ${position})`, update);
+  await updateDocument('matches', changedMatch.next_match_id, update);
+
+  // 次の試合もBYEなら再帰的に伝播（連続BYEへの対応）
+  const updatedNextMatch = { ...nextMatch, ...update } as Match;
+  await propagateByePlayerChange(updatedNextMatch, allMatches);
+}
+
 export async function updateMatchStatus(
   matchId: string,
   status: MatchStatus
