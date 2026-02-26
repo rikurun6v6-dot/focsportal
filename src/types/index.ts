@@ -311,3 +311,46 @@ export const SCORE_CONFIG: Record<EventType, (round: number, maxRound: number) =
   TEAM: () => 11,
 };
 
+
+// ===== 新団体戦モード (TeamEncounter System) =====
+
+/** 種目の種類（選手割り当てなし） */
+export type TeamGameType = 'MD' | 'WD' | 'XD' | 'MS' | 'WS';
+
+/** 種目構成設定 */
+export interface TeamMatchConfig {
+  games: { type: TeamGameType; count: number }[];
+}
+
+/** 1種目スロット */
+export interface TeamGame {
+  id: string;        // 例: "MD_1", "WD_1"
+  type: TeamGameType;
+  winner: 1 | 2 | null; // 1=team1勝, 2=team2勝
+}
+
+/** チーム間の1対戦 */
+export interface TeamEncounter {
+  id: string;
+  campId?: string;
+  team1_id: string;
+  team2_id: string;
+  games: TeamGame[];
+  team1_wins: number;
+  team2_wins: number;
+  winner_id: string | null;
+  phase: 'preliminary' | 'knockout';
+  group?: string;
+  round?: number;
+  completed: boolean;
+  next_encounter_id?: string;
+  next_encounter_position?: 1 | 2;
+}
+
+/** グループ順位エントリー */
+export interface TeamRankEntry {
+  teamId: string;
+  wins: number;
+  losses: number;
+  gameDiff: number; // 種目勝利数の差分合計
+}

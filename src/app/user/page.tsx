@@ -13,7 +13,7 @@ import MyMatchesView from "@/components/MyMatchesView";
 import ActiveMatchesView from "@/components/ActiveMatchesView";
 import { searchPlayerByName } from "@/lib/eta";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import type { ETAResult, Player, Match, Camp } from "@/types";
 import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy } from "lucide-react";
@@ -166,6 +166,7 @@ export default function UserDashboard() {
     const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
     const [players, setPlayers] = useState<Player[]>([]);
     const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null);
+    const [campStatus, setCampStatus] = useState<'setup' | 'active' | 'archived' | null>(null);
 
     const USER_GUIDE_KEY = 'user_guide_completed';
 
@@ -210,6 +211,7 @@ export default function UserDashboard() {
             const campData = JSON.parse(storedCamp);
             setMyPlayer(player);
             setManualCamp(campData);
+            setCampStatus(campData.status ?? null);
 
             // 初回アクセス時のみガイドを表示
             if (!guideCompleted) {
@@ -276,6 +278,28 @@ export default function UserDashboard() {
 
         return () => unsubscribe();
     }, [camp]);
+
+    // 大会ステータスのリアルタイム購読
+    useEffect(() => {
+        if (!camp) return;
+
+        const campRef = doc(db, 'camps', camp.id);
+        const unsubscribe = onSnapshot(
+            campRef,
+            (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.data();
+                    setCampStatus(data.status as 'setup' | 'active' | 'archived');
+                }
+            },
+            (error) => {
+                console.error('[onSnapshot Error] 合宿ステータス監視エラー:', error);
+            }
+        );
+
+        return () => unsubscribe();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [camp?.id]);
 
     useEffect(() => {
         if (!myPlayer || !camp) return;
@@ -620,6 +644,24 @@ export default function UserDashboard() {
             <main className="container mx-auto px-4 py-6 max-w-4xl space-y-6">
                 {alertComponent}
 
+                {campStatus === 'archived' ? (
+                    <Card className="border-t-4 border-t-slate-400 bg-white shadow-sm">
+                        <CardContent className="py-16 text-center space-y-4">
+                            <Trophy className="w-12 h-12 mx-auto text-slate-300" />
+                            <h2 className="text-xl font-bold text-slate-600">この大会は終了しました</h2>
+                            <p className="text-sm text-slate-500">ご参加ありがとうございました。</p>
+                        </CardContent>
+                    </Card>
+                ) : campStatus === 'setup' ? (
+                    <Card className="border-t-4 border-t-amber-400 bg-white shadow-sm">
+                        <CardContent className="py-16 text-center space-y-4">
+                            <Clock className="w-12 h-12 mx-auto text-amber-300" />
+                            <h2 className="text-xl font-bold text-slate-600">大会はまだ開始されていません</h2>
+                            <p className="text-sm text-slate-500">管理者が開催するまでしばらくお待ちください。</p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <>
                 <Card className={`border-l-4 shadow-sm overflow-hidden bg-white border-l-${statusColor}-500`}>
                     <CardHeader className={`bg-${statusColor}-50/50 pb-3`}>
                         <CardTitle className={`text-base md:text-lg flex items-center gap-2 text-${statusColor}-800`}>
@@ -736,6 +778,8 @@ export default function UserDashboard() {
                         )}
                     </CardContent>
                 </Card>
+                    </>
+                )}
             </main>
 
             {/* ヘルプボタン（左下固定） */}
