@@ -36,9 +36,9 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
         fetchData();
     }, [tournamentType, camp]);
 
-    const handlePlayerChange = (matchIndex: number, playerKey: 'player1_id' | 'player2_id' | 'player3_id' | 'player4_id', newPlayerId: string) => {
+    const handlePlayerChange = (matchIndex: number, playerKey: 'player1_id' | 'player2_id' | 'player3_id' | 'player4_id' | 'player5_id' | 'player6_id', newPlayerId: string) => {
         const updated = [...matches];
-        updated[matchIndex] = { ...updated[matchIndex], [playerKey]: newPlayerId };
+        updated[matchIndex] = { ...updated[matchIndex], [playerKey]: newPlayerId || undefined };
         setMatches(updated);
     };
 
@@ -52,21 +52,32 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
     const handleSave = async () => {
         setSaving(true);
         setMessage("");
+        let savedCount = 0;
         try {
             for (const match of matches) {
-                await updateDocument('matches', match.id, {
+                if (!match.id) {
+                    console.warn('[PairSeedManager] match.id が空のためスキップ:', match);
+                    continue;
+                }
+                const payload: Record<string, unknown> = {
                     player1_id: match.player1_id,
                     player2_id: match.player2_id,
-                    player3_id: match.player3_id,
-                    player4_id: match.player4_id,
-                    seed_p1: match.seed_p1,
-                    seed_p2: match.seed_p2,
-                });
+                    player3_id: match.player3_id ?? null,
+                    player4_id: match.player4_id ?? null,
+                    player5_id: match.player5_id ?? null,
+                    player6_id: match.player6_id ?? null,
+                    seed_p1: match.seed_p1 ?? null,
+                    seed_p2: match.seed_p2 ?? null,
+                };
+                console.log(`[PairSeedManager] 保存: matches/${match.id}`, payload);
+                await updateDocument('matches', match.id, payload);
+                savedCount++;
             }
-            setMessage("✓ ペア・シード設定を保存しました");
-        } catch (error) {
-            setMessage("✗ 保存に失敗しました");
-            console.error(error);
+            setMessage(`✓ ${savedCount}試合のペア・シード設定を保存しました`);
+        } catch (error: any) {
+            const detail = error?.code ? `(${error.code})` : error?.message ? `(${error.message})` : '';
+            setMessage(`✗ 保存に失敗しました ${detail}`);
+            console.error('[PairSeedManager] 保存エラー:', error);
         }
         setSaving(false);
     };
@@ -162,10 +173,11 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                 {match.seed_p1 && (
                                                     <span className="text-xs text-amber-600 font-medium">第{match.seed_p1}シード</span>
                                                 )}
+                                                {match.player5_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 flex-wrap">
                                                 <Select value={match.player1_id} onValueChange={(v) => handlePlayerChange(idx, 'player1_id', v)} disabled={readOnly}>
-                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                         <SelectValue placeholder="選手1" />
                                                     </SelectTrigger>
                                                     <SelectContent className="bg-white max-h-[200px]">
@@ -176,10 +188,23 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                 </Select>
                                                 {isDoubles && (
                                                     <Select value={match.player3_id || ''} onValueChange={(v) => handlePlayerChange(idx, 'player3_id', v)} disabled={readOnly}>
-                                                        <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                        <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                             <SelectValue placeholder="選手2" />
                                                         </SelectTrigger>
                                                         <SelectContent className="bg-white max-h-[200px]">
+                                                            {players.map(p => (
+                                                                <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                )}
+                                                {isDoubles && (
+                                                    <Select value={match.player5_id || '__none__'} onValueChange={(v) => handlePlayerChange(idx, 'player5_id', v === '__none__' ? '' : v)} disabled={readOnly}>
+                                                        <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
+                                                            <SelectValue placeholder="3人目（任意）" />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-white max-h-[200px]">
+                                                            <SelectItem value="__none__">— 3人目なし —</SelectItem>
                                                             {players.map(p => (
                                                                 <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
                                                             ))}
@@ -207,10 +232,11 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                 {match.seed_p2 && (
                                                     <span className="text-xs text-amber-600 font-medium">第{match.seed_p2}シード</span>
                                                 )}
+                                                {match.player6_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 flex-wrap">
                                                 <Select value={match.player2_id} onValueChange={(v) => handlePlayerChange(idx, 'player2_id', v)} disabled={readOnly}>
-                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                         <SelectValue placeholder="選手1" />
                                                     </SelectTrigger>
                                                     <SelectContent className="bg-white max-h-[200px]">
@@ -221,10 +247,23 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                 </Select>
                                                 {isDoubles && (
                                                     <Select value={match.player4_id || ''} onValueChange={(v) => handlePlayerChange(idx, 'player4_id', v)} disabled={readOnly}>
-                                                        <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                        <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                             <SelectValue placeholder="選手2" />
                                                         </SelectTrigger>
                                                         <SelectContent className="bg-white max-h-[200px]">
+                                                            {players.map(p => (
+                                                                <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                )}
+                                                {isDoubles && (
+                                                    <Select value={match.player6_id || '__none__'} onValueChange={(v) => handlePlayerChange(idx, 'player6_id', v === '__none__' ? '' : v)} disabled={readOnly}>
+                                                        <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
+                                                            <SelectValue placeholder="3人目（任意）" />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-white max-h-[200px]">
+                                                            <SelectItem value="__none__">— 3人目なし —</SelectItem>
                                                             {players.map(p => (
                                                                 <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
                                                             ))}
@@ -273,10 +312,11 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                             {match.seed_p1 && (
                                                                 <span className="text-xs text-amber-600 font-medium">第{match.seed_p1}シード</span>
                                                             )}
+                                                            {match.player5_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
                                                         </div>
-                                                        <div className="flex gap-2">
+                                                        <div className="flex gap-2 flex-wrap">
                                                             <Select value={match.player1_id} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player1_id', v)} disabled={readOnly}>
-                                                                <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                                <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                                     <SelectValue placeholder="選手1" />
                                                                 </SelectTrigger>
                                                                 <SelectContent className="bg-white max-h-[200px]">
@@ -287,10 +327,23 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                             </Select>
                                                             {isDoubles && (
                                                                 <Select value={match.player3_id || ''} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player3_id', v)} disabled={readOnly}>
-                                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                                         <SelectValue placeholder="選手2" />
                                                                     </SelectTrigger>
                                                                     <SelectContent className="bg-white max-h-[200px]">
+                                                                        {players.map(p => (
+                                                                            <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            )}
+                                                            {isDoubles && (
+                                                                <Select value={match.player5_id || '__none__'} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player5_id', v === '__none__' ? '' : v)} disabled={readOnly}>
+                                                                    <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
+                                                                        <SelectValue placeholder="3人目（任意）" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent className="bg-white max-h-[200px]">
+                                                                        <SelectItem value="__none__">— 3人目なし —</SelectItem>
                                                                         {players.map(p => (
                                                                             <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
                                                                         ))}
@@ -318,10 +371,11 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                             {match.seed_p2 && (
                                                                 <span className="text-xs text-amber-600 font-medium">第{match.seed_p2}シード</span>
                                                             )}
+                                                            {match.player6_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
                                                         </div>
-                                                        <div className="flex gap-2">
+                                                        <div className="flex gap-2 flex-wrap">
                                                             <Select value={match.player2_id} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player2_id', v)} disabled={readOnly}>
-                                                                <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                                <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                                     <SelectValue placeholder="選手1" />
                                                                 </SelectTrigger>
                                                                 <SelectContent className="bg-white max-h-[200px]">
@@ -332,10 +386,23 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                             </Select>
                                                             {isDoubles && (
                                                                 <Select value={match.player4_id || ''} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player4_id', v)} disabled={readOnly}>
-                                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm">
+                                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                                         <SelectValue placeholder="選手2" />
                                                                     </SelectTrigger>
                                                                     <SelectContent className="bg-white max-h-[200px]">
+                                                                        {players.map(p => (
+                                                                            <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            )}
+                                                            {isDoubles && (
+                                                                <Select value={match.player6_id || '__none__'} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player6_id', v === '__none__' ? '' : v)} disabled={readOnly}>
+                                                                    <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
+                                                                        <SelectValue placeholder="3人目（任意）" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent className="bg-white max-h-[200px]">
+                                                                        <SelectItem value="__none__">— 3人目なし —</SelectItem>
                                                                         {players.map(p => (
                                                                             <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
                                                                         ))}

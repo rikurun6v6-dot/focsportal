@@ -235,6 +235,10 @@ export interface Operation {
 export interface Pair {
   player1_id: string;
   player2_id: string;
+  player3_id?: string;
+  player4_id?: string;
+  player5_id?: string; // 3人ペア: ペア1側の3人目
+  player6_id?: string; // 3人ペア: ペア2側の3人目
   division: Division;
   tournament_type: TournamentType;
 }

@@ -182,15 +182,17 @@ export async function getDocument<T>(collectionName: string, docId: string): Pro
 
 export async function updateDocument(collectionName: string, docId: string, updates: Record<string, unknown>): Promise<void> {
   if (!docId) {
-    console.error(`Error: Missing ID for updateDocument in ${collectionName}`);
-    return;
+    const err = new Error(`[updateDocument] ドキュメントIDが空です (collection: ${collectionName})`);
+    console.error(err.message);
+    throw err;
   }
-  const docRef = doc(db, collectionName, docId);
-  const docSnap = await safeGetDoc(docRef);
-  if (!docSnap.exists()) {
-    return;
+  try {
+    const docRef = doc(db, collectionName, docId);
+    await updateDoc(docRef, { ...updates, updated_at: Timestamp.now() });
+  } catch (error: any) {
+    console.error(`[updateDocument] 更新失敗 ${collectionName}/${docId} — code: ${error?.code ?? 'unknown'}, message: ${error?.message ?? error}`);
+    throw error;
   }
-  await updateDoc(docRef, { ...updates, updated_at: Timestamp.now() });
 }
 
 export async function deleteDocument(collectionName: string, docId: string): Promise<boolean> {
