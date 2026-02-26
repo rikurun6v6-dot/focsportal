@@ -130,6 +130,20 @@ export function generateMixedPairs(
     }
   }
 
+  // ── 安全網: 全員がペアに組み込まれているか検証し、漏れた選手を最後のペアに強制合流 ──
+  const assignedIds = new Set(pairs.flatMap(p => [p[0].id, p[1].id, ...(p.length === 3 ? [p[2].id] : [])]));
+  const remainingPlayers = players.filter(p => !assignedIds.has(p.id));
+  if (remainingPlayers.length > 0 && pairs.length > 0) {
+    const player = remainingPlayers[0];
+    console.log("Adding 3rd person:", player.name);
+    const lastPair = pairs[pairs.length - 1] as [Player, Player];
+    pairs[pairs.length - 1] = [lastPair[0], lastPair[1], player] as [Player, Player, Player];
+    errors.push(`【強制追加】${player.name} を ${lastPair[0].name}/${lastPair[1].name} ペアの3人目（player5）に割り当てました。`);
+    if (remainingPlayers.length > 1) {
+      errors.push(`⚠️ さらに${remainingPlayers.length - 1}名がペア未割り当てです。手動確認が必要です。`);
+    }
+  }
+
   return { pairs, errors };
 }
 

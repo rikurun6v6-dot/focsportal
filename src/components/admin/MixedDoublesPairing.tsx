@@ -91,33 +91,37 @@ export default function MixedDoublesPairing({ division, onPairsCreated }: MixedD
                   );
                 })()}
                 <div className="grid gap-2">
-                  {pairs.map((pair, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 p-2 bg-slate-50 rounded-md text-sm"
-                    >
-                      <span className="text-slate-400 w-5 text-right">{i + 1}.</span>
-                      <span className={pair[0].gender === 'male' ? 'text-blue-700' : 'text-pink-700'}>
-                        {pair[0].name}
-                      </span>
-                      <span className="text-slate-400">/</span>
-                      <span className={pair[1].gender === 'male' ? 'text-blue-700' : 'text-pink-700'}>
-                        {pair[1].name}
-                      </span>
-                      {pair.length === 3 && (
-                        <>
-                          <span className="text-slate-400">/</span>
-                          <span className={pair[2].gender === 'male' ? 'text-blue-700' : 'text-pink-700'}>
-                            {pair[2].name}
-                          </span>
-                          <Badge className="ml-auto text-xs bg-amber-100 text-amber-700 border-amber-200">3人</Badge>
-                        </>
-                      )}
-                      {pair.length === 2 && pair[0].gender !== pair[1].gender && (
-                        <Badge className="ml-auto text-xs bg-pink-100 text-pink-700 border-pink-200">混合</Badge>
-                      )}
-                    </div>
-                  ))}
+                  {pairs.map((pair, i) => {
+                    // 3人目を明示的に取り出す（TypeScript の型絞り込みに依存しない）
+                    const player3 = pair.length >= 3 ? (pair as [Player, Player, Player])[2] : null;
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 p-2 rounded-md text-sm ${player3 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}
+                      >
+                        <span className="text-slate-400 w-5 text-right">{i + 1}.</span>
+                        <span className={pair[0].gender === 'male' ? 'text-blue-700' : 'text-pink-700'}>
+                          {pair[0].name}
+                        </span>
+                        <span className="text-slate-400">/</span>
+                        <span className={pair[1].gender === 'male' ? 'text-blue-700' : 'text-pink-700'}>
+                          {pair[1].name}
+                        </span>
+                        {player3 && (
+                          <>
+                            <span className="text-slate-400">/</span>
+                            <span className={player3.gender === 'male' ? 'text-blue-700' : 'text-pink-700'}>
+                              {player3.name}
+                            </span>
+                            <Badge className="ml-auto text-xs bg-amber-100 text-amber-700 border-amber-200">3人組</Badge>
+                          </>
+                        )}
+                        {!player3 && pair[0].gender !== pair[1].gender && (
+                          <Badge className="ml-auto text-xs bg-pink-100 text-pink-700 border-pink-200">混合</Badge>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <Button

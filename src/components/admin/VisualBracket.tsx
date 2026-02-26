@@ -138,12 +138,14 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             const isSingles = tournamentType.includes('singles');
             const isDoubles = !isSingles && (!!match.player3_id || !!match.player4_id);
 
-            // ダブルスの場合のみ、ペア選手の名前も含める
+            // ダブルスの場合のみ、ペア選手の名前も含める（3人ペアにも対応）
             if (isDoubles) {
                 const pairPlayerId = position === 1 ? match.player3_id : match.player4_id;
+                const thirdPlayerId = position === 1 ? match.player5_id : match.player6_id;
                 if (pairPlayerId) {
                     const pairPlayerName = getPlayerName(pairPlayerId);
-                    return `${mainPlayerName} / ${pairPlayerName}`;
+                    const thirdPlayerName = thirdPlayerId ? ` / ${getPlayerName(thirdPlayerId)}` : '';
+                    return `${mainPlayerName} / ${pairPlayerName}${thirdPlayerName}`;
                 }
             }
 
@@ -171,10 +173,13 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                         const isDoubles = !isSingles && (!!sourceMatch.player3_id || !!sourceMatch.player4_id);
 
                         if (isDoubles) {
-                            const pairPlayerId = sourceMatch.player1_id ? sourceMatch.player3_id : sourceMatch.player4_id;
+                            const isP1Side = !!sourceMatch.player1_id;
+                            const pairPlayerId = isP1Side ? sourceMatch.player3_id : sourceMatch.player4_id;
+                            const thirdPlayerId = isP1Side ? sourceMatch.player5_id : sourceMatch.player6_id;
                             if (pairPlayerId) {
                                 const pairPlayerName = getPlayerName(pairPlayerId);
-                                return `${mainPlayerName} / ${pairPlayerName}`;
+                                const thirdPlayerName = thirdPlayerId ? ` / ${getPlayerName(thirdPlayerId)}` : '';
+                                return `${mainPlayerName} / ${pairPlayerName}${thirdPlayerName}`;
                             }
                         }
                         return mainPlayerName;
@@ -244,7 +249,9 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         const p2Name = getPlayerName(match.player2_id).toLowerCase();
         const p3Name = match.player3_id ? getPlayerName(match.player3_id).toLowerCase() : '';
         const p4Name = match.player4_id ? getPlayerName(match.player4_id).toLowerCase() : '';
-        return p1Name.includes(query) || p2Name.includes(query) || p3Name.includes(query) || p4Name.includes(query);
+        const p5Name = match.player5_id ? getPlayerName(match.player5_id).toLowerCase() : '';
+        const p6Name = match.player6_id ? getPlayerName(match.player6_id).toLowerCase() : '';
+        return p1Name.includes(query) || p2Name.includes(query) || p3Name.includes(query) || p4Name.includes(query) || p5Name.includes(query) || p6Name.includes(query);
     };
 
     const searchResults = searchQuery.trim() ? divisionMatches.filter(isMatchingSearch) : [];
@@ -391,11 +398,13 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                                 <p className="font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
                                                     {getPlayerName(match.player1_id)}
                                                     {match.player3_id && ` / ${getPlayerName(match.player3_id)}`}
+                                                    {match.player5_id && ` / ${getPlayerName(match.player5_id)}`}
                                                 </p>
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 my-1">vs</p>
                                                 <p className="font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
                                                     {getPlayerName(match.player2_id)}
                                                     {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
+                                                    {match.player6_id && ` / ${getPlayerName(match.player6_id)}`}
                                                 </p>
                                                 {match.status === 'completed' && (
                                                     <div className="mt-2 flex items-center gap-2 text-xs font-bold">
