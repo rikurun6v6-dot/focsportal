@@ -77,7 +77,19 @@ export default function MixedDoublesPairing({ division, onPairsCreated }: MixedD
 
             {pairs.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-700">{pairs.length} ペア生成済み</p>
+                {(() => {
+                  const totalParticipants = pairs.reduce((sum, pair) => sum + pair.length, 0);
+                  const hasTriple = pairs.some(pair => pair.length === 3);
+                  return (
+                    <p className="text-sm font-medium text-slate-700">
+                      {pairs.length} ペア生成済み
+                      <span className="ml-2 text-slate-500">（参加者総数 {totalParticipants}名）</span>
+                      {hasTriple && (
+                        <Badge className="ml-2 text-xs bg-amber-100 text-amber-700 border-amber-200">3人組あり</Badge>
+                      )}
+                    </p>
+                  );
+                })()}
                 <div className="grid gap-2">
                   {pairs.map((pair, i) => (
                     <div

@@ -27,7 +27,7 @@ type TournamentGeneratorState = {
   groupCount: number;
   qualifiersPerGroup: number;
   loading: boolean;
-  result: { matchCount: number; roundCount: number } | null;
+  result: { matchCount: number; roundCount: number; warnings?: string[] } | null;
   error: string | null;
   baselineDuration11: number;
   baselineDuration15: number;
@@ -555,7 +555,8 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
           loading: false,
           result: {
             matchCount: allMatches.length,
-            roundCount: totalRounds
+            roundCount: totalRounds,
+            warnings: pairErrors.length > 0 ? pairErrors : undefined,
           }
         }));
 
@@ -806,7 +807,8 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
           loading: false,
           result: {
             matchCount: bracket.slots.length,
-            roundCount: bracket.totalRounds
+            roundCount: bracket.totalRounds,
+            warnings: pairErrors.length > 0 ? pairErrors : undefined,
           }
         }));
 
@@ -1141,6 +1143,13 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
               <AlertDescription className="text-xs">
                 <strong>{state.result.roundCount}ラウンド</strong>、合計<strong>{state.result.matchCount}試合</strong>を作成しました。
                 <br /><span className="opacity-80 mt-1 block">「結果入力」タブで試合を確認・進行してください。</span>
+                {state.result.warnings && state.result.warnings.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    {state.result.warnings.map((w, i) => (
+                      <li key={i}>⚠️ {w}</li>
+                    ))}
+                  </ul>
+                )}
               </AlertDescription>
             </Alert>
           )}

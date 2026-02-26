@@ -57,15 +57,41 @@ export function generateMixedPairs(
   // 男女別にフィルタリング（playersは既にdivisionとis_activeでフィルタ済み）
   const males = players.filter(p => p.gender?.toString().toLowerCase().trim() === 'male');
   const females = players.filter(p => p.gender?.toString().toLowerCase().trim() === 'female');
+  // 性別不明・未設定の選手を人数が少ない方のグループに振り分ける
+  const unknowns = players.filter(p => {
+    const g = p.gender?.toString().toLowerCase().trim();
+    return g !== 'male' && g !== 'female';
+  });
 
   if (males.length < 1 || females.length < 1) {
-    errors.push('男女それぞれ最低1名必要です');
-    return { pairs, errors };
+    if (unknowns.length === 0) {
+      errors.push('男女それぞれ最低1名必要です');
+      return { pairs, errors };
+    }
+  }
+
+  if (unknowns.length > 0) {
+    errors.push(`性別不明の選手が${unknowns.length}名います。人数が少ない方のグループに自動振り分けしました。`);
   }
 
   // シャッフル
   const shuffledMales = [...males].sort(() => Math.random() - 0.5);
   const shuffledFemales = [...females].sort(() => Math.random() - 0.5);
+
+  // 性別不明を人数が少ない側に順番に配分（均等になるよう交互に）
+  unknowns.forEach(p => {
+    if (shuffledMales.length <= shuffledFemales.length) {
+      shuffledMales.push(p);
+    } else {
+      shuffledFemales.push(p);
+    }
+  });
+
+  // 配分後も一方が0名の場合は全員同性ペアとして処理
+  if (shuffledMales.length < 1 || shuffledFemales.length < 1) {
+    errors.push('男女それぞれ最低1名必要です');
+    return { pairs, errors };
+  }
 
   const minCount = Math.min(shuffledMales.length, shuffledFemales.length);
 
@@ -91,6 +117,7 @@ export function generateMixedPairs(
       if (pairs.length > 0) {
         const target = pairs[pairs.length - 1] as [Player, Player];
         pairs[pairs.length - 1] = [target[0], target[1], solo] as [Player, Player, Player];
+        console.log(`[generateMixedPairs] 3人目強制合流: ${solo.name} → ${target[0].name}/${target[1].name} (${pairs.length}番目ペアのplayer5)`);
         errors.push(`${genderLabel}が1名余りました。${target[0].name}/${target[1].name} ペアの3人目として ${solo.name} を追加しました。`);
       } else {
         errors.push(`${solo.name} はペアを組める相手がいないため試合に参加できません。`);
