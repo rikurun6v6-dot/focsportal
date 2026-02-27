@@ -17,7 +17,8 @@ import {
   getAllDocuments,
   setMatchBreak,
   cancelMatchBreak,
-  startMatchOnReservedCourt
+  startMatchOnReservedCourt,
+  resetMatchResult
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
 import type { Match, Court, MatchWithPlayers } from '@/types';
@@ -44,6 +45,11 @@ export default function ResultsTab() {
   const [showAddBreakFor, setShowAddBreakFor] = useState<string | null>(null);
   // 種目ごとの最大ラウンド数（全試合から算出）
   const [maxRoundByType, setMaxRoundByType] = useState<Record<string, number>>({});
+  // 待機中の試合リスト（強制アサイン用）
+  const [waitingMatches, setWaitingMatches] = useState<MatchWithPlayers[]>([]);
+  const [showForceAssignFor, setShowForceAssignFor] = useState<string | null>(null);
+  // コートが空で試合が休息待ちの場合の警告
+  const [blockedMatchCount, setBlockedMatchCount] = useState(0);
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -86,6 +92,29 @@ export default function ResultsTab() {
         );
 
         setBreakingMatches(breakingWithPlayers.filter((m): m is MatchWithPlayers => m !== null));
+
+        // 待機中の試合（強制アサイン用）
+        const waiting = allMatches.filter(m =>
+          m.campId === camp.id &&
+          m.status === 'waiting' &&
+          m.player1_id && m.player2_id
+        );
+        const waitingWithPlayers = await Promise.all(
+          waiting.slice(0, 20).map(m => getMatchWithPlayers(m.id))
+        );
+        setWaitingMatches(waitingWithPlayers.filter((m): m is MatchWithPlayers => m !== null));
+
+        // 空コートがあるが試合が休息中の場合の検知
+        const now = Date.now();
+        const allCourtsData = await getAllDocuments<{ id: string; is_active: boolean; current_match_id: string | null; manually_freed?: boolean; campId?: string }>('courts');
+        const campCourts = allCourtsData.filter(c => c.campId === camp.id);
+        const emptyCourts = campCourts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
+        if (emptyCourts.length > 0 && waiting.length > 0) {
+          const blocked = waiting.filter(m => m.available_at && now < m.available_at.toMillis());
+          setBlockedMatchCount(blocked.length === waiting.length ? blocked.length : 0);
+        } else {
+          setBlockedMatchCount(0);
+        }
       } catch (error) {
         console.error('Error fetching breaking matches:', error);
       }
@@ -356,6 +385,43 @@ export default function ResultsTab() {
     }
   };
 
+  const handleForceAssign = async (matchId: string, courtId: string) => {
+    const confirmed = await confirm({
+      title: '⚡ 強制アサイン',
+      message: `この試合をコートに強制的に割り当てますか？`,
+      confirmText: '割り当てる',
+      cancelText: 'キャンセル',
+      type: 'info',
+    });
+    if (!confirmed) { setShowForceAssignFor(null); return; }
+    try {
+      await updateDocument('matches', matchId, { status: 'calling', court_id: courtId });
+      await updateDocument('courts', courtId, { current_match_id: matchId });
+      toastSuccess('試合を割り当てました');
+      setShowForceAssignFor(null);
+    } catch {
+      toastError('エラーが発生しました');
+    }
+  };
+
+  const handleCancelResult = async (matchId: string) => {
+    const confirmed = await confirm({
+      title: '↩️ 結果を取り消す',
+      message: `試合結果を取り消して待機状態に戻しますか？\n次ラウンドへの進出も取り消されます。`,
+      confirmText: '取り消す',
+      cancelText: 'キャンセル',
+      type: 'info',
+    });
+    if (!confirmed) return;
+    try {
+      const success = await resetMatchResult(matchId);
+      if (success) toastSuccess('結果を取り消しました');
+      else toastError('取り消しに失敗しました');
+    } catch {
+      toastError('エラーが発生しました');
+    }
+  };
+
   const handleStartOnReservedCourt = async (matchId: string) => {
     const confirmed = await confirm({
       title: '▶️ 試合開始',
@@ -437,6 +503,17 @@ export default function ResultsTab() {
           <h2 className="text-2xl font-bold text-slate-800">コート別結果入力</h2>
           <p className="text-sm text-slate-600 mt-1">各コートで進行中の試合のスコアを直接入力できます</p>
         </div>
+
+        {/* 空きコートがあるが試合が休息待ちの場合の警告 */}
+        {blockedMatchCount > 0 && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="text-sm text-amber-800 font-medium">
+              空きコートがありますが、待機中の試合（{blockedMatchCount}試合）はすべて休息時間中のため自動割り当てできません。
+              下の「強制アサイン」から手動で割り当てるか、しばらくお待ちください。
+            </p>
+          </div>
+        )}
 
         {/* 休憩中の試合 */}
         {breakingMatches.length > 0 && (
@@ -665,6 +742,14 @@ export default function ResultsTab() {
                               {match.score_p2}
                             </span>
                           </div>
+                          <Button
+                            onClick={() => handleCancelResult(match.id)}
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-2 border-red-300 text-red-600 hover:bg-red-50 h-7 text-xs"
+                          >
+                            ↩️ 結果を取り消す
+                          </Button>
                         </div>
                       ) : (
                         <>
@@ -832,7 +917,7 @@ export default function ResultsTab() {
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-3">
+                    <div className="flex flex-col items-center justify-center py-2 w-full">
                       <Users className={`w-8 h-8 mb-1.5 ${court.manually_freed ? 'text-amber-300' : 'text-slate-300'}`} />
                       <span className={`text-xs font-medium ${court.manually_freed ? 'text-amber-600' : 'text-slate-400'}`}>
                         フリー
@@ -852,6 +937,39 @@ export default function ResultsTab() {
                       ) : (
                         <span className="text-[10px] text-slate-400 mt-0.5">自由に使用できます</span>
                       )}
+                      {/* 強制アサイン */}
+                      <div className="mt-2 w-full">
+                        {showForceAssignFor === court.id ? (
+                          <div className="bg-blue-50 border border-blue-200 rounded p-2 space-y-1.5">
+                            <p className="text-[10px] font-bold text-blue-800">割り当てる試合を選択:</p>
+                            <div className="max-h-40 overflow-y-auto space-y-1">
+                              {waitingMatches.length === 0 ? (
+                                <p className="text-[10px] text-slate-500 text-center py-1">待機中の試合なし</p>
+                              ) : waitingMatches.map(m => (
+                                <button
+                                  key={m.id}
+                                  onClick={() => handleForceAssign(m.id, court.id)}
+                                  className="w-full text-left text-[10px] p-1.5 bg-white border border-blue-200 rounded hover:bg-blue-100 truncate"
+                                >
+                                  #{m.match_number} {m.player1?.name || '?'}{m.player3?.id ? `/${m.player3.name}` : ''} vs {m.player2?.name || '?'}{m.player4?.id ? `/${m.player4.name}` : ''}
+                                </button>
+                              ))}
+                            </div>
+                            <Button onClick={() => setShowForceAssignFor(null)} variant="ghost" size="sm" className="w-full text-[10px] h-6">
+                              キャンセル
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => setShowForceAssignFor(court.id)}
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-blue-300 text-blue-700 hover:bg-blue-50 h-7 text-xs"
+                          >
+                            ⚡ 強制アサイン
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </CardContent>

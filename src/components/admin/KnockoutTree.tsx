@@ -26,6 +26,9 @@ interface KnockoutTreeProps {
   getNextRoundInfo: (round: number) => string | null;
   getPlayerDisplay: (playerId: string | undefined, match: Match, position: 1 | 2) => string;
   getPlayerName: (playerId?: string) => string;
+  editMode?: boolean;
+  selectedSlot?: { matchId: string; position: 1 | 2 } | null;
+  onSlotClick?: (matchId: string, position: 1 | 2) => void;
 }
 
 /**
@@ -280,6 +283,9 @@ export default function KnockoutTree({
   getNextRoundInfo,
   getPlayerDisplay,
   getPlayerName,
+  editMode = false,
+  selectedSlot = null,
+  onSlotClick,
 }: KnockoutTreeProps) {
   const { camp } = useCamp();
   const totalRounds = rounds.length;
@@ -498,67 +504,91 @@ export default function KnockoutTree({
                           {/* 中央: 選手情報 */}
                           <div className="space-y-2">
                             {/* Player 1 */}
-                            <div className={`flex items-center justify-between p-2 rounded-md transition-all ${
-                              match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
-                                ? 'bg-amber-50 border-2 border-amber-400'
-                                : isBye
-                                ? 'bg-slate-50/50'
-                                : 'bg-slate-50'
-                            }`}>
-                              <div className="flex-1 min-w-0">
-                                <div className={`font-bold text-sm leading-tight break-words ${
-                                  isBye ? 'text-slate-400 italic' :
-                                  match.player1_id ? 'text-slate-900' : 'text-slate-400'
-                                }`}>
-                                  {match.player1_id ? getPlayerDisplay(match.player1_id, match, 1) : '---'}
+                            {(() => {
+                              const isSelected = editMode && selectedSlot?.matchId === match.id && selectedSlot?.position === 1;
+                              return (
+                                <div
+                                  onClick={() => editMode && !isBye && onSlotClick?.(match.id, 1)}
+                                  className={`flex items-center justify-between p-2 rounded-md transition-all ${
+                                    isSelected
+                                      ? 'bg-blue-100 border-2 border-blue-500 ring-2 ring-blue-300'
+                                      : match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
+                                      ? 'bg-amber-50 border-2 border-amber-400'
+                                      : isBye
+                                      ? 'bg-slate-50/50'
+                                      : editMode && !isBye
+                                      ? 'bg-slate-50 border-2 border-dashed border-blue-300 cursor-pointer hover:bg-blue-50'
+                                      : 'bg-slate-50'
+                                  }`}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className={`font-bold text-sm leading-tight break-words ${
+                                      isBye ? 'text-slate-400 italic' :
+                                      match.player1_id ? 'text-slate-900' : 'text-slate-400'
+                                    }`}>
+                                      {getPlayerDisplay(match.player1_id, match, 1)}
+                                    </div>
+                                    {match.seed_p1 && !isBye && (
+                                      <span className="inline-block mt-0.5 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+                                        第{match.seed_p1}シード
+                                      </span>
+                                    )}
+                                  </div>
+                                  {match.status === 'completed' && match.score_p1 !== undefined && !isBye && (
+                                    <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums">
+                                      {match.score_p1}
+                                    </span>
+                                  )}
                                 </div>
-                                {match.seed_p1 && !isBye && (
-                                  <span className="inline-block mt-0.5 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">
-                                    第{match.seed_p1}シード
-                                  </span>
-                                )}
-                              </div>
-                              {match.status === 'completed' && match.score_p1 !== undefined && !isBye && (
-                                <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums">
-                                  {match.score_p1}
-                                </span>
-                              )}
-                            </div>
+                              );
+                            })()}
 
                             {/* VS */}
                             <div className="text-center">
                               <span className={`text-xs font-bold ${isBye ? 'text-slate-300' : 'text-slate-400'}`}>
-                                VS
+                                {editMode && !isBye ? '↕' : 'VS'}
                               </span>
                             </div>
 
                             {/* Player 2 */}
-                            <div className={`flex items-center justify-between p-2 rounded-md transition-all ${
-                              match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
-                                ? 'bg-amber-50 border-2 border-amber-400'
-                                : isBye
-                                ? 'bg-slate-50/50'
-                                : 'bg-slate-50'
-                            }`}>
-                              <div className="flex-1 min-w-0">
-                                <div className={`font-bold text-sm leading-tight break-words ${
-                                  isBye ? 'text-slate-400 italic' :
-                                  match.player2_id ? 'text-slate-900' : 'text-slate-400'
-                                }`}>
-                                  {match.player2_id ? getPlayerDisplay(match.player2_id, match, 2) : '---'}
+                            {(() => {
+                              const isSelected = editMode && selectedSlot?.matchId === match.id && selectedSlot?.position === 2;
+                              return (
+                                <div
+                                  onClick={() => editMode && !isBye && onSlotClick?.(match.id, 2)}
+                                  className={`flex items-center justify-between p-2 rounded-md transition-all ${
+                                    isSelected
+                                      ? 'bg-blue-100 border-2 border-blue-500 ring-2 ring-blue-300'
+                                      : match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
+                                      ? 'bg-amber-50 border-2 border-amber-400'
+                                      : isBye
+                                      ? 'bg-slate-50/50'
+                                      : editMode && !isBye
+                                      ? 'bg-slate-50 border-2 border-dashed border-blue-300 cursor-pointer hover:bg-blue-50'
+                                      : 'bg-slate-50'
+                                  }`}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className={`font-bold text-sm leading-tight break-words ${
+                                      isBye ? 'text-slate-400 italic' :
+                                      match.player2_id ? 'text-slate-900' : 'text-slate-400'
+                                    }`}>
+                                      {getPlayerDisplay(match.player2_id, match, 2)}
+                                    </div>
+                                    {match.seed_p2 && !isBye && (
+                                      <span className="inline-block mt-0.5 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+                                        第{match.seed_p2}シード
+                                      </span>
+                                    )}
+                                  </div>
+                                  {match.status === 'completed' && match.score_p2 !== undefined && !isBye && (
+                                    <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums">
+                                      {match.score_p2}
+                                    </span>
+                                  )}
                                 </div>
-                                {match.seed_p2 && !isBye && (
-                                  <span className="inline-block mt-0.5 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">
-                                    第{match.seed_p2}シード
-                                  </span>
-                                )}
-                              </div>
-                              {match.status === 'completed' && match.score_p2 !== undefined && !isBye && (
-                                <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums">
-                                  {match.score_p2}
-                                </span>
-                              )}
-                            </div>
+                              );
+                            })()}
                           </div>
 
                           {/* 下部: セパレーター + 次戦案内 */}

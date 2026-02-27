@@ -439,6 +439,49 @@ export async function startMatch(matchId: string): Promise<void> {
   });
 }
 
+export async function cancelMatchResult(matchId: string): Promise<boolean> {
+  try {
+    if (!matchId) return false;
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return false;
+
+    // 次の試合から進出プレイヤーを削除
+    if (currentMatch.next_match_id) {
+      const nextMatchRef = doc(db, COLLECTIONS.matches, currentMatch.next_match_id);
+      const position = currentMatch.next_match_position ??
+        ((currentMatch.match_number ?? 0) % 2 === 1 ? 1 : 2);
+      const clearUpdate: Record<string, unknown> = { updated_at: Timestamp.now() };
+      if (position === 1) {
+        clearUpdate.player1_id = '';
+        clearUpdate.player3_id = null;
+        clearUpdate.player5_id = null;
+      } else {
+        clearUpdate.player2_id = '';
+        clearUpdate.player4_id = null;
+        clearUpdate.player6_id = null;
+      }
+      await updateDoc(nextMatchRef, clearUpdate);
+    }
+
+    // 試合を待機状態に戻す
+    const matchRef = doc(db, COLLECTIONS.matches, matchId);
+    await updateDoc(matchRef, {
+      score_p1: 0,
+      score_p2: 0,
+      winner_id: null,
+      status: 'waiting',
+      end_time: null,
+      court_id: null,
+      updated_at: Timestamp.now(),
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error cancelling match result:', error);
+    return false;
+  }
+}
+
 export async function updateMatchResult(
   matchId: string,
   scoreP1: number,
@@ -446,7 +489,7 @@ export async function updateMatchResult(
   winnerId: string
 ): Promise<boolean> {
   try {
-    if (!matchId) return false;
+    if (!matchId || !winnerId) return false;
 
     // 現在の試合データを取得
     const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
@@ -554,11 +597,19 @@ export async function propagateByePlayerChange(
   const isBye = hasPlayer1 !== hasPlayer2;
 
   if (!isBye) return;
-  if (!changedMatch.next_match_id) return;
 
   // 次の試合を構造参照で探す
-  const nextMatch = allMatches.find(m => m.id === changedMatch.next_match_id);
-  if (!nextMatch) return;
+  // next_match_id（シンプルブラケット）と next_match_number（グループ→ノックアウト）の両方をサポート
+  let nextMatch: Match | undefined;
+  if (changedMatch.next_match_id) {
+    nextMatch = allMatches.find(m => m.id === changedMatch.next_match_id);
+  } else if (changedMatch.next_match_number != null) {
+    nextMatch = allMatches.find(m =>
+      m.match_number === changedMatch.next_match_number &&
+      (changedMatch.division == null || m.division === changedMatch.division)
+    );
+  }
+  if (!nextMatch || !nextMatch.id) return;
 
   // 進出者はプレイヤーが存在する側
   const isPlayer1Winner = hasPlayer1;
@@ -579,8 +630,8 @@ export async function propagateByePlayerChange(
     update.player6_id = (isPlayer1Winner ? changedMatch.player5_id : changedMatch.player6_id) || null;
   }
 
-  console.log(`[BYE伝播] ${changedMatch.id} → ${changedMatch.next_match_id} (pos ${position})`, update);
-  await updateDocument('matches', changedMatch.next_match_id, update);
+  console.log(`[BYE伝播] ${changedMatch.id} → ${nextMatch.id} (pos ${position})`, update);
+  await updateDocument('matches', nextMatch.id, update);
 
   // 次の試合もBYEなら再帰的に伝播（連続BYEへの対応）
   const updatedNextMatch = { ...nextMatch, ...update } as Match;

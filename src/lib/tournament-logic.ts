@@ -53,15 +53,13 @@ export function calculateNextMatchId(round: number, matchNumber: number, totalRo
 function generateSeededOrder(bracketSize: number): number[] {
   if (bracketSize <= 1) return [1];
   if (bracketSize === 2) return [1, 2];
-  const rounds = Math.log2(bracketSize);
-  let order = [1, 2];
-  for (let i = 1; i < rounds; i++) {
-    const newOrder: number[] = [];
-    const size = order.length * 2 + 1;
-    for (const seed of order) { newOrder.push(seed); newOrder.push(size - seed); }
-    order = newOrder;
-  }
-  return order;
+  // 標準トーナメント配置: 第1シード最上段、第2シード最下段
+  // 再帰的に構築: 上半分の各ペアに対して対側シードを割り当てる
+  const half = generateSeededOrder(bracketSize / 2);
+  return half.flatMap((seed, i) => {
+    const complement = bracketSize + 1 - seed;
+    return i % 2 === 0 ? [seed, complement] : [complement, seed];
+  });
 }
 
 export function generatePowerOf2Bracket(

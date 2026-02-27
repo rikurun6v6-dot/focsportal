@@ -19,7 +19,9 @@ const isPlayerInMatch = (match: Match, playerId: string) => {
     match.player1_id === playerId ||
     match.player2_id === playerId ||
     match.player3_id === playerId ||
-    match.player4_id === playerId
+    match.player4_id === playerId ||
+    match.player5_id === playerId ||
+    match.player6_id === playerId
   );
 };
 
@@ -122,15 +124,20 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
     return source ? source.id : null;
   };
 
-  const getStatusBadge = (status: string) => {
-    const config: Record<string, { label: string; variant: any }> = {
-      waiting: { label: '待機中', variant: 'secondary' },
-      calling: { label: '呼び出し中', variant: 'default' },
-      playing: { label: '試合中', variant: 'default' },
-      completed: { label: '完了', variant: 'outline' },
-    };
-    const { label, variant } = config[status] || { label: status, variant: 'secondary' };
-    return <Badge variant={variant} className="text-xs">{label}</Badge>;
+  const getStatusBadge = (match: Match) => {
+    // is_playing (試合中) を最優先で表示
+    if (match.status === 'playing' || match.status === 'calling') {
+      return <Badge variant="default" className="text-xs bg-orange-500">試合中</Badge>;
+    }
+    if (match.status === 'completed') {
+      return <Badge variant="outline" className="text-xs">完了</Badge>;
+    }
+    // 休息中（available_atが未来の場合）
+    const now = Date.now();
+    if (match.available_at && now < match.available_at.toMillis()) {
+      return <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">休息中</Badge>;
+    }
+    return <Badge variant="secondary" className="text-xs">待機中</Badge>;
   };
 
   const isMyWin = (match: Match) => {
@@ -264,7 +271,7 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <p className="text-xs text-gray-500">試合 #{match.match_number}</p>
-                      {getStatusBadge(match.status)}
+                      {getStatusBadge(match)}
                     </div>
                     {match.court_id && (
                       <Badge variant="outline" className="text-xs">

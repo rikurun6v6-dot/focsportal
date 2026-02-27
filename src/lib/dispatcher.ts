@@ -120,7 +120,13 @@ export async function dispatchToEmptyCourt(
 
   const canUseForShortMatch = timeUntilReservation > AVERAGE_MATCH_DURATION;
 
-  const validMatches = waitingMatches.filter(match => {
+  // 種目フィルタの厳格化: enabled_tournamentsが指定されている場合、完全一致のみ許可
+  const enabledTypes = config?.enabled_tournaments;
+  const filteredWaitingMatches = (enabledTypes && enabledTypes.length > 0)
+    ? waitingMatches.filter(m => enabledTypes.includes(m.tournament_type as any))
+    : waitingMatches;
+
+  const validMatches = filteredWaitingMatches.filter(match => {
     if (!match.player1_id || !match.player2_id) return false;
     if (busyPlayerIds.has(match.player1_id) || busyPlayerIds.has(match.player2_id)) return false;
     if (match.player3_id && match.player3_id !== '' && busyPlayerIds.has(match.player3_id)) return false;

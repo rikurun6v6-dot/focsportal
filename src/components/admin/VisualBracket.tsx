@@ -7,10 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { subscribeToMatchesByTournament, subscribeToPlayers } from "@/lib/firestore-helpers";
+import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument } from "@/lib/firestore-helpers";
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType, Division } from "@/types";
-import { Trophy, Users, Search, X, Camera, Download } from "lucide-react";
+import { Trophy, Users, Search, X, Camera, Download, Pencil, Check } from "lucide-react";
 import PreliminaryGroup from "./PreliminaryGroup";
 import KnockoutTree from "./KnockoutTree";
 import { getUnifiedRoundName, getTournamentTypeName } from "@/lib/tournament-logic";
@@ -18,16 +18,32 @@ import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { toastSuccess, toastError } from "@/lib/toast";
 
+const LS_KEY_TYPE = 'vb_tournamentType';
+const LS_KEY_DIV = 'vb_division';
+
 export default function VisualBracket({ readOnly = false }: { readOnly?: boolean }) {
     const { camp } = useCamp();
-    const [tournamentType, setTournamentType] = useState<TournamentType>("mens_doubles");
-    const [division, setDivision] = useState<Division>(1);
+    const [tournamentType, setTournamentType] = useState<TournamentType>(() => {
+        if (typeof window !== 'undefined') {
+            return (localStorage.getItem(LS_KEY_TYPE) as TournamentType) || 'mens_doubles';
+        }
+        return 'mens_doubles';
+    });
+    const [division, setDivision] = useState<Division>(() => {
+        if (typeof window !== 'undefined') {
+            return (Number(localStorage.getItem(LS_KEY_DIV)) || 1) as Division;
+        }
+        return 1;
+    });
     const [matches, setMatches] = useState<Match[]>([]);
     const [players, setPlayers] = useState<Player[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [exporting, setExporting] = useState(false);
+    const [editMode, setEditMode] = useState(false);
+    const [selectedSlot, setSelectedSlot] = useState<{ matchId: string; position: 1 | 2 } | null>(null);
     const bracketRef = useRef<HTMLDivElement>(null);
+    const bracketContentRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!camp) return;
@@ -68,20 +84,75 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     };
 
     /**
+     * ブラケット編集モード: スロットクリック → 2つ選択で入れ替え
+     */
+    const handleSlotClick = async (matchId: string, position: 1 | 2) => {
+        if (!editMode) return;
+        if (!selectedSlot) {
+            setSelectedSlot({ matchId, position });
+            return;
+        }
+        if (selectedSlot.matchId === matchId && selectedSlot.position === position) {
+            setSelectedSlot(null);
+            return;
+        }
+        // Swap the two slots
+        const matchA = matches.find(m => m.id === selectedSlot.matchId);
+        const matchB = matches.find(m => m.id === matchId);
+        if (!matchA || !matchB) { setSelectedSlot(null); return; }
+
+        const getSlotPlayers = (m: Match, pos: 1 | 2) => pos === 1
+            ? { main: m.player1_id, partner: m.player3_id, third: m.player5_id }
+            : { main: m.player2_id, partner: m.player4_id, third: m.player6_id };
+
+        const playersA = getSlotPlayers(matchA, selectedSlot.position);
+        const playersB = getSlotPlayers(matchB, position);
+
+        const buildUpdate = (pos: 1 | 2, players: { main: string; partner?: string; third?: string }) =>
+            pos === 1
+                ? { player1_id: players.main || '', player3_id: players.partner || null, player5_id: players.third || null }
+                : { player2_id: players.main || '', player4_id: players.partner || null, player6_id: players.third || null };
+
+        try {
+            await updateDocument('matches', matchA.id, buildUpdate(selectedSlot.position, playersB));
+            await updateDocument('matches', matchB.id, buildUpdate(position, playersA));
+            toastSuccess('ペアを入れ替えました');
+        } catch {
+            toastError('入れ替えに失敗しました');
+        }
+        setSelectedSlot(null);
+    };
+
+    /**
      * トーナメント表を画像として保存
      */
     const handleSaveAsImage = async () => {
-        if (!bracketRef.current) return;
+        const target = bracketContentRef.current || bracketRef.current;
+        if (!target) return;
 
         setExporting(true);
         try {
-            // 画像生成（高解像度）
-            const dataUrl = await toPng(bracketRef.current, {
+            // スクロール領域を含む全体を取得
+            const originalOverflow = target.style.overflow;
+            const originalMaxHeight = target.style.maxHeight;
+            target.style.overflow = 'visible';
+            target.style.maxHeight = 'none';
+
+            const fullWidth = Math.max(target.scrollWidth, target.offsetWidth);
+            const fullHeight = Math.max(target.scrollHeight, target.offsetHeight);
+
+            // 画像生成（高解像度・全体キャプチャ）
+            const dataUrl = await toPng(target, {
                 quality: 1.0,
-                pixelRatio: 2, // 2倍の解像度で生成
+                pixelRatio: 2,
                 cacheBust: true,
-                backgroundColor: '#ffffff'
+                backgroundColor: '#ffffff',
+                width: fullWidth,
+                height: fullHeight,
             });
+
+            target.style.overflow = originalOverflow;
+            target.style.maxHeight = originalMaxHeight;
 
             // ファイル名を生成
             const tournamentName = getTournamentTypeName(tournamentType);
@@ -283,6 +354,16 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                             <Trophy className="w-5 h-5 text-amber-500" />
                             トーナメント表
                         </CardTitle>
+                        {!readOnly && (
+                            <Button
+                                onClick={() => { setEditMode(e => !e); setSelectedSlot(null); }}
+                                variant={editMode ? "default" : "outline"}
+                                size="sm"
+                                className={editMode ? "bg-blue-500 text-white" : "border-blue-200 text-blue-700 hover:bg-blue-50"}
+                            >
+                                {editMode ? <><Check className="w-4 h-4 mr-1" />編集完了</> : <><Pencil className="w-4 h-4 mr-1" />ペア入替</>}
+                            </Button>
+                        )}
                         <Button
                             onClick={handleSaveAsImage}
                             disabled={exporting || matches.length === 0}
@@ -305,7 +386,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4" ref={bracketRef}>
-                    <Select value={tournamentType} onValueChange={(v) => setTournamentType(v as TournamentType)}>
+                    <Select value={tournamentType} onValueChange={(v) => {
+                        setTournamentType(v as TournamentType);
+                        localStorage.setItem(LS_KEY_TYPE, v);
+                    }}>
                         <SelectTrigger className="bg-white">
                             <SelectValue />
                         </SelectTrigger>
@@ -421,7 +505,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     )}
 
                     {/* 1部/2部切り替えタブ */}
-                    <Tabs value={String(division)} onValueChange={(v) => setDivision(Number(v) as Division)} className="w-full">
+                    <Tabs value={String(division)} onValueChange={(v) => {
+                        setDivision(Number(v) as Division);
+                        localStorage.setItem(LS_KEY_DIV, v);
+                    }} className="w-full">
                         <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="1" className="data-[state=active]:bg-sky-500 data-[state=active]:text-white">
                                 1部
@@ -439,7 +526,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     )}
 
                     {!loading && divisionMatches.length > 0 && (
-                        <div className="space-y-8">
+                        <div className="space-y-8" ref={bracketContentRef}>
                             {/* 予選リーグ */}
                             {hasPreliminary && (
                                 <PreliminaryGroup
@@ -459,6 +546,9 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                     getNextRoundInfo={getNextRoundInfo}
                                     getPlayerDisplay={getPlayerDisplay}
                                     getPlayerName={getPlayerName}
+                                    editMode={editMode}
+                                    selectedSlot={selectedSlot}
+                                    onSlotClick={handleSlotClick}
                                 />
                             )}
                         </div>

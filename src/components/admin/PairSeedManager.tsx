@@ -79,7 +79,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                 // BYE試合（片方のみ選手がいる）の場合、次ラウンドに変更を伝播
                 const hasP1 = !!match.player1_id;
                 const hasP2 = !!match.player2_id;
-                if ((hasP1 !== hasP2) && match.next_match_id) {
+                if ((hasP1 !== hasP2) && (match.next_match_id || match.next_match_number != null)) {
                     const updatedMatch = { ...match, ...payload } as Match;
                     await propagateByePlayerChange(updatedMatch, allMatches);
                 }
