@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { RotateCcw, Flag, Tag, UserX, Trash2 } from 'lucide-react';
-import { resetMatchResult, updateDocument, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory } from '@/lib/firestore-helpers';
+import { RotateCcw, Flag, Tag, UserX, Trash2, Wrench } from 'lucide-react';
+import { resetMatchResult, updateDocument, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory, cleanupEarlyPropagations } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import type { Match, TournamentType } from '@/types';
@@ -48,6 +48,11 @@ export default function SafetyTab() {
   const [deleteTournamentType, setDeleteTournamentType] = useState<TournamentType>('mens_doubles');
   const [deleteDivision, setDeleteDivision] = useState<'all' | '1' | '2'>('all');
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // クリーンアップ機能
+  const [cleanupTournamentType, setCleanupTournamentType] = useState<TournamentType>('mens_doubles');
+  const [cleanupDivision, setCleanupDivision] = useState<'all' | '1' | '2'>('all');
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   /**
    * Undo: 試合結果の取り消し
@@ -358,6 +363,51 @@ export default function SafetyTab() {
     setDeleteLoading(false);
   };
 
+  /**
+   * クリーンアップ: 誤伝播されたプレイヤーIDをクリア
+   */
+  const handleCleanup = async () => {
+    if (!camp?.id) {
+      alert('合宿が選択されていません');
+      return;
+    }
+
+    const typeLabels: Record<TournamentType, string> = {
+      mens_doubles: '男子ダブルス',
+      womens_doubles: '女子ダブルス',
+      mixed_doubles: '混合ダブルス',
+      mens_singles: '男子シングルス',
+      womens_singles: '女子シングルス',
+      team_battle: '団体戦',
+    };
+    const divisionLabel = cleanupDivision === 'all' ? '全部門' : `${cleanupDivision}部`;
+    const typeLabel = typeLabels[cleanupTournamentType];
+
+    const confirmed = await confirm({
+      title: 'ブラケットデータ修復',
+      message: `【${typeLabel} ${divisionLabel}】の2回戦以降で、1回戦が未完了なのに選手名が入っている枠をクリアします。\n\n正常に進出した選手には影響しません。`,
+      confirmText: '修復を実行',
+      cancelText: 'キャンセル',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+
+    setCleanupLoading(true);
+    try {
+      const divisionNum = cleanupDivision === 'all' ? null : Number(cleanupDivision);
+      const count = await cleanupEarlyPropagations(camp.id, cleanupTournamentType, divisionNum);
+      if (count === 0) {
+        alert('修復が必要な枠は見つかりませんでした');
+      } else {
+        alert(`${typeLabel} ${divisionLabel}: ${count} 枠を修復しました`);
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      alert('エラーが発生しました');
+    }
+    setCleanupLoading(false);
+  };
+
   return (
     <>
       <ConfirmDialog />
@@ -528,6 +578,58 @@ export default function SafetyTab() {
               className="w-full h-9 bg-rose-600 hover:bg-rose-700"
             >
               {absenceLoading ? '処理中...' : '欠場処理を実行'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* ブラケット修復機能 */}
+        <Card className="border-2 border-teal-200 bg-teal-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-teal-800">
+              <Wrench className="w-4 h-4" />
+              ブラケット修復
+            </CardTitle>
+            <CardDescription className="text-xs">
+              1回戦が未完了なのに2回戦以降に名前が入ってしまった枠を自動クリアします。
+              トーナメント生成直後の誤伝播バグに対処します。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <label className="text-xs font-medium mb-1 block text-slate-700">種目</label>
+              <Select value={cleanupTournamentType} onValueChange={(v) => setCleanupTournamentType(v as TournamentType)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mens_doubles">男子ダブルス</SelectItem>
+                  <SelectItem value="womens_doubles">女子ダブルス</SelectItem>
+                  <SelectItem value="mixed_doubles">混合ダブルス</SelectItem>
+                  <SelectItem value="mens_singles">男子シングルス</SelectItem>
+                  <SelectItem value="womens_singles">女子シングルス</SelectItem>
+                  <SelectItem value="team_battle">団体戦</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block text-slate-700">部門</label>
+              <Select value={cleanupDivision} onValueChange={(v) => setCleanupDivision(v as 'all' | '1' | '2')}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部門</SelectItem>
+                  <SelectItem value="1">1部のみ</SelectItem>
+                  <SelectItem value="2">2部のみ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              onClick={handleCleanup}
+              disabled={cleanupLoading || !camp?.id}
+              className="w-full h-9 bg-teal-600 hover:bg-teal-700"
+            >
+              {cleanupLoading ? '修復中...' : '修復を実行'}
             </Button>
           </CardContent>
         </Card>

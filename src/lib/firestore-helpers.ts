@@ -604,6 +604,87 @@ export async function updateMatchResult(
   }
 }
 
+/**
+ * 誤伝播されたプレイヤーIDを一括クリーンアップする。
+ * Round 2以降の waiting 試合に対し、フィーダー試合（next_match_id/next_match_number が
+ * この試合を指す round-1 試合）が未完了であれば、誤って書き込まれたプレイヤーIDをクリアする。
+ *
+ * @returns クリアした試合数
+ */
+export async function cleanupEarlyPropagations(
+  campId: string,
+  tournamentType: TournamentType,
+  division?: number | null
+): Promise<number> {
+  const constraints: QueryConstraint[] = [
+    where('campId', '==', campId),
+    where('tournament_type', '==', tournamentType),
+  ];
+  if (division != null) {
+    constraints.push(where('division', '==', division));
+  }
+  const allMatches = await getAllDocuments<Match>('matches', constraints);
+
+  const getPosition = (m: Match): 1 | 2 =>
+    m.next_match_position ?? ((m.match_number ?? 0) % 2 === 1 ? 1 : 2);
+
+  const updates: Array<{ id: string; update: Record<string, unknown> }> = [];
+
+  for (const match of allMatches) {
+    if (match.round <= 1) continue;
+    if (match.status !== 'waiting') continue;
+
+    const hasP1 = !!match.player1_id;
+    const hasP2 = !!match.player2_id;
+    if (!hasP1 && !hasP2) continue;
+
+    // この試合にフィードする試合を探す
+    const feeders = allMatches.filter(m => {
+      if (m.next_match_id) return m.next_match_id === match.id;
+      if (m.next_match_number != null) return m.next_match_number === match.match_number;
+      return false;
+    });
+    if (feeders.length === 0) continue;
+
+    const feedersForPos1 = feeders.filter(f => getPosition(f) === 1);
+    const feedersForPos2 = feeders.filter(f => getPosition(f) === 2);
+
+    const pos1Done = feedersForPos1.length === 0 || feedersForPos1.some(f => f.status === 'completed');
+    const pos2Done = feedersForPos2.length === 0 || feedersForPos2.some(f => f.status === 'completed');
+
+    const clearUpdate: Record<string, unknown> = { updated_at: Timestamp.now() };
+    let needsClear = false;
+
+    if (hasP1 && feedersForPos1.length > 0 && !pos1Done) {
+      clearUpdate.player1_id = '';
+      clearUpdate.player3_id = null;
+      clearUpdate.player5_id = null;
+      needsClear = true;
+    }
+    if (hasP2 && feedersForPos2.length > 0 && !pos2Done) {
+      clearUpdate.player2_id = '';
+      clearUpdate.player4_id = null;
+      clearUpdate.player6_id = null;
+      needsClear = true;
+    }
+
+    if (needsClear && match.id) {
+      updates.push({ id: match.id, update: clearUpdate });
+    }
+  }
+
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    updates.slice(i, i + BATCH_SIZE).forEach(({ id, update }) => {
+      batch.update(doc(db, 'matches', id), update);
+    });
+    await batch.commit();
+  }
+
+  return updates.length;
+}
+
 export async function getActiveMatches(): Promise<Match[]> {
   return getAllDocuments<Match>(COLLECTIONS.matches, [
     where('status', 'in', ['waiting', 'calling', 'playing']),
@@ -666,8 +747,15 @@ export async function propagateByePlayerChange(
   await updateDocument('matches', nextMatch.id, update);
 
   // 次の試合もBYEなら再帰的に伝播（連続BYEへの対応）
+  // ただし、次の試合が「確定済みBYE」の場合のみ再帰する。
+  // waiting状態の試合（round 2以降の未対戦枠）は player2_id="" となっているため、
+  // hasPlayer1=true, hasPlayer2=false → isBye=true と誤判定されてしまう。
+  // status='completed' または is_walkover=true の場合のみ本物のBYEとして再帰する。
   const updatedNextMatch = { ...nextMatch, ...update } as Match;
-  await propagateByePlayerChange(updatedNextMatch, allMatches);
+  const shouldRecurse = updatedNextMatch.status === 'completed' || !!updatedNextMatch.is_walkover;
+  if (shouldRecurse) {
+    await propagateByePlayerChange(updatedNextMatch, allMatches);
+  }
 }
 
 export async function updateMatchStatus(
