@@ -269,6 +269,8 @@ export default function AdminDashboard() {
                 roundName,
                 status: match.status as 'calling' | 'playing',
                 timestamp: Date.now(),
+                tournamentType: match.tournament_type,
+                division: match.division,
               });
             } catch (error) {
               console.error('Error creating announcement:', error);
@@ -682,7 +684,7 @@ export default function AdminDashboard() {
             </div>
           </header>
 
-          <main className="container mx-auto px-4 pt-28 pb-6 md:pb-8 max-w-6xl">
+          <main className="container mx-auto px-4 pt-[136px] pb-6 md:pb-8 max-w-6xl">
             {isArchived && (
               <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4 mb-6">
                 <div className="flex items-center gap-3">
