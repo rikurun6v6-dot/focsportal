@@ -107,6 +107,14 @@ export default function NotificationBar({
   const leftOffset = sidebarExpanded ? 'ml-64' : 'ml-16';
 
   return (
+    <>
+    <style>{`
+      @keyframes notif-pop {
+        0%, 100% { transform: translateY(0); }
+        40% { transform: translateY(-3px); }
+        60% { transform: translateY(-3px); }
+      }
+    `}</style>
     <div
       className={`fixed top-16 left-0 right-0 z-[90] bg-white/90 backdrop-blur-sm border-b border-slate-200 transition-all duration-300 ${leftOffset}`}
       style={{ height: '72px' }}
@@ -164,7 +172,16 @@ export default function NotificationBar({
                       {isCalling ? (
                         <span className={`flex items-center gap-0.5 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md flex-shrink-0 transition-colors duration-700 ${isFresh ? 'bg-orange-500' : 'bg-indigo-500'}`}>
                           <Bell className={`w-2.5 h-2.5 ${isFresh ? 'animate-ping' : 'animate-bounce'}`} />
-                          <span className="animate-bounce inline-block">呼出中</span>
+                          {'呼出中'.split('').map((ch, i) => (
+                            <span
+                              key={i}
+                              className="inline-block"
+                              style={{
+                                animation: 'notif-pop 1.2s ease-in-out infinite',
+                                animationDelay: `${i * 0.15}s`,
+                              }}
+                            >{ch}</span>
+                          ))}
                         </span>
                       ) : (
                         <span className="flex items-center gap-0.5 text-[10px] font-bold text-white bg-emerald-500 px-1.5 py-0.5 rounded-md flex-shrink-0">
@@ -224,5 +241,6 @@ export default function NotificationBar({
         />
       </div>
     </div>
+    </>
   );
 }
