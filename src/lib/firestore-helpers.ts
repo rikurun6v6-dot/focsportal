@@ -209,6 +209,38 @@ export async function deleteDocument(collectionName: string, docId: string): Pro
   }
 }
 
+/**
+ * 特定種目のmatches一括削除（種目削除機能用）
+ * campId + tournament_typeでフィルタし、divisionが指定されれば追加フィルタをかける。
+ * Firestoreの500件/バッチ制限に対応。
+ * @returns 削除したドキュメント数
+ */
+export async function deleteMatchesByCategory(
+  campId: string,
+  tournamentType: TournamentType,
+  division?: number | null
+): Promise<number> {
+  const constraints: QueryConstraint[] = [
+    where('campId', '==', campId),
+    where('tournament_type', '==', tournamentType),
+  ];
+  if (division != null) {
+    constraints.push(where('division', '==', division));
+  }
+  const matches = await getAllDocuments<Match>('matches', constraints);
+  if (matches.length === 0) return 0;
+
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < matches.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    matches.slice(i, i + BATCH_SIZE).forEach(m => {
+      batch.delete(doc(db, 'matches', m.id));
+    });
+    await batch.commit();
+  }
+  return matches.length;
+}
+
 export function subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void, constraints: QueryConstraint[] = []) {
   const collectionRef = collection(db, collectionName);
   const q = constraints.length > 0 ? query(collectionRef, ...constraints) : collectionRef;

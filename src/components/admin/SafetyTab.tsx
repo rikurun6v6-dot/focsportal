@@ -6,12 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { RotateCcw, Flag, Tag } from 'lucide-react';
-import { resetMatchResult, updateDocument, getAllDocuments } from '@/lib/firestore-helpers';
+import { RotateCcw, Flag, Tag, UserX, Trash2 } from 'lucide-react';
+import { resetMatchResult, updateDocument, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import type { Match } from '@/types';
-import { where, Timestamp } from 'firebase/firestore';
+import type { Match, TournamentType } from '@/types';
+import { where, Timestamp, QueryConstraint } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
@@ -38,6 +38,16 @@ export default function SafetyTab() {
   const [subtitleMatchId, setSubtitleMatchId] = useState('');
   const [subtitleText, setSubtitleText] = useState('');
   const [subtitleLoading, setSubtitleLoading] = useState(false);
+
+  // 欠場処理機能
+  const [absenceMatchId, setAbsenceMatchId] = useState('');
+  const [absencePosition, setAbsencePosition] = useState<'1' | '2'>('1');
+  const [absenceLoading, setAbsenceLoading] = useState(false);
+
+  // 種目削除機能
+  const [deleteTournamentType, setDeleteTournamentType] = useState<TournamentType>('mens_doubles');
+  const [deleteDivision, setDeleteDivision] = useState<'all' | '1' | '2'>('all');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   /**
    * Undo: 試合結果の取り消し
@@ -204,10 +214,154 @@ export default function SafetyTab() {
     setSubtitleLoading(false);
   };
 
+  /**
+   * 欠場処理: 指定ペアのスロットをBYEに変換し、対戦相手を次ラウンドへ自動進出
+   */
+  const handleAbsence = async () => {
+    if (!absenceMatchId.trim()) {
+      alert('試合IDを入力してください');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: '欠場処理',
+      message: `試合 ${absenceMatchId} のPlayer ${absencePosition}を欠場とします。\n\n対戦相手が自動的に次ラウンドへ進出します。\n\n※ この操作は取り消しできません。`,
+      confirmText: '欠場処理を実行',
+      cancelText: 'キャンセル',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+
+    setAbsenceLoading(true);
+    try {
+      // 試合を取得
+      const matchList = await getAllDocuments<Match>('matches', [
+        where('id', '==', absenceMatchId),
+      ]);
+      if (matchList.length === 0) {
+        alert('試合が見つかりませんでした');
+        setAbsenceLoading(false);
+        return;
+      }
+      const match = matchList[0];
+
+      // 結果済み試合は対象外
+      if (match.status === 'completed') {
+        alert('この試合はすでに結果が入力されています。Undoで取り消してから再度お試しください。');
+        setAbsenceLoading(false);
+        return;
+      }
+
+      const absentPos = Number(absencePosition) as 1 | 2;
+      const winnerId = absentPos === 1 ? match.player2_id : match.player1_id;
+      if (!winnerId) {
+        alert('対戦相手が登録されていません');
+        setAbsenceLoading(false);
+        return;
+      }
+
+      // 欠場者のスロットをクリアし、試合をwalkover/completed状態に更新
+      const clearUpdate: Record<string, unknown> = {
+        is_walkover: true,
+        status: 'completed',
+        winner_id: winnerId,
+        subtitle: '欠場',
+        end_time: Timestamp.now(),
+        updated_at: Timestamp.now(),
+      };
+      if (absentPos === 1) {
+        clearUpdate.player1_id = '';
+        clearUpdate.player3_id = null;
+        clearUpdate.player5_id = null;
+      } else {
+        clearUpdate.player2_id = '';
+        clearUpdate.player4_id = null;
+        clearUpdate.player6_id = null;
+      }
+      const matchRef = doc(db, 'matches', absenceMatchId);
+      await updateDoc(matchRef, clearUpdate);
+
+      // 次ラウンドへのBYE伝播: 同種目の全試合を取得して propagateByePlayerChange を呼ぶ
+      const campFilter = match.campId || camp?.id;
+      const allMatchConstraints: QueryConstraint[] = [
+        where('tournament_type', '==', match.tournament_type),
+      ];
+      if (campFilter) {
+        allMatchConstraints.unshift(where('campId', '==', campFilter));
+      }
+      const allMatches = await getAllDocuments<Match>('matches', allMatchConstraints);
+
+      // 更新済みの試合状態を構築
+      const updatedMatch: Match = {
+        ...match,
+        ...(absentPos === 1
+          ? { player1_id: '', player3_id: undefined, player5_id: undefined }
+          : { player2_id: '', player4_id: undefined, player6_id: undefined }),
+        is_walkover: true,
+        status: 'completed',
+        winner_id: winnerId,
+      };
+      const allMatchesUpdated = allMatches.map(m => m.id === absenceMatchId ? updatedMatch : m);
+      await propagateByePlayerChange(updatedMatch, allMatchesUpdated);
+
+      alert('欠場処理が完了しました。対戦相手が次ラウンドへ進出しました。');
+      setAbsenceMatchId('');
+    } catch (error) {
+      console.error('Absence error:', error);
+      alert('エラーが発生しました');
+    }
+    setAbsenceLoading(false);
+  };
+
+  /**
+   * 種目削除: 選択した tournament_type（+division）の matches を一括削除
+   */
+  const handleDeleteCategory = async () => {
+    if (!camp?.id) {
+      alert('合宿が選択されていません');
+      return;
+    }
+
+    const divisionLabel = deleteDivision === 'all' ? '全部門' : `${deleteDivision}部`;
+    const typeLabels: Record<TournamentType, string> = {
+      mens_doubles: '男子ダブルス',
+      womens_doubles: '女子ダブルス',
+      mixed_doubles: '混合ダブルス',
+      mens_singles: '男子シングルス',
+      womens_singles: '女子シングルス',
+      team_battle: '団体戦',
+    };
+    const typeLabel = typeLabels[deleteTournamentType];
+
+    const confirmed = await confirm({
+      title: '種目トーナメント削除',
+      message: `【${typeLabel} ${divisionLabel}】のトーナメントデータをすべて削除します。\n\nこの操作は取り消せません。本当に削除しますか？`,
+      confirmText: '削除する',
+      cancelText: 'キャンセル',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+
+    setDeleteLoading(true);
+    try {
+      const divisionNum = deleteDivision === 'all' ? null : Number(deleteDivision);
+      const count = await deleteMatchesByCategory(camp.id, deleteTournamentType, divisionNum);
+      if (count === 0) {
+        alert('該当する試合データが見つかりませんでした');
+      } else {
+        alert(`${typeLabel} ${divisionLabel} の試合データ ${count} 件を削除しました`);
+      }
+    } catch (error) {
+      console.error('Delete category error:', error);
+      alert('エラーが発生しました');
+    }
+    setDeleteLoading(false);
+  };
+
   return (
     <>
       <ConfirmDialog />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 auto-rows-min">
         {/* Undo機能 */}
         <Card className="border-2 border-blue-200 bg-blue-50/30">
           <CardHeader className="pb-3">
@@ -329,6 +483,102 @@ export default function SafetyTab() {
               className="w-full h-9 bg-purple-600 hover:bg-purple-700"
             >
               {subtitleLoading ? '処理中...' : '補足情報を設定'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* 欠場処理機能 */}
+        <Card className="border-2 border-rose-200 bg-rose-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-rose-800">
+              <UserX className="w-4 h-4" />
+              欠場処理（BYE変換）
+            </CardTitle>
+            <CardDescription className="text-xs">
+              指定ペアを欠場とし、BYEに変換します。対戦相手が自動的に次ラウンドへ進出します。
+              未着手の試合のみ対象です。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
+              <Input
+                type="text"
+                placeholder="例: camp123_MD_1_1_1"
+                value={absenceMatchId}
+                onChange={(e) => setAbsenceMatchId(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block text-slate-700">欠場するペア</label>
+              <Select value={absencePosition} onValueChange={(v) => setAbsencePosition(v as '1' | '2')}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Player 1（上側）</SelectItem>
+                  <SelectItem value="2">Player 2（下側）</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              onClick={handleAbsence}
+              disabled={absenceLoading || !absenceMatchId.trim()}
+              className="w-full h-9 bg-rose-600 hover:bg-rose-700"
+            >
+              {absenceLoading ? '処理中...' : '欠場処理を実行'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* 種目削除機能 */}
+        <Card className="border-2 border-red-300 bg-red-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-red-800">
+              <Trash2 className="w-4 h-4" />
+              種目トーナメント削除
+            </CardTitle>
+            <CardDescription className="text-xs">
+              選択した種目のトーナメントデータのみを削除します。他の種目には影響しません。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <label className="text-xs font-medium mb-1 block text-slate-700">種目</label>
+              <Select value={deleteTournamentType} onValueChange={(v) => setDeleteTournamentType(v as TournamentType)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mens_doubles">男子ダブルス</SelectItem>
+                  <SelectItem value="womens_doubles">女子ダブルス</SelectItem>
+                  <SelectItem value="mixed_doubles">混合ダブルス</SelectItem>
+                  <SelectItem value="mens_singles">男子シングルス</SelectItem>
+                  <SelectItem value="womens_singles">女子シングルス</SelectItem>
+                  <SelectItem value="team_battle">団体戦</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block text-slate-700">部門</label>
+              <Select value={deleteDivision} onValueChange={(v) => setDeleteDivision(v as 'all' | '1' | '2')}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部門</SelectItem>
+                  <SelectItem value="1">1部のみ</SelectItem>
+                  <SelectItem value="2">2部のみ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              onClick={handleDeleteCategory}
+              disabled={deleteLoading || !camp?.id}
+              className="w-full h-9 bg-red-700 hover:bg-red-800"
+            >
+              {deleteLoading ? '削除中...' : 'この種目のトーナメントを削除'}
             </Button>
           </CardContent>
         </Card>

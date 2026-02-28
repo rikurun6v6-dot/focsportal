@@ -16,7 +16,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import type { ETAResult, Player, Match, Camp } from "@/types";
-import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy } from "lucide-react";
+import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import UserGuide from "@/components/common/UserGuide";
 import ChatWindow from "@/components/ChatWindow";
@@ -167,13 +167,61 @@ export default function UserDashboard() {
     const [players, setPlayers] = useState<Player[]>([]);
     const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null);
     const [campStatus, setCampStatus] = useState<'setup' | 'active' | 'archived' | null>(null);
+    const [notifEnabled, setNotifEnabled] = useState(false);
+    const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+    const prevUnreadCount = useRef<number>(0);
+    const notifEnabledRef = useRef(false); // onSnapshot コールバック内でステールにならないよう ref で管理
 
     const USER_GUIDE_KEY = 'user_guide_completed';
+    const NOTIF_KEY = 'focs_notifications';
 
     // 選手IDから選手情報を取得するヘルパー関数
     const getPlayerById = (playerId: string | undefined): Player | null => {
         if (!playerId) return null;
         return players.find(p => p.id === playerId) || null;
+    };
+
+    // OSレベルの通知を表示（ServiceWorker経由でバックグラウンド対応）
+    const showOSNotification = async (title: string, body: string, tag: string) => {
+        if (!notifEnabledRef.current || !('Notification' in window) || Notification.permission !== 'granted') return;
+        const opts: NotificationOptions = {
+            body,
+            icon: '/new-logo_transparent.png',
+            tag,
+            requireInteraction: tag === 'match-calling',
+        };
+        try {
+            if ('serviceWorker' in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                await reg.showNotification(title, opts);
+            } else {
+                new Notification(title, opts);
+            }
+        } catch { /* silent */ }
+    };
+
+    // 通知許可トグル
+    const handleNotifToggle = async () => {
+        if (!('Notification' in window)) return;
+        if (notifPermission === 'denied') {
+            alert('ブラウザの設定から通知を許可してください');
+            return;
+        }
+        if (notifPermission === 'default') {
+            const result = await Notification.requestPermission();
+            setNotifPermission(result);
+            if (result === 'granted') {
+                setNotifEnabled(true);
+                notifEnabledRef.current = true;
+                localStorage.setItem(NOTIF_KEY, 'true');
+            }
+            return;
+        }
+        // granted → on/off toggle
+        const next = !notifEnabled;
+        setNotifEnabled(next);
+        notifEnabledRef.current = next;
+        localStorage.setItem(NOTIF_KEY, next ? 'true' : 'false');
     };
 
     // オフライン検知
@@ -220,9 +268,20 @@ export default function UserDashboard() {
         }
     }, [setManualCamp]);
 
+    // 通知許可状態をローカルストレージから復元
     useEffect(() => {
-        // ブラウザ通知機能は廃止（アプリ内通知のみ使用）
+        if ('Notification' in window) {
+            setNotifPermission(Notification.permission);
+            const stored = localStorage.getItem(NOTIF_KEY);
+            const enabled = stored === 'true' && Notification.permission === 'granted';
+            setNotifEnabled(enabled);
+            notifEnabledRef.current = enabled;
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // notifEnabled が変わるたびに ref を同期
+    useEffect(() => { notifEnabledRef.current = notifEnabled; }, [notifEnabled]);
 
     // チャット機能の有効/無効を確認
     useEffect(() => {
@@ -242,13 +301,24 @@ export default function UserDashboard() {
             camp.id,
             (messages: Message[]) => {
                 // 自分宛の未読メッセージをカウント
-                const unreadCount = messages.filter(
+                const myUnread = messages.filter(
                     (msg) =>
                         !msg.read_by?.includes(myPlayer.id) &&
                         (msg.type === 'broadcast' || msg.recipient_ids?.includes(myPlayer.id))
-                ).length;
-
+                );
+                const unreadCount = myUnread.length;
                 setHasUnreadMessages(unreadCount > 0);
+
+                // 新着メッセージがあればOS通知
+                if (unreadCount > prevUnreadCount.current && myUnread.length > 0) {
+                    const latest = myUnread[0];
+                    showOSNotification(
+                        latest.type === 'broadcast' ? '📢 全体アナウンス' : '💬 新着メッセージ',
+                        latest.content.slice(0, 80),
+                        'message-new'
+                    );
+                }
+                prevUnreadCount.current = unreadCount;
             },
             myPlayer.id
         );
@@ -330,19 +400,17 @@ export default function UserDashboard() {
                         console.log('Audio creation failed:', e);
                     }
 
-                    // モバイル通知API（許可されている場合）
-                    if ('Notification' in window && Notification.permission === 'granted') {
-                        try {
-                            new Notification('試合呼び出し', {
-                                body: 'あなたの試合が始まります！',
-                                icon: '/new-logo_transparent.png',
-                                tag: 'match-calling',
-                                requireInteraction: true
-                            });
-                        } catch (e) {
-                            console.log('Notification failed:', e);
-                        }
+                    // バイブレーション（スマホ触覚フィードバック）
+                    if ('vibrate' in navigator) {
+                        navigator.vibrate([400, 100, 400, 100, 400]);
                     }
+
+                    // OS通知（ServiceWorker経由 → バックグラウンドでも届く）
+                    await showOSNotification(
+                        '🏸 試合呼び出し！',
+                        'あなたの試合が始まります！コートへお越しください',
+                        'match-calling'
+                    );
                 }
 
                 previousMatchStatusRef.current = currentStatus;
@@ -607,6 +675,29 @@ export default function UserDashboard() {
                                 <span className="text-[10px] font-medium text-slate-600">ホーム</span>
                             </button>
                         </Link>
+
+                        {/* 通知許可トグルボタン */}
+                        {'Notification' in window && (
+                            <button
+                                onClick={handleNotifToggle}
+                                className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                title={
+                                    notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
+                                    : notifEnabled ? '通知ON（タップでOFF）'
+                                    : '通知OFF（タップして許可）'
+                                }
+                            >
+                                {notifPermission === 'denied'
+                                    ? <BellOff className="w-5 h-5 text-slate-300" />
+                                    : notifEnabled
+                                        ? <Bell className="w-5 h-5 text-amber-400" />
+                                        : <Bell className="w-5 h-5 text-slate-400" />
+                                }
+                                <span className={`text-[10px] font-medium ${notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
+                                    {notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
+                                </span>
+                            </button>
+                        )}
 
                         {/* チャットボタン */}
                         {isChatEnabled && (

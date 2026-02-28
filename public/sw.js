@@ -29,6 +29,23 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// 通知クリック時: アプリを開く or フォーカス
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // すでに /user ページが開いていればフォーカス
+      for (const client of clientList) {
+        if (client.url.includes('/user') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // 開いていなければ新規タブで /user を開く
+      if (clients.openWindow) return clients.openWindow('/user');
+    })
+  );
+});
+
 // フェッチ時: Network First戦略(Firestoreデータは常に最新を取得)
 self.addEventListener('fetch', (event) => {
   const { request } = event;

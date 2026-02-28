@@ -337,17 +337,8 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         );
     }
 
-    if (matches.length === 0) {
-        return (
-            <div className="flex items-center justify-center p-12">
-                <div className="text-center space-y-3">
-                    <Trophy className="w-16 h-16 text-slate-300 mx-auto" />
-                    <p className="text-slate-600 font-medium">まだ試合がありません</p>
-                    <p className="text-sm text-slate-400">トーナメントを生成してください</p>
-                </div>
-            </div>
-        );
-    }
+    // ※ matches.length === 0 の場合は早期returnせず、種目セレクターを表示したまま
+    //   コンテンツ内で「未生成」メッセージを表示する（Task3 fix）
 
     return (
         <div className="space-y-4">
@@ -553,7 +544,15 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     {loading && <p className="text-slate-500 text-center">読み込み中...</p>}
 
                     {!loading && divisionMatches.length === 0 && (
-                        <p className="text-slate-400 text-center py-8">この部門の試合はまだ作成されていません</p>
+                        <div className="flex flex-col items-center justify-center py-12 space-y-2">
+                            <Trophy className="w-12 h-12 text-slate-300" />
+                            <p className="text-slate-500 font-medium">
+                                {matches.length === 0
+                                    ? 'この種目のトーナメントはまだ生成されていません'
+                                    : 'この部門（Division）の試合はまだ作成されていません'}
+                            </p>
+                            <p className="text-xs text-slate-400">トーナメント生成タブから生成してください</p>
+                        </div>
                     )}
 
                     {!loading && divisionMatches.length > 0 && (
