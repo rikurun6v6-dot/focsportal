@@ -131,7 +131,7 @@ export default function NotificationBar({
                     }}
                     className={`
                       relative flex flex-col justify-between flex-shrink-0
-                      w-60 h-full rounded-xl border shadow-md px-3 py-2 overflow-hidden
+                      w-80 h-full rounded-xl border shadow-md px-3 py-2 overflow-hidden
                       ${isCalling
                         ? 'bg-indigo-50 border-indigo-300 shadow-indigo-100'
                         : 'bg-emerald-50 border-emerald-300 shadow-emerald-100'
