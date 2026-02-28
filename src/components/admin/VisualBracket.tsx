@@ -219,6 +219,14 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             );
         }
 
+        // ソース試合が存在するが未完了（かつ非BYE）の場合:
+        // Firestore に player_id が入っていてもゴミデータ（誤伝播）の可能性があるため
+        // 「X回戦の勝者」表示にフォールバックし、名前を出さない
+        if (sourceMatch && !isByeMatch(sourceMatch) && sourceMatch.status !== 'completed') {
+            const actualMatchNum = getActualMatchNumber(sourceMatch);
+            return `${getUnifiedRoundName(sourceMatch, maxRound)} 第${actualMatchNum}試合の勝者`;
+        }
+
         // ソース試合がBYEの場合: 常にソース試合から選手名を再計算（保存済みの古いplayer_idを無視）
         // これにより PairSeedManager でペアを変更した直後も正しい選手名が即座に表示される
         if (sourceMatch && isByeMatch(sourceMatch)) {

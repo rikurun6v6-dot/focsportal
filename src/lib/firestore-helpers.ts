@@ -632,7 +632,8 @@ export async function cleanupEarlyPropagations(
 
   for (const match of allMatches) {
     if (match.round <= 1) continue;
-    if (match.status !== 'waiting') continue;
+    // completed は正常進出済みなのでスキップ
+    if (match.status === 'completed') continue;
 
     const hasP1 = !!match.player1_id;
     const hasP2 = !!match.player2_id;
@@ -649,6 +650,7 @@ export async function cleanupEarlyPropagations(
     const feedersForPos1 = feeders.filter(f => getPosition(f) === 1);
     const feedersForPos2 = feeders.filter(f => getPosition(f) === 2);
 
+    // 「確定した進出」= feeder が completed（BYE/walkover 含む）
     const pos1Done = feedersForPos1.length === 0 || feedersForPos1.some(f => f.status === 'completed');
     const pos2Done = feedersForPos2.length === 0 || feedersForPos2.some(f => f.status === 'completed');
 
@@ -704,6 +706,12 @@ export async function propagateByePlayerChange(
   changedMatch: Match,
   allMatches: Match[]
 ): Promise<void> {
+  // 確定済みBYEのみ伝播する。
+  // waiting状態の試合（Round 2以降で片側だけ埋まっている試合）は伝播しない。
+  // これにより PairSeedManager が Round 2 試合に対して呼んでも Round 3 を汚染しない。
+  const isConfirmedBye = changedMatch.status === 'completed' || !!changedMatch.is_walkover;
+  if (!isConfirmedBye) return;
+
   // BYE判定: 片方のみ選手が存在する
   const hasPlayer1 = !!changedMatch.player1_id;
   const hasPlayer2 = !!changedMatch.player2_id;
