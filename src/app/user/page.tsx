@@ -611,13 +611,19 @@ export default function UserDashboard() {
                     </div>
 
                     {/* 中段: 選手名 */}
-                    <div className="text-center mb-4">
+                    <div className="text-center mb-4 space-y-1">
                         <p className="text-white text-2xl md:text-3xl font-black leading-tight">
                             {getPlayerById(currentMatch.player1_id)?.name || '未定'}
-                            {currentMatch.player3_id && getPlayerById(currentMatch.player3_id) && ` / ${getPlayerById(currentMatch.player3_id)?.name}`}
-                            <span className="text-emerald-400 mx-3">vs</span>
+                            {currentMatch.player3_id && getPlayerById(currentMatch.player3_id) && (
+                                <span> / {getPlayerById(currentMatch.player3_id)?.name}</span>
+                            )}
+                        </p>
+                        <p className="text-emerald-400 text-sm font-bold tracking-widest">vs</p>
+                        <p className="text-white text-2xl md:text-3xl font-black leading-tight">
                             {getPlayerById(currentMatch.player2_id)?.name || '未定'}
-                            {currentMatch.player4_id && getPlayerById(currentMatch.player4_id) && ` / ${getPlayerById(currentMatch.player4_id)?.name}`}
+                            {currentMatch.player4_id && getPlayerById(currentMatch.player4_id) && (
+                                <span> / {getPlayerById(currentMatch.player4_id)?.name}</span>
+                            )}
                         </p>
                     </div>
 
