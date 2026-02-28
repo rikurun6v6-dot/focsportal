@@ -80,9 +80,10 @@ export async function dispatchToEmptyCourt(
     if (m.player4_id) busyPlayerIds.add(m.player4_id);
   });
 
-  // 1部と2部の進行状況を計算
-  const division1Matches = allMatches.filter(m => m.division === 1);
-  const division2Matches = allMatches.filter(m => m.division === 2);
+  // 1部と2部の進行状況を計算（campIdでフィルタして他合宿の試合を混入させない）
+  const campMatches = court.campId ? allMatches.filter(m => m.campId === court.campId) : allMatches;
+  const division1Matches = campMatches.filter(m => m.division === 1);
+  const division2Matches = campMatches.filter(m => m.division === 2);
 
   const division1Completed = division1Matches.filter(m => m.status === 'completed').length;
   const division2Completed = division2Matches.filter(m => m.status === 'completed').length;
@@ -95,8 +96,12 @@ export async function dispatchToEmptyCourt(
   const division2Progress = division2Total > 0 ? division2Completed / division2Total : 1;
 
   // 進行が遅れている方（進行率が低い方）を優先
-  // ⚠️ IMPORTANT: 同率の場合は2部を優先（1部優先バイアスを防止し、完全並列化を実現）
+  // 同率の場合は2部をデフォルト優先（ただしgap=0のためボーナス0なので実質差なし）
   const preferredDivision = division1Progress < division2Progress ? 1 : 2;
+  // ギャップに比例したボーナス（固定150→比例式に変更）
+  // gap 0% → 0, gap 5% → 100, gap 10% → 200, gap 30%+ → 600（上限）
+  const progressGap = Math.abs(division1Progress - division2Progress);
+  const divisionBonusBase = Math.round(Math.min(600, progressGap * 2000));
 
   // Load config for finals wait mode
   const config = await getDocument<Config>('config', 'system');
@@ -220,9 +225,8 @@ export async function dispatchToEmptyCourt(
     const waitTime = (now - match.created_at.toMillis()) / (1000 * 60);
     const roundScore = ROUND_COEFFICIENT * (getMaxRound(match.tournament_type) - match.round + 1);
 
-    // 部のバランスボーナス（少ない方の部に+150分相当の優先度）
-    // ⚠️ 大きな値（150）により、進行の遅い部が確実に優先され、1部・2部が公平に並列進行する
-    let divisionBonus = match.division === preferredDivision ? 150 : 0;
+    // 部のバランスボーナス（進行差に比例。差が大きいほど優先度を上げ、均等進行を促す）
+    let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
 
     // 隣接コートチェック: 前後2コートが同じ部なら優先度を下げる
     if (match.division && adjacentCourtDivisions.includes(match.division)) {

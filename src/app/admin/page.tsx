@@ -24,8 +24,9 @@ import PairSeedManager from "@/components/admin/PairSeedManager";
 import GroupRankingManager from "@/components/admin/GroupRankingManager";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
+import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division } from "@/types";
-import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle } from "lucide-react";
+import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Cpu } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
 import MessageManager from "@/components/admin/MessageManager";
@@ -620,6 +621,7 @@ export default function AdminDashboard() {
               { value: "pairseed", label: "ペア・シード", icon: Settings },
               { value: "messages", label: "メッセージ", icon: MessageCircle },
               { value: "safety", label: "安全", icon: ShieldAlert },
+              { value: "advanced", label: "応用", icon: Cpu },
             ].map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.value;
@@ -1039,6 +1041,10 @@ export default function AdminDashboard() {
 
                 {/* 安全機能（Undo、Walkover、Subtitle） */}
                 <SafetyTab />
+              </TabsContent>
+
+              <TabsContent value="advanced" className="space-y-6">
+                <AdvancedAnalytics campId={camp.id} />
               </TabsContent>
             </Tabs>
           </main>

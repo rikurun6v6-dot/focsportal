@@ -438,12 +438,12 @@ export default function UserDashboard() {
                     setEtaLoading(true);
                     const result = await searchPlayerByName(myPlayer.name);
                     if (result === null) {
-                        // 待機中の試合がない場合
                         setMyEta(null);
+                    } else if (result.matches_before === 0 && result.minutes <= 1) {
+                        setMyEta('まもなく呼び出されます');
                     } else if (result.matches_before === 0) {
-                        // 次の試合の場合、動的な待ち時間を表示
                         setMyEta(`約${result.minutes}分後（次の試合です）`);
-                    } else if (result.minutes > 0) {
+                    } else {
                         setMyEta(`約${result.minutes}分後（前に${result.matches_before}試合）`);
                     }
                     setEtaLoading(false);
@@ -470,12 +470,12 @@ export default function UserDashboard() {
             try {
                 const result = await searchPlayerByName(myPlayer.name);
                 if (result === null) {
-                    // 待機中の試合がない場合
                     setMyEta(null);
+                } else if (result.matches_before === 0 && result.minutes <= 1) {
+                    setMyEta('まもなく呼び出されます');
                 } else if (result.matches_before === 0) {
-                    // 次の試合の場合、動的な待ち時間を表示
                     setMyEta(`約${result.minutes}分後（次の試合です）`);
-                } else if (result.minutes > 0) {
+                } else {
                     setMyEta(`約${result.minutes}分後（前に${result.matches_before}試合）`);
                 }
             } catch (error) {
