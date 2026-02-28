@@ -187,6 +187,21 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
+  // ✅ ラウンド順序の厳守: 同じtournament_type+divisionの中で最小ラウンドの試合のみを対象にする
+  // これにより、n回戦の試合があるのにn+1回戦が割り当てられる問題を防ぐ
+  const minRoundByGroup = new Map<string, number>();
+  for (const match of validMatches) {
+    const groupKey = `${match.tournament_type}_${match.division}`;
+    const existing = minRoundByGroup.get(groupKey);
+    if (existing === undefined || match.round < existing) {
+      minRoundByGroup.set(groupKey, match.round);
+    }
+  }
+  const roundFilteredMatches = validMatches.filter(match => {
+    const groupKey = `${match.tournament_type}_${match.division}`;
+    return match.round === minRoundByGroup.get(groupKey);
+  });
+
   // 隣接コートの部門を取得（3面連続で同じ部にならないように）
   const allCourts = await getAllDocuments<Court>('courts');
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
@@ -201,7 +216,7 @@ export async function dispatchToEmptyCourt(
     waitingMatches
   ) : null;
 
-  const candidatesWithScore = validMatches.map(match => {
+  const candidatesWithScore = roundFilteredMatches.map(match => {
     const waitTime = (now - match.created_at.toMillis()) / (1000 * 60);
     const roundScore = ROUND_COEFFICIENT * (getMaxRound(match.tournament_type) - match.round + 1);
 

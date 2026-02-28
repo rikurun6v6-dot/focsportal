@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument } from "@/lib/firestore-helpers";
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType, Division } from "@/types";
-import { Trophy, Users, Search, X, Camera, Download, Pencil, Check } from "lucide-react";
+import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut } from "lucide-react";
 import PreliminaryGroup from "./PreliminaryGroup";
 import KnockoutTree from "./KnockoutTree";
 import { getUnifiedRoundName, getTournamentTypeName } from "@/lib/tournament-logic";
@@ -40,6 +40,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [exporting, setExporting] = useState(false);
+    const [zoom, setZoom] = useState(1.0);
     const [editMode, setEditMode] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<{ matchId: string; position: 1 | 2 } | null>(null);
     const bracketRef = useRef<HTMLDivElement>(null);
@@ -135,8 +136,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             // スクロール領域を含む全体を取得
             const originalOverflow = target.style.overflow;
             const originalMaxHeight = target.style.maxHeight;
+            const originalZoom = target.style.zoom;
             target.style.overflow = 'visible';
             target.style.maxHeight = 'none';
+            target.style.zoom = '1';
 
             const fullWidth = Math.max(target.scrollWidth, target.offsetWidth);
             const fullHeight = Math.max(target.scrollHeight, target.offsetHeight);
@@ -153,6 +156,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
 
             target.style.overflow = originalOverflow;
             target.style.maxHeight = originalMaxHeight;
+            target.style.zoom = originalZoom;
 
             // ファイル名を生成
             const tournamentName = getTournamentTypeName(tournamentType);
@@ -364,6 +368,33 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                 {editMode ? <><Check className="w-4 h-4 mr-1" />編集完了</> : <><Pencil className="w-4 h-4 mr-1" />ペア入替</>}
                             </Button>
                         )}
+                        {/* ズームコントロール */}
+                        <div className="flex items-center gap-1">
+                            <Button
+                                onClick={() => setZoom(z => Math.max(0.4, Math.round((z - 0.1) * 10) / 10))}
+                                variant="outline"
+                                size="sm"
+                                className="px-2"
+                                disabled={zoom <= 0.4}
+                            >
+                                <ZoomOut className="w-4 h-4" />
+                            </Button>
+                            <button
+                                onClick={() => setZoom(1.0)}
+                                className="text-xs font-mono text-slate-600 hover:text-slate-900 w-12 text-center"
+                            >
+                                {Math.round(zoom * 100)}%
+                            </button>
+                            <Button
+                                onClick={() => setZoom(z => Math.min(2.0, Math.round((z + 0.1) * 10) / 10))}
+                                variant="outline"
+                                size="sm"
+                                className="px-2"
+                                disabled={zoom >= 2.0}
+                            >
+                                <ZoomIn className="w-4 h-4" />
+                            </Button>
+                        </div>
                         <Button
                             onClick={handleSaveAsImage}
                             disabled={exporting || matches.length === 0}
@@ -526,7 +557,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     )}
 
                     {!loading && divisionMatches.length > 0 && (
-                        <div className="space-y-8" ref={bracketContentRef}>
+                        <div className="space-y-8" ref={bracketContentRef} style={{ zoom: zoom }}>
                             {/* 予選リーグ */}
                             {hasPreliminary && (
                                 <PreliminaryGroup
