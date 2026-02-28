@@ -46,6 +46,7 @@ export default function NotificationBar({
   sidebarExpanded = false,
 }: NotificationBarProps) {
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const timersRef = useRef<Record<string, NodeJS.Timeout[]>>({});
   const processedIdsRef = useRef<Set<string>>(new Set());
 
@@ -57,6 +58,15 @@ export default function NotificationBar({
       // 次フレームで visible=true にすることでスライドインが発火
       const mountTimer = setTimeout(() => {
         setVisible((prev) => ({ ...prev, [item.id]: true }));
+        // 到着直後は "fresh" 扱い → 5秒後に解除
+        setFreshIds((prev) => new Set(prev).add(item.id));
+        setTimeout(() => {
+          setFreshIds((prev) => {
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+        }, 5000);
       }, 16);
 
       if (item.status === 'playing') {
@@ -113,6 +123,7 @@ export default function NotificationBar({
               announcements.map((announcement) => {
                 const isCalling = announcement.status === 'calling';
                 const isVis = visible[announcement.id];
+                const isFresh = freshIds.has(announcement.id);
                 const typeLabel = announcement.tournamentType
                   ? getTournamentLabel(
                       announcement.tournamentType,
@@ -132,22 +143,27 @@ export default function NotificationBar({
                     className={`
                       relative flex flex-col justify-between flex-shrink-0
                       w-80 h-full rounded-xl border shadow-md px-3 py-2 overflow-hidden
-                      ${isCalling
-                        ? 'bg-indigo-50 border-indigo-300 shadow-indigo-100'
-                        : 'bg-emerald-50 border-emerald-300 shadow-emerald-100'
+                      transition-colors duration-700
+                      ${isFresh
+                        ? 'bg-orange-50 border-orange-400 shadow-orange-200'
+                        : isCalling
+                          ? 'bg-indigo-50 border-indigo-300 shadow-indigo-100'
+                          : 'bg-emerald-50 border-emerald-300 shadow-emerald-100'
                       }
                     `}
                   >
-                    {/* calling: 背景パルスグロー */}
-                    {isCalling && (
+                    {/* 背景パルスグロー */}
+                    {isFresh ? (
+                      <div className="absolute inset-0 rounded-xl bg-orange-300 animate-pulse opacity-30 pointer-events-none" />
+                    ) : isCalling ? (
                       <div className="absolute inset-0 rounded-xl bg-indigo-200 animate-pulse opacity-20 pointer-events-none" />
-                    )}
+                    ) : null}
 
                     {/* 上段: ステータス + コート + 種目 + × */}
                     <div className="relative flex items-center gap-1.5">
                       {isCalling ? (
-                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-white bg-indigo-500 px-1.5 py-0.5 rounded-md flex-shrink-0">
-                          <Bell className="w-2.5 h-2.5 animate-bounce" />
+                        <span className={`flex items-center gap-0.5 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md flex-shrink-0 transition-colors duration-700 ${isFresh ? 'bg-orange-500' : 'bg-indigo-500'}`}>
+                          <Bell className={`w-2.5 h-2.5 ${isFresh ? 'animate-ping' : 'animate-bounce'}`} />
                           呼出中
                         </span>
                       ) : (
