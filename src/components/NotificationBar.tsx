@@ -164,7 +164,7 @@ export default function NotificationBar({
                       {isCalling ? (
                         <span className={`flex items-center gap-0.5 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md flex-shrink-0 transition-colors duration-700 ${isFresh ? 'bg-orange-500' : 'bg-indigo-500'}`}>
                           <Bell className={`w-2.5 h-2.5 ${isFresh ? 'animate-ping' : 'animate-bounce'}`} />
-                          呼出中
+                          <span className="animate-bounce inline-block">呼出中</span>
                         </span>
                       ) : (
                         <span className="flex items-center gap-0.5 text-[10px] font-bold text-white bg-emerald-500 px-1.5 py-0.5 rounded-md flex-shrink-0">
