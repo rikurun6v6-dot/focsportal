@@ -597,7 +597,7 @@ export default function UserDashboard() {
 
             // Neon Glassmorphism デザインの通知
             alertComponent = (
-                <div className="bg-slate-900/90 backdrop-blur-xl rounded-[2rem] shadow-[0_0_20px_rgba(16,185,129,0.2)] border-l-4 border-emerald-400 p-6 mb-6 animate-in slide-in-from-top-10 duration-500">
+                <div className="bg-slate-900/90 backdrop-blur-xl shadow-[0_0_20px_rgba(16,185,129,0.2)] border-l-4 border-emerald-400 p-6 animate-in slide-in-from-top-10 duration-500">
                     {/* 上段: LIVE + 試合番号 */}
                     <div className="flex items-center justify-center gap-2 mb-3">
                         <div className="flex items-center gap-1.5">
@@ -732,8 +732,13 @@ export default function UserDashboard() {
                 </div>
             </header>
 
+            {alertComponent && (
+                <div className="px-0">
+                    {alertComponent}
+                </div>
+            )}
+
             <main className="container mx-auto px-4 py-6 max-w-4xl space-y-6">
-                {alertComponent}
 
                 {campStatus === 'archived' ? (
                     <Card className="border-t-4 border-t-slate-400 bg-white shadow-sm">
