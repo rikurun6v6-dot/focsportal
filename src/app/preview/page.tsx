@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -26,7 +26,6 @@ function buildMWP(match: Match, pm: Map<string, Player>): MatchWithPlayers | nul
   return r;
 }
 
-// Side1: player1 / player3 / player5  Side2: player2 / player4 / player6
 function sideName(m: MatchWithPlayers, side: 1 | 2): string {
   if (side === 1)
     return [m.player1.name, m.player3?.name, m.player5?.name].filter(Boolean).join(' / ');
@@ -37,6 +36,9 @@ const CAT: Record<string, string> = {
   mens_doubles: '男子D', womens_doubles: '女子D', mixed_doubles: '混合D',
   mens_singles: '男子S', womens_singles: '女子S', team_battle: '団体戦',
 };
+
+const COURTS_PER_PAGE = 3;
+const PAGE_INTERVAL_MS = 8000; // 8秒ごとに切り替え
 
 // ─── main content ─────────────────────────────────────────────────────────────
 
@@ -50,9 +52,7 @@ function PreviewContent() {
   const [playersMap, setPlayersMap] = useState<Map<string, Player>>(new Map());
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [clockStr, setClockStr] = useState('');
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollPausedRef = useRef(false);
+  const [page, setPage] = useState(0);
 
   // ── clock ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -88,27 +88,22 @@ function PreviewContent() {
     return () => { u1(); u2(); u3(); };
   }, [campId]);
 
-  // ── auto-scroll ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const timer = setInterval(() => {
-      if (scrollPausedRef.current) return;
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      if (scrollHeight <= clientHeight + 4) return;
-      if (scrollTop + clientHeight >= scrollHeight - 4) {
-        scrollPausedRef.current = true;
-        setTimeout(() => {
-          el.scrollTo({ top: 0, behavior: 'smooth' });
-          setTimeout(() => { scrollPausedRef.current = false; }, 1500);
-        }, 2500);
-      } else {
-        el.scrollTop += 1;
-      }
-    }, 30);
-    return () => clearInterval(timer);
-  }, []);
+  // ── auto-page ────────────────────────────────────────────────────────────
+  const activeCourts = courts.filter((c) => c.is_active);
+  const totalPages = Math.max(1, Math.ceil(activeCourts.length / COURTS_PER_PAGE));
 
+  useEffect(() => {
+    // ページ数が変わったとき範囲外になっていたらリセット
+    setPage((p) => (p >= totalPages ? 0 : p));
+  }, [totalPages]);
+
+  useEffect(() => {
+    if (totalPages <= 1) return;
+    const t = setInterval(() => setPage((p) => (p + 1) % totalPages), PAGE_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [totalPages]);
+
+  // ── elapsed time ──────────────────────────────────────────────────────────
   const getElapsedTime = (match: MatchWithPlayers) => {
     const startTime = match.start_time || match.updated_at;
     if (!startTime) return null;
@@ -118,24 +113,16 @@ function PreviewContent() {
   };
 
   // ── derived ───────────────────────────────────────────────────────────────
-  const activeCourts = courts.filter((c) => c.is_active);
   const matchesById = new Map(matches.map((m) => [m.id, m]));
-
-  // 開催中の種目（waiting/calling/playing の試合に含まれる tournament_type を重複なし・表示順で）
   const activeCategories = [...new Set(matches.map((m) => m.tournament_type))].filter(Boolean);
+  const pagedCourts = activeCourts.slice(page * COURTS_PER_PAGE, (page + 1) * COURTS_PER_PAGE);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      ref={scrollRef}
-      className="min-h-screen bg-white overflow-y-auto"
-      onMouseEnter={() => { scrollPausedRef.current = true; }}
-      onMouseLeave={() => { scrollPausedRef.current = false; }}
-      onTouchStart={() => { scrollPausedRef.current = true; }}
-      onTouchEnd={() => { setTimeout(() => { scrollPausedRef.current = false; }, 3000); }}
-    >
+    <div className="h-screen bg-white flex flex-col overflow-hidden">
+
       {/* ── Header ── */}
-      <div className="px-4 pt-4 pb-2 flex items-start justify-between gap-4">
+      <div className="flex-shrink-0 px-4 pt-4 pb-3 flex items-start justify-between gap-4 border-b border-slate-100">
         {/* 左: 時刻 + 種目 */}
         <div>
           <p className="text-7xl font-black text-slate-800 tabular-nums leading-none">{clockStr}</p>
@@ -149,16 +136,35 @@ function PreviewContent() {
             </div>
           )}
         </div>
-        {/* 右: タイトル + 合宿名 */}
-        <div className="text-right">
-          <h2 className="text-3xl font-bold text-slate-800">コート別状況</h2>
-          {campName && <p className="text-base text-slate-600 mt-1">{campName}</p>}
+
+        {/* 右: タイトル + 合宿名 + ページドット */}
+        <div className="text-right flex flex-col items-end gap-2">
+          <div>
+            <h2 className="text-3xl font-bold text-slate-800">コート別状況</h2>
+            {campName && <p className="text-base text-slate-600 mt-1">{campName}</p>}
+          </div>
+          {/* ページインジケーター */}
+          {totalPages > 1 && (
+            <div className="flex gap-2 items-center">
+              {Array.from({ length: totalPages }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i)}
+                  className={`rounded-full transition-all ${
+                    i === page
+                      ? 'w-6 h-3 bg-sky-500'
+                      : 'w-3 h-3 bg-slate-200 hover:bg-slate-300'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Court grid (ResultsTab と同一構造) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-4">
-        {activeCourts.map((court) => {
+      {/* ── Court grid: 常に3列、カードが縦に伸びて画面を埋める ── */}
+      <div className="flex-1 grid grid-cols-3 gap-5 p-4 min-h-0">
+        {pagedCourts.map((court) => {
           const courtNumber = court.number || court.id.replace('court_', '');
           const matchRaw = court.current_match_id ? matchesById.get(court.current_match_id) : null;
           const match = matchRaw ? buildMWP(matchRaw, playersMap) : null;
@@ -169,10 +175,14 @@ function PreviewContent() {
           return (
             <Card
               key={court.id}
-              className={`relative ${isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}
+              className={`flex flex-col overflow-hidden ${
+                isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'
+              }`}
             >
               <CardHeader
-                className={`pb-2 ${isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}
+                className={`flex-shrink-0 pb-2 ${
+                  isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'
+                }`}
               >
                 <CardTitle className="flex items-center justify-between">
                   <span className={`text-4xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
@@ -193,7 +203,7 @@ function PreviewContent() {
                 </CardTitle>
               </CardHeader>
 
-              <CardContent className="pt-3">
+              <CardContent className="flex-1 flex flex-col justify-center pt-3 pb-4">
                 {isOccupied && match ? (
                   <div className="space-y-3">
                     {/* 選手表示 */}
@@ -213,7 +223,7 @@ function PreviewContent() {
                       </div>
                     </div>
 
-                    {/* calling → 呼び出し中（黄色 pinging dot） */}
+                    {/* calling */}
                     {isCalling && (
                       <div className="flex items-center justify-center gap-2 text-yellow-600 bg-yellow-50 px-3 py-2 rounded text-base">
                         <span className="relative flex h-4 w-4">
@@ -230,7 +240,7 @@ function PreviewContent() {
                       </div>
                     )}
 
-                    {/* playing → 試合中（緑） */}
+                    {/* playing */}
                     {isPlaying && (
                       <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 px-3 py-2 rounded text-base">
                         <Clock className="w-5 h-5" />
@@ -242,7 +252,7 @@ function PreviewContent() {
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-6">
+                  <div className="flex items-center justify-center h-full">
                     <span className="text-sm font-medium text-slate-400">空きコート</span>
                   </div>
                 )}
@@ -261,7 +271,7 @@ export default function PreviewPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="h-screen bg-white flex items-center justify-center">
           <p className="text-slate-400 text-lg">読み込み中…</p>
         </div>
       }
