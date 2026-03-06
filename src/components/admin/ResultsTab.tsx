@@ -24,7 +24,7 @@ import { recordMatchDuration } from '@/lib/eta';
 import type { Match, Court, MatchWithPlayers } from '@/types';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
-import { Clock, Users } from 'lucide-react';
+import { Clock, Users, Monitor } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
 
@@ -505,9 +505,17 @@ export default function ResultsTab() {
     <>
       <ConfirmDialog />
       <div className="space-y-4">
-        <div className="mb-4">
-          <h2 className="text-2xl font-bold text-slate-800">コート別結果入力</h2>
-          <p className="text-sm text-slate-600 mt-1">各コートで進行中の試合のスコアを直接入力できます</p>
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">コート別結果入力</h2>
+            <p className="text-sm text-slate-600 mt-1">各コートで進行中の試合のスコアを直接入力できます</p>
+          </div>
+          <a href="/preview" target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" size="sm" className="flex items-center gap-1.5 border-slate-300 text-slate-600 hover:bg-slate-50">
+              <Monitor className="w-4 h-4" />
+              モニター
+            </Button>
+          </a>
         </div>
 
         {/* 空きコートがあるが試合が休息待ちの場合の警告 */}
