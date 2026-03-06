@@ -138,11 +138,11 @@ function PreviewContent() {
       <div className="px-4 pt-4 pb-2 flex items-start justify-between gap-4">
         {/* 左: 時刻 + 種目 */}
         <div>
-          <p className="text-5xl font-black text-slate-800 tabular-nums leading-none">{clockStr}</p>
+          <p className="text-7xl font-black text-slate-800 tabular-nums leading-none">{clockStr}</p>
           {activeCategories.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
+            <div className="flex flex-wrap gap-2 mt-3">
               {activeCategories.map((type) => (
-                <span key={type} className="text-xs font-bold text-white bg-sky-500 px-2 py-0.5 rounded-full">
+                <span key={type} className="text-base font-bold text-white bg-sky-500 px-3 py-1 rounded-full">
                   {CAT[type] ?? type}
                 </span>
               ))}
@@ -151,13 +151,13 @@ function PreviewContent() {
         </div>
         {/* 右: タイトル + 合宿名 */}
         <div className="text-right">
-          <h2 className="text-2xl font-bold text-slate-800">コート別状況</h2>
-          {campName && <p className="text-sm text-slate-600 mt-0.5">{campName}</p>}
+          <h2 className="text-3xl font-bold text-slate-800">コート別状況</h2>
+          {campName && <p className="text-base text-slate-600 mt-1">{campName}</p>}
         </div>
       </div>
 
       {/* ── Court grid (ResultsTab と同一構造) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-4">
         {activeCourts.map((court) => {
           const courtNumber = court.number || court.id.replace('court_', '');
           const matchRaw = court.current_match_id ? matchesById.get(court.current_match_id) : null;
@@ -175,16 +175,16 @@ function PreviewContent() {
                 className={`pb-2 ${isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}
               >
                 <CardTitle className="flex items-center justify-between">
-                  <span className={`text-xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
+                  <span className={`text-4xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
                     {courtNumber}コート
                   </span>
                   {match && (
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full">
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-sm font-bold text-white bg-sky-500 px-2.5 py-0.5 rounded-full">
                         {CAT[match.tournament_type] ?? match.tournament_type}
                       </span>
                       {match.division && (
-                        <span className="text-[10px] font-medium text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                        <span className="text-sm font-medium text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
                           {match.division}部
                         </span>
                       )}
@@ -193,21 +193,21 @@ function PreviewContent() {
                 </CardTitle>
               </CardHeader>
 
-              <CardContent className="pt-2">
+              <CardContent className="pt-3">
                 {isOccupied && match ? (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {/* 選手表示 */}
-                    <div className="space-y-1.5">
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <p className="font-bold text-slate-800 text-center text-sm">
+                    <div className="space-y-2">
+                      <div className="bg-white p-3 rounded border border-slate-200">
+                        <p className="font-black text-slate-800 text-center text-2xl leading-snug">
                           {sideName(match, 1) || '未登録'}
                         </p>
                       </div>
                       <div className="flex items-center justify-center">
-                        <span className="text-[10px] font-bold text-slate-400">VS</span>
+                        <span className="text-base font-black text-slate-400">VS</span>
                       </div>
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <p className="font-bold text-slate-800 text-center text-sm">
+                      <div className="bg-white p-3 rounded border border-slate-200">
+                        <p className="font-black text-slate-800 text-center text-2xl leading-snug">
                           {sideName(match, 2) || '未登録'}
                         </p>
                       </div>
@@ -215,15 +215,15 @@ function PreviewContent() {
 
                     {/* calling → 呼び出し中（黄色 pinging dot） */}
                     {isCalling && (
-                      <div className="flex items-center justify-center gap-2 text-yellow-600 bg-yellow-50 px-2 py-1 rounded text-xs">
-                        <span className="relative flex h-2.5 w-2.5">
+                      <div className="flex items-center justify-center gap-2 text-yellow-600 bg-yellow-50 px-3 py-2 rounded text-base">
+                        <span className="relative flex h-4 w-4">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-500" />
+                          <span className="relative inline-flex rounded-full h-4 w-4 bg-yellow-500" />
                         </span>
                         <span className="font-bold">呼び出し中</span>
                         {getElapsedTime(match) && (
                           <>
-                            <Clock className="w-3 h-3 ml-1" />
+                            <Clock className="w-4 h-4 ml-1" />
                             <span className="font-mono">{getElapsedTime(match)}</span>
                           </>
                         )}
@@ -232,8 +232,8 @@ function PreviewContent() {
 
                     {/* playing → 試合中（緑） */}
                     {isPlaying && (
-                      <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 px-2 py-1 rounded text-xs">
-                        <Clock className="w-3.5 h-3.5" />
+                      <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 px-3 py-2 rounded text-base">
+                        <Clock className="w-5 h-5" />
                         <span className="font-bold">試合中</span>
                         {getElapsedTime(match) && (
                           <span className="font-mono font-bold">{getElapsedTime(match)}</span>
@@ -242,8 +242,8 @@ function PreviewContent() {
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-4">
-                    <span className="text-xs font-medium text-slate-400">空きコート</span>
+                  <div className="flex flex-col items-center justify-center py-6">
+                    <span className="text-sm font-medium text-slate-400">空きコート</span>
                   </div>
                 )}
               </CardContent>
