@@ -120,6 +120,12 @@ function PreviewContent() {
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div className="h-screen bg-white flex flex-col overflow-hidden">
+      <style>{`
+        @keyframes shrinkBar {
+          from { transform: scaleX(1); }
+          to   { transform: scaleX(0); }
+        }
+      `}</style>
 
       {/* ── Header ── */}
       <div className="flex-shrink-0 px-4 pt-4 pb-3 flex items-start justify-between gap-4 border-b border-slate-100">
@@ -161,6 +167,17 @@ function PreviewContent() {
           )}
         </div>
       </div>
+
+      {/* ── Progress bar ── */}
+      {totalPages > 1 && (
+        <div className="flex-shrink-0 h-1 bg-slate-100">
+          <div
+            key={page}
+            className="h-full bg-sky-400 origin-left"
+            style={{ animation: `shrinkBar ${PAGE_INTERVAL_MS}ms linear forwards` }}
+          />
+        </div>
+      )}
 
       {/* ── Court grid: 常に3列、カードが縦に伸びて画面を埋める ── */}
       <div className="flex-1 grid grid-cols-3 gap-5 p-4 min-h-0">
