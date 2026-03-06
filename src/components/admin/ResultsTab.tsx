@@ -397,6 +397,12 @@ export default function ResultsTab() {
     try {
       await updateDocument('matches', matchId, { status: 'calling', court_id: courtId });
       await updateDocument('courts', courtId, { current_match_id: matchId });
+      // Web Push 通知（fire-and-forget）
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId }),
+      }).catch(() => {});
       toastSuccess('試合を割り当てました');
       setShowForceAssignFor(null);
     } catch {

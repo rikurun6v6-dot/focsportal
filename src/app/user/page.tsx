@@ -22,7 +22,7 @@ import UserGuide from "@/components/common/UserGuide";
 import ChatWindow from "@/components/ChatWindow";
 import ChatNotification from "@/components/ChatNotification";
 import VisualBracket from "@/components/admin/VisualBracket";
-import { getSettings, subscribeToMessages } from "@/lib/firestore-helpers";
+import { getSettings, subscribeToMessages, savePushSubscription } from "@/lib/firestore-helpers";
 import type { Settings, Message } from "@/types";
 
 const isPlayerInMatch = (match: Match, playerId: string) => {
@@ -148,6 +148,13 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
     );
 }
 
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+}
+
 export default function UserDashboard() {
     const { camp, setManualCamp } = useCamp();
     const [myPlayer, setMyPlayer] = useState<Player | null>(null);
@@ -169,6 +176,7 @@ export default function UserDashboard() {
     const [campStatus, setCampStatus] = useState<'setup' | 'active' | 'archived' | null>(null);
     const [notifEnabled, setNotifEnabled] = useState(false);
     const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+    const [isIOSNotPWA, setIsIOSNotPWA] = useState(false);
     const prevUnreadCount = useRef<number>(0);
     const notifEnabledRef = useRef(false); // onSnapshot コールバック内でステールにならないよう ref で管理
 
@@ -200,6 +208,31 @@ export default function UserDashboard() {
         } catch { /* silent */ }
     };
 
+    // Web Push サブスクリプションを登録して Firestore に保存
+    const subscribeToPush = async (playerId: string) => {
+        if (!('serviceWorker' in navigator) || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) return;
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            const existing = await reg.pushManager.getSubscription();
+            const sub = existing ?? await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+            });
+            await savePushSubscription(playerId, sub.toJSON());
+        } catch { /* silent */ }
+    };
+
+    // Web Push サブスクリプションを解除して Firestore から削除
+    const unsubscribeFromPush = async (playerId: string) => {
+        if (!('serviceWorker' in navigator)) return;
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            const sub = await reg.pushManager.getSubscription();
+            await sub?.unsubscribe();
+            await savePushSubscription(playerId, null);
+        } catch { /* silent */ }
+    };
+
     // 通知許可トグル
     const handleNotifToggle = async () => {
         if (!('Notification' in window)) return;
@@ -214,6 +247,7 @@ export default function UserDashboard() {
                 setNotifEnabled(true);
                 notifEnabledRef.current = true;
                 localStorage.setItem(NOTIF_KEY, 'true');
+                if (myPlayer) await subscribeToPush(myPlayer.id);
             }
             return;
         }
@@ -222,7 +256,21 @@ export default function UserDashboard() {
         setNotifEnabled(next);
         notifEnabledRef.current = next;
         localStorage.setItem(NOTIF_KEY, next ? 'true' : 'false');
+        if (myPlayer) {
+            if (next) {
+                await subscribeToPush(myPlayer.id);
+            } else {
+                await unsubscribeFromPush(myPlayer.id);
+            }
+        }
     };
+
+    // iOS + PWA 未インストール検知
+    useEffect(() => {
+        const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+        setIsIOSNotPWA(isIOS && !isStandalone);
+    }, []);
 
     // オフライン検知
     useEffect(() => {
@@ -268,17 +316,20 @@ export default function UserDashboard() {
         }
     }, [setManualCamp]);
 
-    // 通知許可状態をローカルストレージから復元
+    // 通知許可状態をローカルストレージから復元 + Push購読を再登録
     useEffect(() => {
-        if ('Notification' in window) {
-            setNotifPermission(Notification.permission);
-            const stored = localStorage.getItem(NOTIF_KEY);
-            const enabled = stored === 'true' && Notification.permission === 'granted';
-            setNotifEnabled(enabled);
-            notifEnabledRef.current = enabled;
+        if (!('Notification' in window)) return;
+        setNotifPermission(Notification.permission);
+        const stored = localStorage.getItem(NOTIF_KEY);
+        const enabled = stored === 'true' && Notification.permission === 'granted';
+        setNotifEnabled(enabled);
+        notifEnabledRef.current = enabled;
+        // 既に許可済みの場合、Push購読を再登録（サブスクリプション失効対策）
+        if (enabled && myPlayer) {
+            subscribeToPush(myPlayer.id);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [myPlayer]);
 
     // notifEnabled が変わるたびに ref を同期
     useEffect(() => { notifEnabledRef.current = notifEnabled; }, [notifEnabled]);
@@ -685,22 +736,25 @@ export default function UserDashboard() {
                         {/* 通知許可トグルボタン */}
                         {'Notification' in window && (
                             <button
-                                onClick={handleNotifToggle}
+                                onClick={isIOSNotPWA ? undefined : handleNotifToggle}
                                 className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
                                 title={
-                                    notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
+                                    isIOSNotPWA ? 'iOSで通知を受け取るにはホーム画面に追加してください'
+                                    : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
                                     : notifEnabled ? '通知ON（タップでOFF）'
                                     : '通知OFF（タップして許可）'
                                 }
                             >
-                                {notifPermission === 'denied'
-                                    ? <BellOff className="w-5 h-5 text-slate-300" />
-                                    : notifEnabled
-                                        ? <Bell className="w-5 h-5 text-amber-400" />
-                                        : <Bell className="w-5 h-5 text-slate-400" />
+                                {isIOSNotPWA
+                                    ? <BellOff className="w-5 h-5 text-orange-300" />
+                                    : notifPermission === 'denied'
+                                        ? <BellOff className="w-5 h-5 text-slate-300" />
+                                        : notifEnabled
+                                            ? <Bell className="w-5 h-5 text-amber-400" />
+                                            : <Bell className="w-5 h-5 text-slate-400" />
                                 }
-                                <span className={`text-[10px] font-medium ${notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
-                                    {notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
+                                <span className={`text-[10px] font-medium ${isIOSNotPWA ? 'text-orange-400' : notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
+                                    {isIOSNotPWA ? 'PWA必須' : notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
                                 </span>
                             </button>
                         )}

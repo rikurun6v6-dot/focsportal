@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, deleteField,
   query, where, orderBy, limit, onSnapshot, Timestamp, DocumentData, serverTimestamp, QueryConstraint,
   getDocsFromCache, getDocsFromServer, getDocFromCache, getDocFromServer, Query, QuerySnapshot, DocumentSnapshot
 } from 'firebase/firestore';
@@ -1829,3 +1829,13 @@ export const startMatchOnReservedCourt = async (matchId: string): Promise<boolea
   }
 };
 
+
+// Web Push サブスクリプションを player ドキュメントに保存 / 削除
+export const savePushSubscription = async (playerId: string, sub: object | null): Promise<void> => {
+  const ref = doc(db, 'players', playerId);
+  if (sub) {
+    await updateDoc(ref, { pushSubscription: sub });
+  } else {
+    await updateDoc(ref, { pushSubscription: deleteField() });
+  }
+};

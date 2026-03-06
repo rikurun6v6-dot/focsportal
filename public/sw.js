@@ -29,6 +29,20 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// バックグラウンドプッシュ通知受信
+self.addEventListener('push', (event) => {
+  const data = event.data?.json() ?? {};
+  event.waitUntil(
+    self.registration.showNotification(data.title ?? '🏸 試合呼び出し！', {
+      body: data.body ?? 'コートへお越しください',
+      icon: '/new-logo_transparent.png',
+      tag: data.tag ?? 'match-calling',
+      requireInteraction: true,
+      data: { url: '/user' }
+    })
+  );
+});
+
 // 通知クリック時: アプリを開く or フォーカス
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

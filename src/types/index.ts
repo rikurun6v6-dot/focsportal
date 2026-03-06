@@ -46,6 +46,7 @@ export interface Player {
   is_active: boolean; // false if player has withdrawn
   total_points?: number; // Phase 9: Accumulated points
   last_match_finished_at?: Timestamp | null; // 👈 最終試合終了時刻（休息管理用）
+  pushSubscription?: object | null; // Web Push サブスクリプション
 }
 
 /**

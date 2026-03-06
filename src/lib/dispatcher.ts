@@ -61,6 +61,13 @@ export async function dispatchToEmptyCourt(
         current_match_id: reservedMatch.id
       });
 
+      // Web Push 通知（fire-and-forget）
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId: reservedMatch.id }),
+      }).catch(() => {});
+
       return reservedMatch;
     } catch (error) {
       console.error('Error dispatching reserved match:', error);
@@ -372,6 +379,13 @@ export async function dispatchToEmptyCourt(
     await updateDocument('courts', court.id, {
       current_match_id: candidate.match.id
     });
+
+    // Web Push 通知（fire-and-forget）
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchId: candidate.match.id }),
+    }).catch(() => {});
   } catch (error) {
     return null;
   }
