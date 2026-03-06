@@ -24,14 +24,14 @@ function getMatchGender(m: Match): "male" | "female" | null {
 function getTournamentLabel(type: string, division: number): string {
   const gender =
     type.includes("mens") && !type.includes("wo") ? "男子"
-    : type.includes("womens") ? "女子"
-    : type.includes("mixed") ? "混合"
-    : "";
+      : type.includes("womens") ? "女子"
+        : type.includes("mixed") ? "混合"
+          : "";
   const event =
     type.includes("doubles") ? "D"
-    : type.includes("singles") ? "S"
-    : type.includes("team_battle") ? "団"
-    : "";
+      : type.includes("singles") ? "S"
+        : type.includes("team_battle") ? "団"
+          : "";
   const div = division > 0 ? `${division}部` : "";
   return [gender, event, div].filter(Boolean).join("");
 }
@@ -251,8 +251,8 @@ export default function AdvancedAnalytics({ campId }: Props) {
           <CardContent className="space-y-4">
             {[1, 2].map(div => {
               const total = div === 1 ? divisionData.div1Total : divisionData.div2Total;
-              const comp  = div === 1 ? divisionData.div1Comp  : divisionData.div2Comp;
-              const prog  = div === 1 ? divisionData.div1Progress : divisionData.div2Progress;
+              const comp = div === 1 ? divisionData.div1Comp : divisionData.div2Comp;
+              const prog = div === 1 ? divisionData.div1Progress : divisionData.div2Progress;
               const isPref = divisionData.preferredDivision === div && divisionData.progressGap > 0.005;
               return (
                 <div key={div}>
@@ -334,11 +334,10 @@ export default function AdvancedAnalytics({ campId }: Props) {
                     return (
                       <tr
                         key={item.match.id}
-                        className={`border-b border-slate-100 ${
-                          item.isBlocked ? "bg-slate-50 opacity-60"
-                          : isNext ? "bg-sky-50"
-                          : ""
-                        }`}
+                        className={`border-b border-slate-100 ${item.isBlocked ? "bg-slate-50 opacity-60"
+                            : isNext ? "bg-sky-50"
+                              : ""
+                          }`}
                       >
                         <td className="px-3 py-2 font-bold text-slate-500">
                           {item.isBlocked ? "—" : idx + 1}

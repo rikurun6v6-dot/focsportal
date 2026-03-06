@@ -170,11 +170,15 @@ function PreviewContent() {
 
       {/* ── Progress bar ── */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 h-1 bg-slate-100">
+        <div className="flex-shrink-0 h-2 bg-slate-100 overflow-hidden">
           <div
             key={page}
-            className="h-full bg-sky-400 origin-left"
-            style={{ animation: `shrinkBar ${PAGE_INTERVAL_MS}ms linear forwards` }}
+            className="h-full rounded-r-full origin-left"
+            style={{
+              background: 'linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%)',
+              boxShadow: '0 0 8px rgba(129, 140, 248, 0.6)',
+              animation: `shrinkBar ${PAGE_INTERVAL_MS}ms linear forwards`,
+            }}
           />
         </div>
       )}

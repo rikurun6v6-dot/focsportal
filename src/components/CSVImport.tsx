@@ -12,6 +12,24 @@ interface CSVImportProps {
   readOnly?: boolean;
 }
 
+// ── 文字コード自動判別: UTF-8 → Shift-JIS フォールバック ──────────────────────
+async function readFileAsText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+
+  // まず UTF-8 (strict) で試みる
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    // UTF-8 として無効 → Shift-JIS で再試行
+    try {
+      return new TextDecoder('shift-jis').decode(buffer);
+    } catch {
+      // 最後の手段: UTF-8 (非 strict)
+      return new TextDecoder('utf-8').decode(buffer);
+    }
+  }
+}
+
 export default function CSVImport({ onSuccess, onError, readOnly = false }: CSVImportProps) {
   const { camp } = useCamp();
   const [uploading, setUploading] = useState(false);
@@ -28,18 +46,25 @@ export default function CSVImport({ onSuccess, onError, readOnly = false }: CSVI
     setErrors([]);
 
     try {
-      // ファイルを読み込み
-      const text = await file.text();
-      
-      // CSVを解析
+      // ── 文字コード自動判別で読み込み ──
+      const text = await readFileAsText(file);
+
+      // ── CSV 解析 ──
       const { players, errors: parseErrors } = parsePlayersCSV(text);
-      
-      if (parseErrors.length > 0) {
+
+      if (parseErrors.length > 0 && players.length === 0) {
+        // 全件失敗（ヘッダー不正など）
         setErrors(parseErrors);
-        setMessage(`✗ CSVの解析中に${parseErrors.length}件のエラーが発生しました`);
+        setMessage(`✗ CSVの解析に失敗しました`);
         onError?.(parseErrors);
         setUploading(false);
         return;
+      }
+
+      if (parseErrors.length > 0) {
+        // 一部失敗
+        setErrors(parseErrors);
+        // 続行して登録（以下で処理）
       }
 
       if (players.length === 0) {
@@ -54,37 +79,41 @@ export default function CSVImport({ onSuccess, onError, readOnly = false }: CSVI
         return;
       }
 
-      // playersにcampIdを追加
-      const playersWithCamp = players.map(p => ({ ...p, campId: camp.id }));
+      // campId 付与
+      const playersWithCamp = players.map((p) => ({ ...p, campId: camp.id }));
 
-      // Firestoreに登録
+      // ── Firestore 一括登録 ──
       setMessage(`${players.length}名のデータを登録中...`);
       const { success, errors: importErrors } = await importPlayers(playersWithCamp);
 
+      const allErrors = [...parseErrors, ...importErrors];
+
       if (importErrors.length > 0) {
-        setErrors(importErrors);
-        setMessage(`⚠ ${success}名を登録しました（${importErrors.length}件のエラー）`);
-        onError?.(importErrors);
+        setErrors((prev) => [...prev, ...importErrors]);
+        setMessage(`⚠ ${success}名を登録しました（${allErrors.length}件のエラー）`);
+        onError?.(allErrors);
+      } else if (parseErrors.length > 0) {
+        setMessage(`⚠ ${success}名を登録しました（解析スキップ: ${parseErrors.length}件）`);
+        onError?.(parseErrors);
       } else {
         setMessage(`✓ ${success}名の参加者を登録しました`);
         onSuccess?.(success);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      setMessage(`✗ エラー: ${errorMessage}`);
-      setErrors([errorMessage]);
-      onError?.([errorMessage]);
+      const msg = error instanceof Error ? error.message : String(error);
+      setMessage(`✗ エラー: ${msg}`);
+      setErrors([msg]);
+      onError?.([msg]);
     } finally {
       setUploading(false);
-      // ファイル入力をリセット
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handleDownloadSample = () => {
-    const csvContent = generateSampleCSV();
+    // サンプルCSVはUTF-8 BOM付きで出力（Excelでの文字化け防止）
+    const bom = '\uFEFF';
+    const csvContent = bom + generateSampleCSV();
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -92,24 +121,21 @@ export default function CSVImport({ onSuccess, onError, readOnly = false }: CSVI
     link.click();
   };
 
+  const statusColor = message.startsWith('✓')
+    ? 'bg-green-50 border-green-200 text-green-800'
+    : message.startsWith('⚠')
+    ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+    : 'bg-red-50 border-red-200 text-red-800';
+
   return (
     <div className="space-y-4">
-      <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center">
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          CSVファイルを選択してアップロード
-        </p>
+      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+        <p className="text-gray-600 mb-4">CSVファイルを選択してアップロード</p>
         <div className="flex gap-2 justify-center">
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || readOnly}
-          >
+          <Button onClick={() => fileInputRef.current?.click()} disabled={uploading || readOnly}>
             {uploading ? 'アップロード中...' : 'ファイルを選択'}
           </Button>
-          <Button
-            onClick={handleDownloadSample}
-            variant="outline"
-            disabled={uploading || readOnly}
-          >
+          <Button onClick={handleDownloadSample} variant="outline" disabled={uploading || readOnly}>
             サンプルCSVをダウンロード
           </Button>
         </div>
@@ -123,29 +149,24 @@ export default function CSVImport({ onSuccess, onError, readOnly = false }: CSVI
       </div>
 
       {message && (
-        <div className={`p-4 rounded-lg ${
-          message.startsWith('✓') 
-            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-100'
-            : message.startsWith('⚠')
-            ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-100'
-            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-100'
-        }`}>
-          <p className="font-semibold">{message}</p>
+        <div className={`p-4 rounded-lg border ${statusColor}`}>
+          <p className="font-semibold whitespace-pre-line">{message}</p>
           {errors.length > 0 && (
-            <ul className="mt-2 text-sm list-disc list-inside max-h-40 overflow-y-auto">
-              {errors.map((error, index) => (
-                <li key={index}>{error}</li>
+            <ul className="mt-2 text-sm list-disc list-inside max-h-48 overflow-y-auto space-y-0.5">
+              {errors.map((e, i) => (
+                <li key={i} className="whitespace-pre-line">{e}</li>
               ))}
             </ul>
           )}
         </div>
       )}
 
-      <div className="text-xs text-gray-500">
-        <p className="font-semibold mb-1">CSV形式:</p>
-        <p>必須カラム: name, gender, division</p>
+      <div className="text-xs text-gray-500 space-y-0.5">
+        <p className="font-semibold mb-1">CSV形式（文字コード: UTF-8 または Shift-JIS 自動判別）</p>
+        <p>必須列: <code>name</code>, <code>gender</code>, <code>division</code>（日本語ヘッダーも可: 氏名/性別/部門）</p>
         <p>性別: male/female, M/F, 男/女</p>
-        <p>レベル: 1/2, 1部/2部</p>
+        <p>部門: 1/2 または 1部/2部</p>
+        <p>任意列: <code>team_id</code>（チーム名）, <code>third_member</code>（3人目の氏名）</p>
       </div>
     </div>
   );
