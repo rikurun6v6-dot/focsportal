@@ -78,13 +78,13 @@ export default function CampManager() {
         const loadCamps = async () => {
             try {
                 const data = await getAllCamps(currentUserId || undefined);
-                
+
                 // データ蒸発防止: 空データでの上書きを防ぐ
                 if (data.length === 0 && camps.length > 0) {
                     console.log('[CampManager] 空データを検知、既存データを保持');
                     return; // 既存のcampsを維持
                 }
-                
+
                 // データがある場合、または初回読み込みの場合は更新
                 setCamps(data);
                 console.log('[CampManager] 合宿リスト更新:', data.length, '件');
@@ -288,182 +288,182 @@ export default function CampManager() {
 
                 {/* ヘッダー */}
                 <div className="text-center space-y-2">
-                <h1 className="text-3xl font-bold text-slate-800">合宿管理メニュー</h1>
-                <p className="text-slate-500">
-                    新しい合宿を作成するか、管理する合宿を選択してください
-                </p>
-            </div>
-
-            {/* 新規作成フォーム */}
-            <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-sky-400">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-slate-800">
-                        <Plus className="w-5 h-5 text-sky-500" /> 新しい合宿を作成
-                        {isUnlocked
-                            ? <Unlock className="w-4 h-4 text-emerald-500 ml-1" />
-                            : <Lock className="w-4 h-4 text-slate-400 ml-1" />
-                        }
-                    </CardTitle>
-                    <CardDescription>
-                        合宿名と使用コート数を設定して箱を作ります
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col md:flex-row gap-4 items-end">
-                        <div className="w-full md:flex-1 space-y-2">
-                            <label className="text-sm font-medium text-slate-700">合宿名 (例: 2025夏合宿)</label>
-                            <Input
-                                value={newTitle}
-                                onChange={(e) => setNewTitle(e.target.value)}
-                                placeholder="名称を入力..."
-                            />
-                        </div>
-                        <div className="w-full md:w-32 space-y-2">
-                            <label className="text-sm font-medium text-slate-700">コート数</label>
-                            <Input
-                                type="number"
-                                value={courtCount}
-                                onChange={(e) => setCourtCount(Number(e.target.value))}
-                                min={1}
-                                max={20}
-                            />
-                        </div>
-                        <Button
-                            onClick={() => requireUnlock(handleCreate)}
-                            disabled={loading || !newTitle}
-                            className="bg-sky-500 hover:bg-sky-600 text-white w-full md:w-auto"
-                        >
-                            {!isUnlocked && <Lock className="w-3.5 h-3.5 mr-1.5" />}
-                            作成する
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* 合宿リスト */}
-            <div className="space-y-4">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <Calendar className="w-5 h-5" /> 作成済みの合宿リスト
-                </h2>
-
-                <div className="grid gap-4">
-                    {camps.length === 0 ? (
-                        <Card className="border-slate-200">
-                            <CardContent className="p-8 text-center space-y-3">
-                                <Calendar className="w-12 h-12 mx-auto text-slate-300" />
-                                <p className="text-slate-600 font-medium">合宿がまだ作成されていません</p>
-                                <p className="text-sm text-slate-500">上のフォームから新規作成してください</p>
-                            </CardContent>
-                        </Card>
-                    ) : (
-                        camps.map((camp) => (
-                        <Card key={camp.id} className={`transition-all hover:shadow-md ${camp.status === 'active' ? 'border-emerald-400 ring-1 ring-emerald-100' : 'border-slate-200'}`}>
-                            <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-
-                                {/* 情報部分 */}
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="text-lg font-bold text-slate-900">{camp.title}</h3>
-                                        {camp.status === 'active' ? (
-                                            <Badge className="bg-emerald-500 hover:bg-emerald-600">開催中</Badge>
-                                        ) : camp.status === 'archived' ? (
-                                            <Badge variant="outline" className="text-amber-600 border-amber-300">アーカイブ済み</Badge>
-                                        ) : (
-                                            <Badge variant="outline" className="text-slate-500">準備中</Badge>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-slate-500">
-                                        コート数: {camp.court_count}面 | ID: {camp.id.slice(0, 8)}...
-                                    </p>
-                                </div>
-
-                                {/* ボタン部分 */}
-                                <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-                                    <div className="flex gap-2">
-                                        {/* Activeにするボタン */}
-                                        {camp.status === 'setup' && (
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => requireUnlock(() => handleActivate(camp.id, camp.court_count))}
-                                                disabled={loading || deleting === camp.id}
-                                                className="flex-1 md:flex-none border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                                            >
-                                                {isUnlocked ? <Play className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
-                                                これを開催する
-                                            </Button>
-                                        )}
-
-                                        {/* アーカイブボタン */}
-                                        {camp.status === 'archived' ? (
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => requireUnlock(() => handleUnarchive(camp.id))}
-                                                disabled={loading || deleting === camp.id}
-                                                className="flex-1 md:flex-none border-amber-200 text-amber-700 hover:bg-amber-50"
-                                            >
-                                                {isUnlocked ? <ArchiveRestore className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
-                                                解除
-                                            </Button>
-                                        ) : (
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => requireUnlock(() => handleArchive(camp.id))}
-                                                disabled={loading || deleting === camp.id}
-                                                className="flex-1 md:flex-none border-slate-300 text-slate-600 hover:bg-slate-50"
-                                            >
-                                                {isUnlocked ? <Archive className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
-                                                {camp.status === 'active' ? '合宿を終了' : 'アーカイブ'}
-                                            </Button>
-                                        )}
-
-                                        {/* 管理画面に入るボタン */}
-                                        <Button
-                                            onClick={() => handleEnter(camp)}
-                                            disabled={deleting === camp.id}
-                                            className="flex-1 md:flex-none bg-slate-800 text-white hover:bg-slate-700"
-                                        >
-                                            {camp.status === 'archived' ? '閲覧する' : '管理画面へ'}
-                                            <ArrowRight className="w-4 h-4 ml-1" />
-                                        </Button>
-                                    </div>
-
-                                    {/* 削除ボタン（アクティブでない場合のみ） */}
-                                    {camp.status !== 'active' && (
-                                        <div className="flex gap-2">
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => handleDelete(camp.id)}
-                                                disabled={loading || deleting === camp.id}
-                                                className="flex-1 border-rose-200 text-rose-600 hover:bg-rose-50"
-                                            >
-                                                <Trash2 className="w-4 h-4 mr-1" />
-                                                削除
-                                            </Button>
-                                            <Button
-                                                variant="destructive"
-                                                onClick={() => handleCompleteDelete(camp.id, camp.title)}
-                                                disabled={loading || deleting === camp.id}
-                                                className="flex-1 bg-red-600 hover:bg-red-700"
-                                            >
-                                                {deleting === camp.id ? (
-                                                    "削除中..."
-                                                ) : (
-                                                    <>
-                                                        <AlertTriangle className="w-4 h-4 mr-1" />
-                                                        完全削除
-                                                    </>
-                                                )}
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-
-                            </CardContent>
-                        </Card>
-                        ))
-                    )}
+                    <h1 className="text-3xl font-bold text-slate-800">合宿管理メニュー</h1>
+                    <p className="text-slate-500">
+                        新しい合宿を作成するか、管理する合宿を選択してください
+                    </p>
                 </div>
-            </div>
+
+                {/* 新規作成フォーム */}
+                <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-sky-400">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-slate-800">
+                            <Plus className="w-5 h-5 text-sky-500" /> 新しい合宿を作成
+                            {isUnlocked
+                                ? <Unlock className="w-4 h-4 text-emerald-500 ml-1" />
+                                : <Lock className="w-4 h-4 text-slate-400 ml-1" />
+                            }
+                        </CardTitle>
+                        <CardDescription>
+                            合宿名と使用コート数を設定して箱を作ります
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex flex-col md:flex-row gap-4 items-end">
+                            <div className="w-full md:flex-1 space-y-2">
+                                <label className="text-sm font-medium text-slate-700">合宿名 (例: 2025夏合宿)</label>
+                                <Input
+                                    value={newTitle}
+                                    onChange={(e) => setNewTitle(e.target.value)}
+                                    placeholder="名称を入力..."
+                                />
+                            </div>
+                            <div className="w-full md:w-32 space-y-2">
+                                <label className="text-sm font-medium text-slate-700">コート数</label>
+                                <Input
+                                    type="number"
+                                    value={courtCount}
+                                    onChange={(e) => setCourtCount(Number(e.target.value))}
+                                    min={1}
+                                    max={20}
+                                />
+                            </div>
+                            <Button
+                                onClick={() => requireUnlock(handleCreate)}
+                                disabled={loading || !newTitle}
+                                className="bg-sky-500 hover:bg-sky-600 text-white w-full md:w-auto"
+                            >
+                                {!isUnlocked && <Lock className="w-3.5 h-3.5 mr-1.5" />}
+                                作成する
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 合宿リスト */}
+                <div className="space-y-4">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Calendar className="w-5 h-5" /> 作成済みの合宿リスト
+                    </h2>
+
+                    <div className="grid gap-4">
+                        {camps.length === 0 ? (
+                            <Card className="border-slate-200">
+                                <CardContent className="p-8 text-center space-y-3">
+                                    <Calendar className="w-12 h-12 mx-auto text-slate-300" />
+                                    <p className="text-slate-600 font-medium">合宿がまだ作成されていません</p>
+                                    <p className="text-sm text-slate-500">上のフォームから新規作成してください</p>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            camps.map((camp) => (
+                                <Card key={camp.id} className={`transition-all hover:shadow-md ${camp.status === 'active' ? 'border-emerald-400 ring-1 ring-emerald-100' : 'border-slate-200'}`}>
+                                    <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+
+                                        {/* 情報部分 */}
+                                        <div className="space-y-1">
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-lg font-bold text-slate-900">{camp.title}</h3>
+                                                {camp.status === 'active' ? (
+                                                    <Badge className="bg-emerald-500 hover:bg-emerald-600">開催中</Badge>
+                                                ) : camp.status === 'archived' ? (
+                                                    <Badge variant="outline" className="text-amber-600 border-amber-300">アーカイブ済み</Badge>
+                                                ) : (
+                                                    <Badge variant="outline" className="text-slate-500">準備中</Badge>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-slate-500">
+                                                コート数: {camp.court_count}面 | ID: {camp.id.slice(0, 8)}...
+                                            </p>
+                                        </div>
+
+                                        {/* ボタン部分 */}
+                                        <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+                                            <div className="flex gap-2">
+                                                {/* Activeにするボタン */}
+                                                {camp.status === 'setup' && (
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => requireUnlock(() => handleActivate(camp.id, camp.court_count))}
+                                                        disabled={loading || deleting === camp.id}
+                                                        className="flex-1 md:flex-none border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                                    >
+                                                        {isUnlocked ? <Play className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
+                                                        これを開催する
+                                                    </Button>
+                                                )}
+
+                                                {/* アーカイブボタン */}
+                                                {camp.status === 'archived' ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => requireUnlock(() => handleUnarchive(camp.id))}
+                                                        disabled={loading || deleting === camp.id}
+                                                        className="flex-1 md:flex-none border-amber-200 text-amber-700 hover:bg-amber-50"
+                                                    >
+                                                        {isUnlocked ? <ArchiveRestore className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
+                                                        解除
+                                                    </Button>
+                                                ) : (
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => requireUnlock(() => handleArchive(camp.id))}
+                                                        disabled={loading || deleting === camp.id}
+                                                        className="flex-1 md:flex-none border-slate-300 text-slate-600 hover:bg-slate-50"
+                                                    >
+                                                        {isUnlocked ? <Archive className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
+                                                        {camp.status === 'active' ? '合宿を終了' : 'アーカイブ'}
+                                                    </Button>
+                                                )}
+
+                                                {/* 管理画面に入るボタン */}
+                                                <Button
+                                                    onClick={() => handleEnter(camp)}
+                                                    disabled={deleting === camp.id}
+                                                    className="flex-1 md:flex-none bg-slate-800 text-white hover:bg-slate-700"
+                                                >
+                                                    {camp.status === 'archived' ? '閲覧する' : '管理画面へ'}
+                                                    <ArrowRight className="w-4 h-4 ml-1" />
+                                                </Button>
+                                            </div>
+
+                                            {/* 削除ボタン（アクティブでない場合のみ） */}
+                                            {camp.status !== 'active' && (
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => handleDelete(camp.id)}
+                                                        disabled={loading || deleting === camp.id}
+                                                        className="flex-1 border-rose-200 text-rose-600 hover:bg-rose-50"
+                                                    >
+                                                        <Trash2 className="w-4 h-4 mr-1" />
+                                                        削除
+                                                    </Button>
+                                                    <Button
+                                                        variant="destructive"
+                                                        onClick={() => handleCompleteDelete(camp.id, camp.title)}
+                                                        disabled={loading || deleting === camp.id}
+                                                        className="flex-1 bg-red-600 hover:bg-red-700"
+                                                    >
+                                                        {deleting === camp.id ? (
+                                                            "削除中..."
+                                                        ) : (
+                                                            <>
+                                                                <AlertTriangle className="w-4 h-4 mr-1" />
+                                                                完全削除
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                    </CardContent>
+                                </Card>
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
         </>
     );

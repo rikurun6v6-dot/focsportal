@@ -517,7 +517,7 @@ function buildAdminSections(): Section[] {
       content: (
         <div className="space-y-5">
           <p className="text-sm text-slate-600">
-            「安全」タブは誤操作の修復・緊急対応専用です。スタッフ（リク）以外は基本的に触らないでください。
+            「安全」タブは誤操作の修復・緊急対応専用です。基本的に触らないでください。
           </p>
 
           <div>
@@ -845,7 +845,7 @@ function buildAdminSections(): Section[] {
               「応用」タブを開くとパスワードを求められます。
             </p>
             <div className="flex items-center gap-2 bg-slate-900 text-yellow-300 rounded-lg px-3 py-2 text-xs font-mono my-1">
-              <span className="flex-1">パスワード: 1203</span>
+              <span className="flex-1">パスワードは開発者が管理しています。</span>
               <CopyButton value="1203" />
             </div>
           </div>
@@ -920,7 +920,7 @@ function buildAdminSections(): Section[] {
             </div>
           ))}
           <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 text-xs text-sky-800">
-            解決しない場合は <strong>リク（開発者・工学部）</strong> に連絡してください。
+            解決しない場合は <strong>開発者（4期）</strong> に連絡してください。
             Firestoreのデータを直接確認する場合は Firebase コンソール → Firestore Database を使います。
           </div>
         </div>
@@ -976,10 +976,10 @@ export default function UserGuide({ isOpen, onClose, isAdmin = false }: UserGuid
   const q = searchQuery.trim().toLowerCase();
   const filteredSections = q
     ? adminSections.filter(
-        (s) =>
-          s.title.toLowerCase().includes(q) ||
-          s.keywords.some((k) => k.toLowerCase().includes(q))
-      )
+      (s) =>
+        s.title.toLowerCase().includes(q) ||
+        s.keywords.some((k) => k.toLowerCase().includes(q))
+    )
     : adminSections;
 
   return (
@@ -1041,11 +1041,10 @@ export default function UserGuide({ isOpen, onClose, isAdmin = false }: UserGuid
                     <button
                       key={section.id}
                       onClick={() => scrollToSection(section.id)}
-                      className={`w-full text-left px-2 py-2 rounded-lg text-xs transition-colors flex items-center gap-1.5 ${
-                        activeSection === section.id
-                          ? 'bg-sky-100 text-sky-700 font-semibold'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                      }`}
+                      className={`w-full text-left px-2 py-2 rounded-lg text-xs transition-colors flex items-center gap-1.5 ${activeSection === section.id
+                        ? 'bg-sky-100 text-sky-700 font-semibold'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
                     >
                       <span className="shrink-0 text-sm leading-none">{section.icon}</span>
                       <span className="leading-tight">{section.title}</span>
