@@ -206,8 +206,8 @@ export default function ResultsTab() {
 
   const handleWalkover = async (match: MatchWithPlayers, courtId: string, winnerSide: 1 | 2) => {
     const winnerName = winnerSide === 1
-      ? (match.player1.name + (match.player3?.id ? ` / ${match.player3.name}` : ''))
-      : (match.player2.name + (match.player4?.id ? ` / ${match.player4.name}` : ''));
+      ? [match.player1.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ')
+      : [match.player2.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ');
 
     const confirmed = await confirm({
       title: '🏸 不戦勝の記録',
@@ -566,8 +566,7 @@ export default function ResultsTab() {
                       <div className="space-y-2">
                         <div className="bg-white p-2 rounded border border-orange-200">
                           <p className="font-bold text-slate-800 text-center text-xs">
-                            {match.player1?.name || "未登録"}
-                            {match.player3?.id && ` / ${match.player3.name}`}
+                            {[match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ') || '未登録'}
                           </p>
                         </div>
                         <div className="flex items-center justify-center">
@@ -575,8 +574,7 @@ export default function ResultsTab() {
                         </div>
                         <div className="bg-white p-2 rounded border border-orange-200">
                           <p className="font-bold text-slate-800 text-center text-xs">
-                            {match.player2?.name || "未登録"}
-                            {match.player4?.id && ` / ${match.player4.name}`}
+                            {[match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ') || '未登録'}
                           </p>
                         </div>
 
@@ -697,8 +695,7 @@ export default function ResultsTab() {
                       <div className="space-y-1.5">
                         <div className="bg-white p-2 rounded border border-slate-200">
                           <p className="font-bold text-slate-800 text-center text-sm">
-                            {match.player1?.name || "未登録"}
-                            {match.player3?.id && ` / ${match.player3.name}`}
+                            {[match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ') || '未登録'}
                           </p>
                         </div>
 
@@ -708,8 +705,7 @@ export default function ResultsTab() {
 
                         <div className="bg-white p-2 rounded border border-slate-200">
                           <p className="font-bold text-slate-800 text-center text-sm">
-                            {match.player2?.name || "未登録"}
-                            {match.player4?.id && ` / ${match.player4.name}`}
+                            {[match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ') || '未登録'}
                           </p>
                         </div>
                       </div>
@@ -965,7 +961,7 @@ export default function ResultsTab() {
                                   onClick={() => handleForceAssign(m.id, court.id)}
                                   className="w-full text-left text-[10px] p-1.5 bg-white border border-blue-200 rounded hover:bg-blue-100 truncate"
                                 >
-                                  #{m.match_number} {m.player1?.name || '?'}{m.player3?.id ? `/${m.player3.name}` : ''} vs {m.player2?.name || '?'}{m.player4?.id ? `/${m.player4.name}` : ''}
+                                  #{m.match_number} {[m.player1?.name, m.player3?.name, m.player5?.name].filter(Boolean).join('/') || '?'} vs {[m.player2?.name, m.player4?.name, m.player6?.name].filter(Boolean).join('/') || '?'}
                                 </button>
                               ))}
                             </div>

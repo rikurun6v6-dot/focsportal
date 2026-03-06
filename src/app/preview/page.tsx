@@ -10,7 +10,7 @@ import {
 } from '@/lib/firestore-helpers';
 import type { Court, Match, Player, MatchWithPlayers, Camp } from '@/types';
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 function buildMWP(match: Match, pm: Map<string, Player>): MatchWithPlayers | null {
   const p1 = pm.get(match.player1_id);
@@ -24,20 +24,19 @@ function buildMWP(match: Match, pm: Map<string, Player>): MatchWithPlayers | nul
   return r;
 }
 
+/**
+ * Side 1 = player1 / player3 / player5
+ * Side 2 = player2 / player4 / player6
+ * （player3 は player1 のダブルスパートナー、player5 は3人目）
+ */
 function getSideNames(m: MatchWithPlayers, side: 1 | 2): string[] {
   if (side === 1) {
-    const n = [m.player1.name];
-    if (m.player3) n.push(m.player3.name);
-    if (m.player5) n.push(m.player5.name);
-    return n;
+    return [m.player1.name, m.player3?.name, m.player5?.name].filter(Boolean) as string[];
   }
-  const n = [m.player2.name];
-  if (m.player4) n.push(m.player4.name);
-  if (m.player6) n.push(m.player6.name);
-  return n;
+  return [m.player2.name, m.player4?.name, m.player6?.name].filter(Boolean) as string[];
 }
 
-function getPairName(m: MatchWithPlayers, side: 1 | 2) {
+function getPairLine(m: MatchWithPlayers, side: 1 | 2): string {
   return getSideNames(m, side).join(' / ');
 }
 
@@ -50,52 +49,48 @@ const CAT: Record<string, string> = {
   team_battle: '団体戦',
 };
 
-// ─── sub-components ─────────────────────────────────────────────────────────
+// ─── PlayerBox ───────────────────────────────────────────────────────────────
+// ResultsTab の選手ボックス（bg-white p-2 rounded border-slate-200）を
+// iPad 用に 2〜3 倍スケールアップ。3人ペアは 2 行表示。
 
-/** 選手名表示（3人ペア対応・2行レイアウト） */
 function PlayerBox({
   names,
-  status,
+  highlight,
 }: {
   names: string[];
-  status: 'calling' | 'playing' | 'other';
+  highlight: boolean; // calling時に黄色背景
 }) {
-  const bg =
-    status === 'calling'
-      ? 'bg-yellow-100'
-      : status === 'playing'
-      ? 'bg-sky-50'
-      : 'bg-gray-50';
-
-  // 3人の場合: 1行目=筆頭, 2行目=残り
+  const border = highlight ? 'border-yellow-300 bg-yellow-50' : 'border-slate-200 bg-white';
   if (names.length >= 3) {
+    // 3人: 1行目=筆頭, 2行目=partner / 3rd
     return (
-      <div className={`rounded-xl px-4 py-3 ${bg}`}>
-        <p className="text-2xl font-black text-gray-900 text-center leading-tight tracking-tight">
+      <div className={`rounded-lg border px-4 py-3 shadow-sm ${border}`}>
+        <p className="font-black text-slate-800 text-center text-2xl leading-tight tracking-tight">
           {names[0]}
         </p>
-        <p className="text-xl font-bold text-gray-700 text-center leading-tight tracking-tight mt-0.5">
+        <p className="font-bold text-slate-700 text-center text-xl leading-tight mt-0.5">
           {names.slice(1).join(' / ')}
         </p>
       </div>
     );
   }
   return (
-    <div className={`rounded-xl px-4 py-3 ${bg}`}>
-      <p className="text-2xl font-black text-gray-900 text-center leading-tight tracking-tight">
+    <div className={`rounded-lg border px-4 py-3 shadow-sm ${border}`}>
+      <p className="font-black text-slate-800 text-center text-2xl leading-tight tracking-tight">
         {names.join(' / ')}
       </p>
     </div>
   );
 }
 
+// ─── Overlay data ─────────────────────────────────────────────────────────────
 type OverlayData = {
-  players1: string;
-  players2: string;
+  side1: string;
+  side2: string;
   courtNum: number | string;
 };
 
-// ─── main content ───────────────────────────────────────────────────────────
+// ─── PreviewContent ───────────────────────────────────────────────────────────
 
 function PreviewContent() {
   const searchParams = useSearchParams();
@@ -112,13 +107,13 @@ function PreviewContent() {
   const prevCallingRef = useRef<Set<string>>(new Set());
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── camp name ──────────────────────────────────────────────────────────────
+  // ── camp name ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!campId) return;
     getDocument<Camp>('camps', campId).then((c) => { if (c) setCampName(c.title); });
   }, [campId]);
 
-  // ── subscriptions ──────────────────────────────────────────────────────────
+  // ── Firestore subscriptions ───────────────────────────────────────────────
   useEffect(() => {
     if (!campId) return;
     const u1 = subscribeToCourts(
@@ -134,7 +129,7 @@ function PreviewContent() {
     return () => { u1(); u2(); u3(); };
   }, [campId]);
 
-  // ── calling overlay ────────────────────────────────────────────────────────
+  // ── calling overlay ───────────────────────────────────────────────────────
   const showOverlay = useCallback((data: OverlayData) => {
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     setCurrentOverlay(data);
@@ -149,26 +144,23 @@ function PreviewContent() {
       matches.filter((m) => m.status === 'calling').map((m) => m.id),
     );
     const newIds = [...nowCalling].filter((id) => !prevCallingRef.current.has(id));
-
     if (newIds.length > 0) {
       const byId = new Map(matches.map((m) => [m.id, m]));
-      const id = newIds[0];
-      const match = byId.get(id);
+      const match = byId.get(newIds[0]);
       if (match) {
         const mwp = buildMWP(match, playersMap);
         if (mwp) {
-          const courtNum = courts.find((c) => c.current_match_id === id)?.number ?? '?';
-          showOverlay({ players1: getPairName(mwp, 1), players2: getPairName(mwp, 2), courtNum });
+          const courtNum = courts.find((c) => c.current_match_id === newIds[0])?.number ?? '?';
+          showOverlay({ side1: getPairLine(mwp, 1), side2: getPairLine(mwp, 2), courtNum });
         }
       }
     }
     prevCallingRef.current = nowCalling;
   }, [matches, playersMap, courts, showOverlay]);
 
-  // cleanup overlay timer on unmount
   useEffect(() => () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current); }, []);
 
-  // ── auto-scroll ────────────────────────────────────────────────────────────
+  // ── auto-scroll ───────────────────────────────────────────────────────────
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -189,23 +181,23 @@ function PreviewContent() {
     return () => clearInterval(timer);
   }, []);
 
-  // ── derived ────────────────────────────────────────────────────────────────
+  // ── derived ───────────────────────────────────────────────────────────────
   const activeCourts = courts.filter((c) => c.is_active);
   const matchesById = new Map(matches.map((m) => [m.id, m]));
   const callingMatches = matches.filter((m) => m.status === 'calling');
 
-  // ── render ─────────────────────────────────────────────────────────────────
+  // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden select-none">
-      {/* ─── keyframe animations ─── */}
+    <div className="h-screen bg-slate-100 flex flex-col overflow-hidden select-none">
+      {/* CSS animations */}
       <style>{`
-        @keyframes callingBorder {
-          0%,100% { box-shadow: 0 0 0 3px #FACC15, 0 4px 20px rgba(250,204,21,.35); }
-          50%      { box-shadow: 0 0 0 6px #FDE047, 0 4px 32px rgba(250,204,21,.6); }
+        @keyframes callingGlow {
+          0%,100% { border-left-color: #FACC15; }
+          50%      { border-left-color: #CA8A04; box-shadow: -6px 0 18px rgba(250,204,21,.5), 0 4px 16px rgba(0,0,0,.08); }
         }
-        .calling-card { animation: callingBorder 1.2s ease-in-out infinite; }
+        .calling-card { animation: callingGlow 1.1s ease-in-out infinite; }
         @keyframes overlayIn {
-          from { opacity:0; transform:scale(.88); }
+          from { opacity:0; transform:scale(.86); }
           to   { opacity:1; transform:scale(1); }
         }
         .overlay-card { animation: overlayIn .38s cubic-bezier(.34,1.56,.64,1) both; }
@@ -213,18 +205,11 @@ function PreviewContent() {
         .overlay-backdrop { animation: backdropIn .22s ease-out both; }
       `}</style>
 
-      {/* ─── Header ─── */}
-      <header className="flex-shrink-0 bg-white shadow-md px-6 py-3 flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-blue-600 rounded-2xl flex items-center justify-center shadow-sm">
-            <span className="text-white text-2xl leading-none">🏸</span>
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
-              コート状況
-            </h1>
-            {campName && <p className="text-sm text-gray-500 mt-0.5 font-medium">{campName}</p>}
-          </div>
+      {/* ── Header (ResultsTab の見出し行に合わせた白いバー) ── */}
+      <header className="flex-shrink-0 bg-white shadow-sm px-6 py-3 flex items-center justify-between border-b border-slate-200">
+        <div>
+          <h1 className="text-2xl font-black text-slate-800 leading-none">コート別状況</h1>
+          {campName && <p className="text-sm text-slate-500 mt-0.5">{campName}</p>}
         </div>
         {/* ライブインジケーター */}
         <div className="flex items-center gap-2">
@@ -232,14 +217,14 @@ function PreviewContent() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
           </span>
-          <span className="text-xs text-gray-400 font-medium">リアルタイム</span>
+          <span className="text-xs text-slate-400 font-medium">リアルタイム</span>
         </div>
       </header>
 
-      {/* ─── Body ─── */}
+      {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ─── Courts scroll area ─── */}
+        {/* ── Auto-scroll court grid ── */}
         <div
           ref={scrollRef}
           className="flex-1 overflow-y-auto p-4"
@@ -256,89 +241,100 @@ function PreviewContent() {
               const match = matchRaw ? buildMWP(matchRaw, playersMap) : null;
               const isCalling = match?.status === 'calling';
               const isPlaying = match?.status === 'playing';
-              const sideStatus = isCalling ? 'calling' : isPlaying ? 'playing' : 'other';
               const names1 = match ? getSideNames(match, 1) : [];
               const names2 = match ? getSideNames(match, 2) : [];
 
               return (
                 <div
                   key={court.id}
-                  className={`rounded-2xl overflow-hidden bg-white border-2 transition-colors ${
-                    isCalling
-                      ? 'border-yellow-400 calling-card'
+                  className={`
+                    bg-white rounded-lg shadow-md overflow-hidden
+                    border-l-[6px] transition-colors
+                    ${isCalling
+                      ? 'border-l-yellow-400 calling-card'
                       : isPlaying
-                      ? 'border-sky-300 shadow-md shadow-sky-100'
+                      ? 'border-l-green-500'
                       : match
-                      ? 'border-gray-200 shadow-md'
-                      : 'border-gray-100 shadow-sm'
-                  }`}
+                      ? 'border-l-sky-400'
+                      : 'border-l-slate-200'}
+                  `}
                 >
-                  {/* ─ Card header ─ */}
+                  {/* ─ CardHeader (ResultsTab と同じグラデーション) ─ */}
                   <div
-                    className={`px-4 py-2.5 flex items-center justify-between ${
+                    className={`px-5 py-3 flex items-center justify-between ${
                       isCalling
-                        ? 'bg-yellow-400'
+                        ? 'bg-gradient-to-r from-yellow-50 to-amber-50'
                         : isPlaying
-                        ? 'bg-sky-500'
+                        ? 'bg-gradient-to-r from-green-50 to-emerald-50'
                         : match
-                        ? 'bg-blue-600'
-                        : 'bg-gray-50 border-b border-gray-100'
+                        ? 'bg-gradient-to-r from-sky-50 to-blue-50'
+                        : 'bg-slate-50'
                     }`}
                   >
-                    {/* コート番号バッジ */}
+                    {/* コート番号 */}
                     <span
-                      className={`text-3xl font-black tracking-tight ${
-                        isCalling ? 'text-yellow-900' : match ? 'text-white' : 'text-gray-400'
+                      className={`text-4xl font-black leading-none ${
+                        isCalling
+                          ? 'text-yellow-700'
+                          : isPlaying
+                          ? 'text-green-700'
+                          : match
+                          ? 'text-sky-700'
+                          : 'text-slate-400'
                       }`}
                     >
                       {court.number}コート
                     </span>
 
-                    <div className="flex flex-col items-end gap-1">
-                      {match && (
-                        <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                            isCalling
-                              ? 'bg-yellow-200 text-yellow-900'
-                              : 'bg-white/25 text-white'
-                          }`}
-                        >
+                    {/* 種目 / 部門バッジ */}
+                    {match && (
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-sm font-bold text-white bg-sky-500 px-2.5 py-0.5 rounded-full">
                           {CAT[match.tournament_type] ?? match.tournament_type}
-                          {match.division ? ` ${match.division}部` : ''}
                         </span>
-                      )}
-                      {isCalling && (
-                        <span className="text-[11px] font-black text-yellow-900 bg-yellow-200 px-2 py-0.5 rounded-full animate-pulse">
-                          📢 呼び出し中
-                        </span>
-                      )}
-                      {isPlaying && (
-                        <span className="text-[11px] font-bold text-white/90 bg-white/20 px-2 py-0.5 rounded-full">
-                          ▶ 試合中
-                        </span>
-                      )}
-                    </div>
+                        {match.division && (
+                          <span className="text-sm font-medium text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
+                            {match.division}部
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* ─ Card body ─ */}
-                  <div className="px-4 py-4 flex flex-col gap-2">
+                  {/* ─ CardContent ─ */}
+                  <div className="px-4 py-4 space-y-3">
                     {match ? (
                       <>
-                        <PlayerBox names={names1} status={sideStatus} />
+                        {/* Side 1: player1 / player3 / player5 */}
+                        <PlayerBox names={names1} highlight={isCalling} />
+
+                        {/* VS */}
                         <div className="flex items-center justify-center">
-                          <span
-                            className={`text-xl font-black ${
-                              isCalling ? 'text-yellow-500' : 'text-gray-300'
-                            }`}
-                          >
-                            VS
-                          </span>
+                          <span className="text-lg font-black text-slate-400">VS</span>
                         </div>
-                        <PlayerBox names={names2} status={sideStatus} />
+
+                        {/* Side 2: player2 / player4 / player6 */}
+                        <PlayerBox names={names2} highlight={isCalling} />
+
+                        {/* ステータス (ResultsTab と同じ pinging dot スタイル) */}
+                        {isCalling && (
+                          <div className="flex items-center justify-center gap-2 text-yellow-700 bg-yellow-50 px-3 py-2 rounded-lg mt-1">
+                            <span className="relative flex h-3.5 w-3.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-yellow-500" />
+                            </span>
+                            <span className="text-xl font-black">呼び出し中</span>
+                          </div>
+                        )}
+                        {isPlaying && (
+                          <div className="flex items-center justify-center gap-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg mt-1">
+                            <span className="text-xl font-bold">▶ 試合中</span>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <div className="py-8 text-center">
-                        <p className="text-gray-300 text-2xl font-bold">空きコート</p>
+                        <p className="text-slate-300 text-2xl font-bold">空きコート</p>
                       </div>
                     )}
                   </div>
@@ -348,7 +344,7 @@ function PreviewContent() {
           </div>
         </div>
 
-        {/* ─── Calling sidebar ─── */}
+        {/* ── Calling sidebar ── */}
         <aside className="w-56 flex-shrink-0 bg-amber-50 border-l border-amber-200 flex flex-col overflow-hidden">
           <div className="bg-amber-400 px-4 py-3 flex-shrink-0">
             <h2 className="text-base font-black text-amber-900">📢 呼び出し中</h2>
@@ -362,19 +358,17 @@ function PreviewContent() {
                 if (!mwp) return null;
                 const courtNum = activeCourts.find((c) => c.current_match_id === m.id)?.number;
                 return (
-                  <div key={m.id} className="bg-yellow-400 rounded-xl p-3 shadow-sm">
-                    <p className="text-xs font-black text-yellow-900 mb-1.5">
-                      {courtNum}コート
-                    </p>
+                  <div key={m.id} className="bg-yellow-300 rounded-xl p-3 shadow-sm border border-yellow-400">
+                    <p className="text-xs font-black text-yellow-900 mb-1.5">{courtNum}コート</p>
                     <p className="font-black text-sm text-yellow-900 leading-snug break-words">
-                      {getPairName(mwp, 1)}
+                      {getPairLine(mwp, 1)}
                     </p>
                     <p className="text-center text-yellow-800 text-xs font-bold my-0.5">VS</p>
                     <p className="font-black text-sm text-yellow-900 leading-snug break-words">
-                      {getPairName(mwp, 2)}
+                      {getPairLine(mwp, 2)}
                     </p>
                     <div className="mt-2">
-                      <span className="text-[10px] font-bold text-yellow-800 bg-yellow-200 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full">
                         {CAT[m.tournament_type] ?? m.tournament_type}
                         {m.division ? ` ${m.division}部` : ''}
                       </span>
@@ -387,35 +381,36 @@ function PreviewContent() {
         </aside>
       </div>
 
-      {/* ─── Calling overlay ─── */}
+      {/* ── Calling overlay ── */}
       {currentOverlay && (
         <div
           className="overlay-backdrop fixed inset-0 z-50 flex items-center justify-center cursor-pointer"
-          style={{ backgroundColor: 'rgba(0,0,0,.68)' }}
+          style={{ backgroundColor: 'rgba(0,0,0,.70)' }}
           onClick={() => {
             if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
             setCurrentOverlay(null);
           }}
         >
-          <div className="overlay-card bg-white rounded-3xl shadow-2xl px-10 py-9 mx-6 max-w-lg w-full text-center">
+          <div className="overlay-card bg-white rounded-2xl shadow-2xl px-10 py-9 mx-6 max-w-lg w-full text-center">
             <p className="text-5xl mb-5">📢</p>
 
-            {/* 選手名 */}
-            <div className="mb-6">
-              <p className="text-4xl font-black text-gray-900 leading-tight break-words">
-                {currentOverlay.players1}
-              </p>
-              <p className="text-xl font-black text-gray-300 my-1">VS</p>
-              <p className="text-4xl font-black text-gray-900 leading-tight break-words">
-                {currentOverlay.players2}
-              </p>
+            {/* 選手名 (bg-white p-2 rounded border-slate-200 を拡大) */}
+            <div className="space-y-3 mb-6">
+              <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 shadow-sm">
+                <p className="text-3xl font-black text-slate-800 leading-tight break-words">
+                  {currentOverlay.side1}
+                </p>
+              </div>
+              <p className="text-xl font-black text-slate-400">VS</p>
+              <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 shadow-sm">
+                <p className="text-3xl font-black text-slate-800 leading-tight break-words">
+                  {currentOverlay.side2}
+                </p>
+              </div>
             </div>
 
             {/* コール文 */}
-            <div
-              className="rounded-2xl px-6 py-4 inline-block"
-              style={{ backgroundColor: '#FFEB3B' }}
-            >
+            <div className="rounded-xl px-6 py-4 inline-block" style={{ backgroundColor: '#FFEB3B' }}>
               <p className="text-2xl font-black text-yellow-900 leading-snug">
                 {currentOverlay.courtNum}コートへ
                 <br />
@@ -423,7 +418,7 @@ function PreviewContent() {
               </p>
             </div>
 
-            <p className="text-sm text-gray-400 mt-5">（タップで閉じる）</p>
+            <p className="text-sm text-slate-400 mt-5">（タップで閉じる）</p>
           </div>
         </div>
       )}
@@ -431,14 +426,14 @@ function PreviewContent() {
   );
 }
 
-// ─── page export ────────────────────────────────────────────────────────────
+// ─── page export ──────────────────────────────────────────────────────────────
 
 export default function PreviewPage() {
   return (
     <Suspense
       fallback={
-        <div className="h-screen bg-gray-100 flex items-center justify-center">
-          <p className="text-gray-400 text-2xl font-bold">読み込み中…</p>
+        <div className="h-screen bg-slate-100 flex items-center justify-center">
+          <p className="text-slate-400 text-2xl font-bold">読み込み中…</p>
         </div>
       }
     >
