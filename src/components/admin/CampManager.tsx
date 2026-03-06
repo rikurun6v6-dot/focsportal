@@ -9,7 +9,7 @@ import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, un
 import { auth } from "@/lib/firebase";
 import { useCamp } from "@/context/CampContext";
 import type { Camp } from "@/types";
-import { Plus, Play, Settings, CheckCircle, Calendar, ArrowRight, Archive, ArchiveRestore, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Play, Settings, CheckCircle, Calendar, ArrowRight, Archive, ArchiveRestore, Trash2, AlertTriangle, Lock, Unlock } from "lucide-react";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { toastSuccess, toastError } from "@/lib/toast";
 
@@ -23,6 +23,38 @@ export default function CampManager() {
     const [loading, setLoading] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+    // パスワードロック
+    const LOCK_PASSWORD = '1203';
+    const [isUnlocked, setIsUnlocked] = useState(false);
+    const [showLockModal, setShowLockModal] = useState(false);
+    const [passwordInput, setPasswordInput] = useState('');
+    const [passwordError, setPasswordError] = useState('');
+    const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+    const requireUnlock = (action: () => void) => {
+        if (isUnlocked) {
+            action();
+            return;
+        }
+        setPendingAction(() => action);
+        setPasswordInput('');
+        setPasswordError('');
+        setShowLockModal(true);
+    };
+
+    const handlePasswordSubmit = () => {
+        if (passwordInput === LOCK_PASSWORD) {
+            setIsUnlocked(true);
+            setShowLockModal(false);
+            if (pendingAction) {
+                pendingAction();
+                setPendingAction(null);
+            }
+        } else {
+            setPasswordError('パスワードが違います');
+        }
+    };
 
     // 認証ユーザーを取得
     useEffect(() => {
@@ -203,6 +235,55 @@ export default function CampManager() {
     return (
         <>
             <ConfirmDialog />
+
+            {/* パスワードモーダル */}
+            {showLockModal && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                        onClick={() => setShowLockModal(false)}
+                    />
+                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Lock className="w-5 h-5 text-slate-500" />
+                            <h3 className="font-bold text-slate-800">管理者パスワード</h3>
+                        </div>
+                        <p className="text-sm text-slate-500">
+                            合宿の作成・開催・アーカイブ操作にはパスワードが必要です。
+                        </p>
+                        <Input
+                            type="password"
+                            placeholder="パスワードを入力..."
+                            value={passwordInput}
+                            onChange={(e) => {
+                                setPasswordInput(e.target.value);
+                                setPasswordError('');
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handlePasswordSubmit(); }}
+                            autoFocus
+                        />
+                        {passwordError && (
+                            <p className="text-xs text-red-500">{passwordError}</p>
+                        )}
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowLockModal(false)}
+                                className="flex-1"
+                            >
+                                キャンセル
+                            </Button>
+                            <Button
+                                onClick={handlePasswordSubmit}
+                                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white"
+                            >
+                                解除する
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="container mx-auto px-4 py-8 max-w-4xl space-y-8">
 
                 {/* ヘッダー */}
@@ -218,6 +299,10 @@ export default function CampManager() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-slate-800">
                         <Plus className="w-5 h-5 text-sky-500" /> 新しい合宿を作成
+                        {isUnlocked
+                            ? <Unlock className="w-4 h-4 text-emerald-500 ml-1" />
+                            : <Lock className="w-4 h-4 text-slate-400 ml-1" />
+                        }
                     </CardTitle>
                     <CardDescription>
                         合宿名と使用コート数を設定して箱を作ります
@@ -244,10 +329,11 @@ export default function CampManager() {
                             />
                         </div>
                         <Button
-                            onClick={handleCreate}
+                            onClick={() => requireUnlock(handleCreate)}
                             disabled={loading || !newTitle}
                             className="bg-sky-500 hover:bg-sky-600 text-white w-full md:w-auto"
                         >
+                            {!isUnlocked && <Lock className="w-3.5 h-3.5 mr-1.5" />}
                             作成する
                         </Button>
                     </div>
@@ -298,11 +384,11 @@ export default function CampManager() {
                                         {camp.status === 'setup' && (
                                             <Button
                                                 variant="outline"
-                                                onClick={() => handleActivate(camp.id, camp.court_count)}
+                                                onClick={() => requireUnlock(() => handleActivate(camp.id, camp.court_count))}
                                                 disabled={loading || deleting === camp.id}
                                                 className="flex-1 md:flex-none border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                                             >
-                                                <Play className="w-4 h-4 mr-1" />
+                                                {isUnlocked ? <Play className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
                                                 これを開催する
                                             </Button>
                                         )}
@@ -311,21 +397,21 @@ export default function CampManager() {
                                         {camp.status === 'archived' ? (
                                             <Button
                                                 variant="outline"
-                                                onClick={() => handleUnarchive(camp.id)}
+                                                onClick={() => requireUnlock(() => handleUnarchive(camp.id))}
                                                 disabled={loading || deleting === camp.id}
                                                 className="flex-1 md:flex-none border-amber-200 text-amber-700 hover:bg-amber-50"
                                             >
-                                                <ArchiveRestore className="w-4 h-4 mr-1" />
+                                                {isUnlocked ? <ArchiveRestore className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
                                                 解除
                                             </Button>
                                         ) : (
                                             <Button
                                                 variant="outline"
-                                                onClick={() => handleArchive(camp.id)}
+                                                onClick={() => requireUnlock(() => handleArchive(camp.id))}
                                                 disabled={loading || deleting === camp.id}
                                                 className="flex-1 md:flex-none border-slate-300 text-slate-600 hover:bg-slate-50"
                                             >
-                                                <Archive className="w-4 h-4 mr-1" />
+                                                {isUnlocked ? <Archive className="w-4 h-4 mr-1" /> : <Lock className="w-4 h-4 mr-1" />}
                                                 {camp.status === 'active' ? '合宿を終了' : 'アーカイブ'}
                                             </Button>
                                         )}

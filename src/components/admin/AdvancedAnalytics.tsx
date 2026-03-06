@@ -335,8 +335,8 @@ export default function AdvancedAnalytics({ campId }: Props) {
                       <tr
                         key={item.match.id}
                         className={`border-b border-slate-100 ${item.isBlocked ? "bg-slate-50 opacity-60"
-                            : isNext ? "bg-sky-50"
-                              : ""
+                          : isNext ? "bg-sky-50"
+                            : ""
                           }`}
                       >
                         <td className="px-3 py-2 font-bold text-slate-500">
