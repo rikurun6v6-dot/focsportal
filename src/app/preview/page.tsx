@@ -1,46 +1,47 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   subscribeToCourts,
   subscribeToActiveMatches,
   subscribeToPlayers,
+  getDocument,
 } from '@/lib/firestore-helpers';
-import { useCamp } from '@/context/CampContext';
-import type { Court, Match, Player, MatchWithPlayers } from '@/types';
+import type { Court, Match, Player, MatchWithPlayers, Camp } from '@/types';
 
-// ---- helpers ----------------------------------------------------------------
+// ─── helpers ────────────────────────────────────────────────────────────────
 
-function buildMWP(
-  match: Match,
-  playersMap: Map<string, Player>
-): MatchWithPlayers | null {
-  const player1 = playersMap.get(match.player1_id);
-  const player2 = playersMap.get(match.player2_id);
-  if (!player1 || !player2) return null;
-  const result: MatchWithPlayers = { ...match, player1, player2 };
-  if (match.player3_id) { const p = playersMap.get(match.player3_id); if (p) result.player3 = p; }
-  if (match.player4_id) { const p = playersMap.get(match.player4_id); if (p) result.player4 = p; }
-  if (match.player5_id) { const p = playersMap.get(match.player5_id); if (p) result.player5 = p; }
-  if (match.player6_id) { const p = playersMap.get(match.player6_id); if (p) result.player6 = p; }
-  return result;
+function buildMWP(match: Match, pm: Map<string, Player>): MatchWithPlayers | null {
+  const p1 = pm.get(match.player1_id);
+  const p2 = pm.get(match.player2_id);
+  if (!p1 || !p2) return null;
+  const r: MatchWithPlayers = { ...match, player1: p1, player2: p2 };
+  if (match.player3_id) { const p = pm.get(match.player3_id); if (p) r.player3 = p; }
+  if (match.player4_id) { const p = pm.get(match.player4_id); if (p) r.player4 = p; }
+  if (match.player5_id) { const p = pm.get(match.player5_id); if (p) r.player5 = p; }
+  if (match.player6_id) { const p = pm.get(match.player6_id); if (p) r.player6 = p; }
+  return r;
 }
 
-function getPairName(match: MatchWithPlayers, side: 1 | 2): string {
+function getSideNames(m: MatchWithPlayers, side: 1 | 2): string[] {
   if (side === 1) {
-    const names = [match.player1.name];
-    if (match.player3) names.push(match.player3.name);
-    if (match.player5) names.push(match.player5.name);
-    return names.join(' / ');
-  } else {
-    const names = [match.player2.name];
-    if (match.player4) names.push(match.player4.name);
-    if (match.player6) names.push(match.player6.name);
-    return names.join(' / ');
+    const n = [m.player1.name];
+    if (m.player3) n.push(m.player3.name);
+    if (m.player5) n.push(m.player5.name);
+    return n;
   }
+  const n = [m.player2.name];
+  if (m.player4) n.push(m.player4.name);
+  if (m.player6) n.push(m.player6.name);
+  return n;
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
+function getPairName(m: MatchWithPlayers, side: 1 | 2) {
+  return getSideNames(m, side).join(' / ');
+}
+
+const CAT: Record<string, string> = {
   mens_doubles: '男子D',
   womens_doubles: '女子D',
   mixed_doubles: '混合D',
@@ -49,196 +50,296 @@ const CATEGORY_LABEL: Record<string, string> = {
   team_battle: '団体戦',
 };
 
-const COURTS_PER_PAGE = 6;
+// ─── sub-components ─────────────────────────────────────────────────────────
 
-// ---- component --------------------------------------------------------------
+/** 選手名表示（3人ペア対応・2行レイアウト） */
+function PlayerBox({
+  names,
+  status,
+}: {
+  names: string[];
+  status: 'calling' | 'playing' | 'other';
+}) {
+  const bg =
+    status === 'calling'
+      ? 'bg-yellow-100'
+      : status === 'playing'
+      ? 'bg-sky-50'
+      : 'bg-gray-50';
 
-export default function PreviewPage() {
-  const { camp } = useCamp();
-  const [courts, setCourts] = useState<Court[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [playersMap, setPlayersMap] = useState<Map<string, Player>>(new Map());
-  const [page, setPage] = useState(0);
-
-  // ---- subscriptions --------------------------------------------------------
-  useEffect(() => {
-    if (!camp) return;
-    const unsub1 = subscribeToCourts(
-      (c) => setCourts(c.sort((a, b) => (a.number || 0) - (b.number || 0))),
-      camp.id
-    );
-    const unsub2 = subscribeToActiveMatches((m) => setMatches(m), camp.id);
-    const unsub3 = subscribeToPlayers((players) => {
-      const map = new Map<string, Player>();
-      players.forEach((p) => map.set(p.id, p));
-      setPlayersMap(map);
-    }, camp.id);
-    return () => { unsub1(); unsub2(); unsub3(); };
-  }, [camp?.id]);
-
-  // ---- auto-page ------------------------------------------------------------
-  const totalPages = Math.ceil(courts.length / COURTS_PER_PAGE);
-  useEffect(() => {
-    if (totalPages <= 1) { setPage(0); return; }
-    const timer = setInterval(() => {
-      setPage((p) => (p + 1) % totalPages);
-    }, 10000);
-    return () => clearInterval(timer);
-  }, [totalPages]);
-
-  // ---- calling history (latest new caller shown briefly) --------------------
-  const prevCallingRef = useRef<Set<string>>(new Set());
-  const [recentCallerIds, setRecentCallerIds] = useState<string[]>([]);
-
-  useEffect(() => {
-    const nowCalling = new Set(
-      matches.filter((m) => m.status === 'calling').map((m) => m.id)
-    );
-    const newOnes = [...nowCalling].filter((id) => !prevCallingRef.current.has(id));
-    if (newOnes.length > 0) {
-      setRecentCallerIds((prev) => [...newOnes, ...prev].slice(0, 8));
-    }
-    prevCallingRef.current = nowCalling;
-  }, [matches]);
-
-  // ---- derived data ---------------------------------------------------------
-  const matchesById = new Map(matches.map((m) => [m.id, m]));
-  const callingMatches = matches.filter((m) => m.status === 'calling');
-  const activeCourts = courts.filter((c) => c.is_active);
-  const pagedCourts =
-    totalPages > 1
-      ? activeCourts.slice(page * COURTS_PER_PAGE, (page + 1) * COURTS_PER_PAGE)
-      : activeCourts;
-
-  const cols = Math.min(pagedCourts.length, 3);
-  const rows = Math.ceil(pagedCourts.length / cols) || 1;
-
-  // ---- render ---------------------------------------------------------------
-  if (!camp) {
+  // 3人の場合: 1行目=筆頭, 2行目=残り
+  if (names.length >= 3) {
     return (
-      <div className="h-screen bg-black flex items-center justify-center">
-        <p className="text-gray-500 text-xl">読み込み中...</p>
+      <div className={`rounded-xl px-4 py-3 ${bg}`}>
+        <p className="text-2xl font-black text-gray-900 text-center leading-tight tracking-tight">
+          {names[0]}
+        </p>
+        <p className="text-xl font-bold text-gray-700 text-center leading-tight tracking-tight mt-0.5">
+          {names.slice(1).join(' / ')}
+        </p>
       </div>
     );
   }
-
   return (
-    <div className="h-screen bg-black text-white flex flex-col overflow-hidden select-none">
-      {/* ── Header ── */}
-      <header className="flex-shrink-0 px-5 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between">
-        <h1 className="text-3xl font-black text-yellow-400 tracking-wide">
-          🏸 コート状況
-        </h1>
-        <div className="flex items-center gap-5">
-          <span className="text-gray-400 font-medium text-lg">{camp.title}</span>
-          {totalPages > 1 && (
-            <div className="flex gap-1.5 items-center">
-              {Array.from({ length: totalPages }).map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setPage(i)}
-                  className={`w-3 h-3 rounded-full transition-colors ${
-                    i === page ? 'bg-yellow-400' : 'bg-gray-600 hover:bg-gray-400'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
+    <div className={`rounded-xl px-4 py-3 ${bg}`}>
+      <p className="text-2xl font-black text-gray-900 text-center leading-tight tracking-tight">
+        {names.join(' / ')}
+      </p>
+    </div>
+  );
+}
+
+type OverlayData = {
+  players1: string;
+  players2: string;
+  courtNum: number | string;
+};
+
+// ─── main content ───────────────────────────────────────────────────────────
+
+function PreviewContent() {
+  const searchParams = useSearchParams();
+  const campId = searchParams.get('campId') ?? '';
+
+  const [campName, setCampName] = useState('');
+  const [courts, setCourts] = useState<Court[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [playersMap, setPlayersMap] = useState<Map<string, Player>>(new Map());
+  const [currentOverlay, setCurrentOverlay] = useState<OverlayData | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollPausedRef = useRef(false);
+  const prevCallingRef = useRef<Set<string>>(new Set());
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── camp name ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!campId) return;
+    getDocument<Camp>('camps', campId).then((c) => { if (c) setCampName(c.title); });
+  }, [campId]);
+
+  // ── subscriptions ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!campId) return;
+    const u1 = subscribeToCourts(
+      (c) => setCourts(c.sort((a, b) => (a.number || 0) - (b.number || 0))),
+      campId,
+    );
+    const u2 = subscribeToActiveMatches((m) => setMatches(m), campId);
+    const u3 = subscribeToPlayers((players) => {
+      const map = new Map<string, Player>();
+      players.forEach((p) => map.set(p.id, p));
+      setPlayersMap(map);
+    }, campId);
+    return () => { u1(); u2(); u3(); };
+  }, [campId]);
+
+  // ── calling overlay ────────────────────────────────────────────────────────
+  const showOverlay = useCallback((data: OverlayData) => {
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    setCurrentOverlay(data);
+    overlayTimerRef.current = setTimeout(() => {
+      setCurrentOverlay(null);
+      overlayTimerRef.current = null;
+    }, 5000);
+  }, []);
+
+  useEffect(() => {
+    const nowCalling = new Set(
+      matches.filter((m) => m.status === 'calling').map((m) => m.id),
+    );
+    const newIds = [...nowCalling].filter((id) => !prevCallingRef.current.has(id));
+
+    if (newIds.length > 0) {
+      const byId = new Map(matches.map((m) => [m.id, m]));
+      const id = newIds[0];
+      const match = byId.get(id);
+      if (match) {
+        const mwp = buildMWP(match, playersMap);
+        if (mwp) {
+          const courtNum = courts.find((c) => c.current_match_id === id)?.number ?? '?';
+          showOverlay({ players1: getPairName(mwp, 1), players2: getPairName(mwp, 2), courtNum });
+        }
+      }
+    }
+    prevCallingRef.current = nowCalling;
+  }, [matches, playersMap, courts, showOverlay]);
+
+  // cleanup overlay timer on unmount
+  useEffect(() => () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current); }, []);
+
+  // ── auto-scroll ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const timer = setInterval(() => {
+      if (scrollPausedRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      if (scrollHeight <= clientHeight + 4) return;
+      if (scrollTop + clientHeight >= scrollHeight - 4) {
+        scrollPausedRef.current = true;
+        setTimeout(() => {
+          el.scrollTo({ top: 0, behavior: 'smooth' });
+          setTimeout(() => { scrollPausedRef.current = false; }, 1500);
+        }, 2500);
+      } else {
+        el.scrollTop += 1;
+      }
+    }, 30);
+    return () => clearInterval(timer);
+  }, []);
+
+  // ── derived ────────────────────────────────────────────────────────────────
+  const activeCourts = courts.filter((c) => c.is_active);
+  const matchesById = new Map(matches.map((m) => [m.id, m]));
+  const callingMatches = matches.filter((m) => m.status === 'calling');
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden select-none">
+      {/* ─── keyframe animations ─── */}
+      <style>{`
+        @keyframes callingBorder {
+          0%,100% { box-shadow: 0 0 0 3px #FACC15, 0 4px 20px rgba(250,204,21,.35); }
+          50%      { box-shadow: 0 0 0 6px #FDE047, 0 4px 32px rgba(250,204,21,.6); }
+        }
+        .calling-card { animation: callingBorder 1.2s ease-in-out infinite; }
+        @keyframes overlayIn {
+          from { opacity:0; transform:scale(.88); }
+          to   { opacity:1; transform:scale(1); }
+        }
+        .overlay-card { animation: overlayIn .38s cubic-bezier(.34,1.56,.64,1) both; }
+        @keyframes backdropIn { from{opacity:0} to{opacity:1} }
+        .overlay-backdrop { animation: backdropIn .22s ease-out both; }
+      `}</style>
+
+      {/* ─── Header ─── */}
+      <header className="flex-shrink-0 bg-white shadow-md px-6 py-3 flex items-center justify-between z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 bg-blue-600 rounded-2xl flex items-center justify-center shadow-sm">
+            <span className="text-white text-2xl leading-none">🏸</span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
+              コート状況
+            </h1>
+            {campName && <p className="text-sm text-gray-500 mt-0.5 font-medium">{campName}</p>}
+          </div>
+        </div>
+        {/* ライブインジケーター */}
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+          </span>
+          <span className="text-xs text-gray-400 font-medium">リアルタイム</span>
         </div>
       </header>
 
-      {/* ── Body ── */}
+      {/* ─── Body ─── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Courts grid */}
-        <div className="flex-1 p-4 overflow-hidden">
-          <div
-            className="h-full grid gap-3"
-            style={{
-              gridTemplateColumns: `repeat(${cols}, 1fr)`,
-              gridTemplateRows: `repeat(${rows}, 1fr)`,
-            }}
-          >
-            {pagedCourts.map((court) => {
+
+        {/* ─── Courts scroll area ─── */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-4"
+          onMouseEnter={() => { scrollPausedRef.current = true; }}
+          onMouseLeave={() => { scrollPausedRef.current = false; }}
+          onTouchStart={() => { scrollPausedRef.current = true; }}
+          onTouchEnd={() => { setTimeout(() => { scrollPausedRef.current = false; }, 3000); }}
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
+            {activeCourts.map((court) => {
               const matchRaw = court.current_match_id
                 ? matchesById.get(court.current_match_id)
                 : null;
               const match = matchRaw ? buildMWP(matchRaw, playersMap) : null;
               const isCalling = match?.status === 'calling';
               const isPlaying = match?.status === 'playing';
+              const sideStatus = isCalling ? 'calling' : isPlaying ? 'playing' : 'other';
+              const names1 = match ? getSideNames(match, 1) : [];
+              const names2 = match ? getSideNames(match, 2) : [];
 
               return (
                 <div
                   key={court.id}
-                  className={`rounded-2xl border-2 flex flex-col overflow-hidden transition-colors ${
+                  className={`rounded-2xl overflow-hidden bg-white border-2 transition-colors ${
                     isCalling
-                      ? 'border-yellow-400 bg-gray-800 shadow-[0_0_24px_rgba(250,204,21,0.25)]'
+                      ? 'border-yellow-400 calling-card'
                       : isPlaying
-                      ? 'border-green-500 bg-gray-800'
+                      ? 'border-sky-300 shadow-md shadow-sky-100'
                       : match
-                      ? 'border-blue-600 bg-gray-800'
-                      : 'border-gray-700 bg-gray-900'
+                      ? 'border-gray-200 shadow-md'
+                      : 'border-gray-100 shadow-sm'
                   }`}
                 >
-                  {/* Court header */}
+                  {/* ─ Card header ─ */}
                   <div
-                    className={`px-4 py-2 flex items-center justify-between flex-shrink-0 ${
+                    className={`px-4 py-2.5 flex items-center justify-between ${
                       isCalling
-                        ? 'bg-yellow-400 text-black'
+                        ? 'bg-yellow-400'
                         : isPlaying
-                        ? 'bg-green-800 text-white'
+                        ? 'bg-sky-500'
                         : match
-                        ? 'bg-blue-900 text-white'
-                        : 'bg-gray-800 text-gray-500'
+                        ? 'bg-blue-600'
+                        : 'bg-gray-50 border-b border-gray-100'
                     }`}
                   >
-                    <span className="text-3xl font-black">{court.number}コート</span>
-                    <div className="flex items-center gap-2">
+                    {/* コート番号バッジ */}
+                    <span
+                      className={`text-3xl font-black tracking-tight ${
+                        isCalling ? 'text-yellow-900' : match ? 'text-white' : 'text-gray-400'
+                      }`}
+                    >
+                      {court.number}コート
+                    </span>
+
+                    <div className="flex flex-col items-end gap-1">
                       {match && (
-                        <span className="text-sm font-bold opacity-75">
-                          {CATEGORY_LABEL[match.tournament_type] || match.tournament_type}
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                            isCalling
+                              ? 'bg-yellow-200 text-yellow-900'
+                              : 'bg-white/25 text-white'
+                          }`}
+                        >
+                          {CAT[match.tournament_type] ?? match.tournament_type}
                           {match.division ? ` ${match.division}部` : ''}
                         </span>
                       )}
                       {isCalling && (
-                        <span className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-black opacity-60" />
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-black" />
+                        <span className="text-[11px] font-black text-yellow-900 bg-yellow-200 px-2 py-0.5 rounded-full animate-pulse">
+                          📢 呼び出し中
+                        </span>
+                      )}
+                      {isPlaying && (
+                        <span className="text-[11px] font-bold text-white/90 bg-white/20 px-2 py-0.5 rounded-full">
+                          ▶ 試合中
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Match content */}
-                  <div className="flex-1 flex flex-col items-center justify-center px-4 py-3 gap-2 min-h-0 overflow-hidden">
+                  {/* ─ Card body ─ */}
+                  <div className="px-4 py-4 flex flex-col gap-2">
                     {match ? (
                       <>
-                        <p className="text-2xl font-black text-white text-center leading-tight break-all w-full">
-                          {getPairName(match, 1)}
-                        </p>
-                        <span
-                          className={`text-xl font-black ${
-                            isCalling ? 'text-yellow-400' : 'text-gray-500'
-                          }`}
-                        >
-                          VS
-                        </span>
-                        <p className="text-2xl font-black text-white text-center leading-tight break-all w-full">
-                          {getPairName(match, 2)}
-                        </p>
-
-                        {isCalling && (
-                          <div className="mt-1 px-4 py-1.5 bg-yellow-400 text-black text-sm font-black rounded-full animate-pulse">
-                            📢 呼び出し中
-                          </div>
-                        )}
-                        {isPlaying && (
-                          <div className="mt-1 px-4 py-1.5 bg-green-500 text-white text-sm font-black rounded-full">
-                            ▶ 試合中
-                          </div>
-                        )}
+                        <PlayerBox names={names1} status={sideStatus} />
+                        <div className="flex items-center justify-center">
+                          <span
+                            className={`text-xl font-black ${
+                              isCalling ? 'text-yellow-500' : 'text-gray-300'
+                            }`}
+                          >
+                            VS
+                          </span>
+                        </div>
+                        <PlayerBox names={names2} status={sideStatus} />
                       </>
                     ) : (
-                      <span className="text-gray-600 text-2xl font-bold">— 空きコート —</span>
+                      <div className="py-8 text-center">
+                        <p className="text-gray-300 text-2xl font-bold">空きコート</p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -247,46 +348,34 @@ export default function PreviewPage() {
           </div>
         </div>
 
-        {/* ── Calling notification panel ── */}
-        <aside className="w-56 flex-shrink-0 bg-gray-950 border-l border-gray-800 flex flex-col overflow-hidden">
-          <div className="bg-yellow-400 px-4 py-2.5 flex-shrink-0">
-            <h2 className="text-base font-black text-black">📢 呼び出し中</h2>
+        {/* ─── Calling sidebar ─── */}
+        <aside className="w-56 flex-shrink-0 bg-amber-50 border-l border-amber-200 flex flex-col overflow-hidden">
+          <div className="bg-amber-400 px-4 py-3 flex-shrink-0">
+            <h2 className="text-base font-black text-amber-900">📢 呼び出し中</h2>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {callingMatches.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center pt-8">現在呼び出しなし</p>
+              <p className="text-amber-300 text-sm text-center pt-10">現在呼び出しなし</p>
             ) : (
               callingMatches.map((m) => {
                 const mwp = buildMWP(m, playersMap);
                 if (!mwp) return null;
-                const courtNum = activeCourts.find(
-                  (c) => c.current_match_id === m.id
-                )?.number;
-                const isNew = recentCallerIds.includes(m.id);
+                const courtNum = activeCourts.find((c) => c.current_match_id === m.id)?.number;
                 return (
-                  <div
-                    key={m.id}
-                    className={`rounded-xl p-3 ${
-                      isNew
-                        ? 'bg-yellow-400 text-black animate-pulse'
-                        : 'bg-yellow-500 text-black'
-                    }`}
-                  >
-                    <div className="text-xs font-black text-yellow-900 mb-1">
+                  <div key={m.id} className="bg-yellow-400 rounded-xl p-3 shadow-sm">
+                    <p className="text-xs font-black text-yellow-900 mb-1.5">
                       {courtNum}コート
-                    </div>
-                    <div className="font-black text-sm leading-snug break-all">
+                    </p>
+                    <p className="font-black text-sm text-yellow-900 leading-snug break-words">
                       {getPairName(mwp, 1)}
-                    </div>
-                    <div className="text-center text-yellow-900 font-black text-xs my-0.5">
-                      VS
-                    </div>
-                    <div className="font-black text-sm leading-snug break-all">
+                    </p>
+                    <p className="text-center text-yellow-800 text-xs font-bold my-0.5">VS</p>
+                    <p className="font-black text-sm text-yellow-900 leading-snug break-words">
                       {getPairName(mwp, 2)}
-                    </div>
-                    <div className="mt-1.5 text-center">
-                      <span className="text-[10px] font-black bg-black/20 rounded-full px-2 py-0.5">
-                        {CATEGORY_LABEL[m.tournament_type] || m.tournament_type}
+                    </p>
+                    <div className="mt-2">
+                      <span className="text-[10px] font-bold text-yellow-800 bg-yellow-200 px-2 py-0.5 rounded-full">
+                        {CAT[m.tournament_type] ?? m.tournament_type}
                         {m.division ? ` ${m.division}部` : ''}
                       </span>
                     </div>
@@ -295,17 +384,65 @@ export default function PreviewPage() {
               })
             )}
           </div>
-
-          {/* Footer: page indicator */}
-          {totalPages > 1 && (
-            <div className="flex-shrink-0 px-3 py-2 border-t border-gray-800 text-center">
-              <p className="text-gray-600 text-xs">
-                {page + 1} / {totalPages} ページ
-              </p>
-            </div>
-          )}
         </aside>
       </div>
+
+      {/* ─── Calling overlay ─── */}
+      {currentOverlay && (
+        <div
+          className="overlay-backdrop fixed inset-0 z-50 flex items-center justify-center cursor-pointer"
+          style={{ backgroundColor: 'rgba(0,0,0,.68)' }}
+          onClick={() => {
+            if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+            setCurrentOverlay(null);
+          }}
+        >
+          <div className="overlay-card bg-white rounded-3xl shadow-2xl px-10 py-9 mx-6 max-w-lg w-full text-center">
+            <p className="text-5xl mb-5">📢</p>
+
+            {/* 選手名 */}
+            <div className="mb-6">
+              <p className="text-4xl font-black text-gray-900 leading-tight break-words">
+                {currentOverlay.players1}
+              </p>
+              <p className="text-xl font-black text-gray-300 my-1">VS</p>
+              <p className="text-4xl font-black text-gray-900 leading-tight break-words">
+                {currentOverlay.players2}
+              </p>
+            </div>
+
+            {/* コール文 */}
+            <div
+              className="rounded-2xl px-6 py-4 inline-block"
+              style={{ backgroundColor: '#FFEB3B' }}
+            >
+              <p className="text-2xl font-black text-yellow-900 leading-snug">
+                {currentOverlay.courtNum}コートへ
+                <br />
+                お越しください！
+              </p>
+            </div>
+
+            <p className="text-sm text-gray-400 mt-5">（タップで閉じる）</p>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ─── page export ────────────────────────────────────────────────────────────
+
+export default function PreviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-screen bg-gray-100 flex items-center justify-center">
+          <p className="text-gray-400 text-2xl font-bold">読み込み中…</p>
+        </div>
+      }
+    >
+      <PreviewContent />
+    </Suspense>
   );
 }

@@ -510,7 +510,7 @@ export default function ResultsTab() {
             <h2 className="text-2xl font-bold text-slate-800">コート別結果入力</h2>
             <p className="text-sm text-slate-600 mt-1">各コートで進行中の試合のスコアを直接入力できます</p>
           </div>
-          <a href="/preview" target="_blank" rel="noopener noreferrer">
+          <a href={`/preview?campId=${camp?.id ?? ''}`} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="flex items-center gap-1.5 border-slate-300 text-slate-600 hover:bg-slate-50">
               <Monitor className="w-4 h-4" />
               モニター
