@@ -11,12 +11,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import CourtGrid from "@/components/CourtGrid";
 import MyMatchesView from "@/components/MyMatchesView";
 import ActiveMatchesView from "@/components/ActiveMatchesView";
-import { searchPlayerByName } from "@/lib/eta";
+import { searchPlayerByName, calculateTournamentETA } from "@/lib/eta";
+import type { TournamentETAByType } from "@/lib/eta";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import type { ETAResult, Player, Match, Camp } from "@/types";
-import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy } from "lucide-react";
+import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy, ChevronUp } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import UserGuide from "@/components/common/UserGuide";
 import ChatWindow from "@/components/ChatWindow";
@@ -167,6 +168,10 @@ export default function UserDashboard() {
     const [etaLoading, setEtaLoading] = useState(false);
     const [isOnline, setIsOnline] = useState(true);
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+    const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
+    const [estimatedMinutes, setEstimatedMinutes] = useState(0);
+    const [etaByType, setEtaByType] = useState<TournamentETAByType[]>([]);
+    const [isStatusOpen, setIsStatusOpen] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isChatEnabled, setIsChatEnabled] = useState(false);
@@ -296,6 +301,20 @@ export default function UserDashboard() {
 
         return () => clearInterval(interval);
     }, []);
+
+    // AI予想終了時刻（30秒ごと）
+    useEffect(() => {
+        if (!camp) return;
+        const fetchETA = async () => {
+            const eta = await calculateTournamentETA(camp.id);
+            setEstimatedEndTime(eta.estimatedEndTime);
+            setEstimatedMinutes(eta.estimatedMinutesRemaining);
+            setEtaByType(eta.byType);
+        };
+        fetchETA();
+        const t = setInterval(fetchETA, 30000);
+        return () => clearInterval(t);
+    }, [camp?.id]);
 
     useEffect(() => {
         const storedUser = localStorage.getItem("focs_user");
@@ -949,9 +968,69 @@ export default function UserDashboard() {
 
             {/* ステータスバー（右下固定） */}
             <div className="fixed bottom-4 right-4 z-50">
-                <div className="bg-white/90 backdrop-blur-sm border border-slate-200 rounded-full px-3 py-1.5 shadow-lg">
-                    <div className="flex items-center gap-2 text-slate-600">
-                        {/* オンライン状況 */}
+                {/* ポップオーバー */}
+                {isStatusOpen && (
+                    <div className="absolute bottom-full mb-2 right-0 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[260px] animate-in slide-in-from-bottom-2 duration-200">
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-200 pb-2">AI予想終了時刻</h3>
+
+                            {/* 全体 */}
+                            <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-md">
+                                    <Sparkles className="w-4 h-4 text-white" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-semibold text-slate-700">全体終了予想</div>
+                                    {estimatedEndTime ? (
+                                        <div className="mt-1">
+                                            <div className="text-sm font-bold text-purple-700">
+                                                {estimatedEndTime.getHours().toString().padStart(2, '0')}:{estimatedEndTime.getMinutes().toString().padStart(2, '0')}
+                                            </div>
+                                            <div className="text-xs text-slate-500">残り約 <span className="font-semibold text-blue-600">{estimatedMinutes}</span> 分</div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-xs text-slate-500 mt-1">全試合終了</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 種目別 */}
+                            {etaByType.length > 0 && (
+                                <div className="bg-gradient-to-r from-purple-50 to-blue-50 -mx-4 -mb-4 p-4 rounded-b-2xl border-t border-purple-100/50">
+                                    <div className="text-xs font-semibold text-slate-700 mb-2">種目別予想</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {etaByType.map((t) => (
+                                            <div key={t.tournamentType} className="bg-white/80 rounded-lg p-2 shadow-sm border border-purple-100/50">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-xs font-bold text-slate-700">{t.label}</span>
+                                                    <span className="text-[10px] text-slate-400">{t.remainingMatches + t.activeMatches}試合</span>
+                                                </div>
+                                                {t.estimatedEndTime ? (
+                                                    <>
+                                                        <div className="text-xs font-bold text-purple-600">
+                                                            {t.estimatedEndTime.getHours().toString().padStart(2, '0')}:{t.estimatedEndTime.getMinutes().toString().padStart(2, '0')}
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-500">残り{t.estimatedMinutesRemaining}分</div>
+                                                    </>
+                                                ) : (
+                                                    <div className="text-xs text-slate-500">終了</div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ピル */}
+                <button
+                    onClick={() => setIsStatusOpen(o => !o)}
+                    className="bg-slate-100/95 backdrop-blur-sm border border-slate-300 rounded-full px-4 py-2 shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95"
+                >
+                    <div className="flex items-center gap-3 text-slate-600">
+                        {/* 接続状況 */}
                         <div className="flex items-center gap-1.5">
                             {isOnline ? (
                                 <>
@@ -963,24 +1042,31 @@ export default function UserDashboard() {
                                 </>
                             ) : (
                                 <>
-                                    <span className="relative flex h-2 w-2">
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                                    </span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                                     <span className="text-xs font-medium text-amber-600">Offline</span>
                                 </>
                             )}
                         </div>
 
                         {/* セパレーター */}
-                        <div className="w-px h-3 bg-slate-300"></div>
+                        <div className="w-px h-4 bg-slate-300" />
 
-                        {/* 最終更新時刻 */}
-                        <div className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            <span className="text-xs">{getRelativeTime(lastUpdate)}</span>
+                        {/* 予想終了時刻 */}
+                        <div className="flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                            {estimatedEndTime ? (
+                                <span className="text-xs font-bold text-purple-700">
+                                    {estimatedEndTime.getHours().toString().padStart(2, '0')}:{estimatedEndTime.getMinutes().toString().padStart(2, '0')} 終了予想
+                                </span>
+                            ) : (
+                                <span className="text-xs font-medium text-slate-500">計算中...</span>
+                            )}
                         </div>
+
+                        {/* 展開アイコン */}
+                        <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${isStatusOpen ? '' : 'rotate-180'}`} />
                     </div>
-                </div>
+                </button>
             </div>
 
             {/* ユーザーガイドモーダル */}
