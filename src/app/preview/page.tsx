@@ -119,7 +119,7 @@ function PreviewContent() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen bg-white flex flex-col overflow-hidden">
+    <div className="h-[100dvh] bg-white flex flex-col overflow-hidden p-2">
       <style>{`
         @keyframes shrinkBar {
           from { transform: scaleX(1); }
@@ -292,7 +292,7 @@ export default function PreviewPage() {
   return (
     <Suspense
       fallback={
-        <div className="h-screen bg-white flex items-center justify-center">
+        <div className="h-[100dvh] bg-white flex items-center justify-center">
           <p className="text-slate-400 text-lg">読み込み中…</p>
         </div>
       }
