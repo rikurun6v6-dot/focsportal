@@ -136,7 +136,9 @@ export default function CampManager() {
         await activateCamp(campId);
         // 2. コート数をセットアップ（Camp専用コートを作成）
         await setupCampCourts(courts, campId);
-        // 3. アプリ全体のContextを更新
+        // 3. リロード後も即座に復元できるよう lastCampId を保存
+        localStorage.setItem('lastCampId', campId);
+        // 4. アプリ全体のContextを更新
         await refreshCamp();
 
         setLoading(false);
@@ -146,7 +148,7 @@ export default function CampManager() {
 
     // 「管理画面へ」ボタン (Activeにせず、中身だけ見る)
     const handleEnter = (camp: Camp) => {
-        setManualCamp(camp);
+        setManualCamp(camp); // setManualCamp 内で lastCampId を localStorage に保存
     };
 
     // アーカイブ

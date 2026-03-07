@@ -10,7 +10,9 @@ import {
   getDocument,
 } from '@/lib/firestore-helpers';
 import type { Court, Match, Player, MatchWithPlayers, Camp } from '@/types';
-import { Clock } from 'lucide-react';
+import { Clock, Sparkles } from 'lucide-react';
+import { calculateTournamentETA } from '@/lib/eta';
+import type { TournamentETAByType } from '@/lib/eta';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,9 @@ function PreviewContent() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [clockStr, setClockStr] = useState('');
   const [page, setPage] = useState(0);
+  const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
+  const [estimatedMinutes, setEstimatedMinutes] = useState(0);
+  const [etaByType, setEtaByType] = useState<TournamentETAByType[]>([]);
 
   // ── clock ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -102,6 +107,20 @@ function PreviewContent() {
     const t = setInterval(() => setPage((p) => (p + 1) % totalPages), PAGE_INTERVAL_MS);
     return () => clearInterval(t);
   }, [totalPages]);
+
+  // ── ETA ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!campId) return;
+    const fetchETA = async () => {
+      const eta = await calculateTournamentETA(campId);
+      setEstimatedEndTime(eta.estimatedEndTime);
+      setEstimatedMinutes(eta.estimatedMinutesRemaining);
+      setEtaByType(eta.byType);
+    };
+    fetchETA();
+    const t = setInterval(fetchETA, 30000);
+    return () => clearInterval(t);
+  }, [campId]);
 
   // ── elapsed time ──────────────────────────────────────────────────────────
   const getElapsedTime = (match: MatchWithPlayers) => {
@@ -183,7 +202,7 @@ function PreviewContent() {
         </div>
       )}
 
-      {/* ── Court grid: 常に3列、カードが縦に伸びて画面を埋める ── */}
+      {/* ── Court grid ── */}
       <div className="flex-1 grid grid-cols-3 gap-5 p-4 min-h-0">
         {pagedCourts.map((court) => {
           const courtNumber = court.number || court.id.replace('court_', '');
@@ -281,6 +300,57 @@ function PreviewContent() {
             </Card>
           );
         })}
+      </div>
+
+      {/* ── ETA bar ── */}
+      <div className="flex-shrink-0 bg-gradient-to-r from-purple-50 via-blue-50 to-purple-50 border-t border-purple-100 px-4 py-2 flex items-center gap-4">
+        {/* 全体予想 */}
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-md">
+            <Sparkles className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 leading-none mb-0.5">AI予想終了（全体）</div>
+            {estimatedEndTime ? (
+              <div className="flex items-baseline gap-1.5 leading-none">
+                <span className="text-xl font-black text-purple-700 tabular-nums">
+                  {estimatedEndTime.getHours().toString().padStart(2, '0')}:{estimatedEndTime.getMinutes().toString().padStart(2, '0')}
+                </span>
+                <span className="text-xs font-medium text-slate-500">残り{estimatedMinutes}分</span>
+              </div>
+            ) : (
+              <div className="text-sm font-bold text-slate-400 leading-none">全試合終了</div>
+            )}
+          </div>
+        </div>
+
+        {/* セパレーター */}
+        <div className="w-px h-9 bg-purple-200 flex-shrink-0" />
+
+        {/* 種目別 */}
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+          {etaByType.map((t) => (
+            <div
+              key={t.tournamentType}
+              className="bg-white/80 border border-purple-100 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-sm"
+            >
+              <span className="text-sm font-bold text-slate-700">{t.label}</span>
+              {t.estimatedEndTime ? (
+                <>
+                  <span className="text-base font-black text-purple-600 tabular-nums">
+                    {t.estimatedEndTime.getHours().toString().padStart(2, '0')}:{t.estimatedEndTime.getMinutes().toString().padStart(2, '0')}
+                  </span>
+                  <span className="text-xs text-slate-400">残{t.estimatedMinutesRemaining}分</span>
+                </>
+              ) : (
+                <span className="text-xs text-slate-400">終了</span>
+              )}
+            </div>
+          ))}
+          {etaByType.length === 0 && (
+            <span className="text-xs text-slate-400">計算中...</span>
+          )}
+        </div>
       </div>
     </div>
   );
