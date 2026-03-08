@@ -829,9 +829,9 @@ function buildAdminSections(): Section[] {
     // ─── 14. 応用タブ（AdvancedAnalytics） ───────────────────
     {
       id: 'advanced',
-      title: '応用タブ（Dispatcher分析）',
+      title: '応用タブ（Dispatcher分析 + AI診断）',
       icon: '🔬',
-      keywords: ['応用', 'advanced', 'dispatcher', '分析', 'スコア', 'ボトルネック', 'パスワード', '可視化', 'デバッグ'],
+      keywords: ['応用', 'advanced', 'dispatcher', '分析', 'スコア', 'ボトルネック', 'パスワード', '可視化', 'デバッグ', 'AI', '診断', 'Claude', 'ストリーミング', '自動診断', '更新'],
       content: (
         <div className="space-y-5">
           <p className="text-sm text-slate-600">
@@ -867,6 +867,47 @@ function buildAdminSections(): Section[] {
               スコアが高いのにblockedになっている場合は休憩中（available_at が未来）か、
               選手が別の試合に出場中かを確認してください。
             </p>
+          </div>
+
+          <div className="border-t border-slate-200 pt-4">
+            <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+              <span className="text-purple-600">✨</span> AI自動診断機能
+            </h4>
+            <p className="text-sm text-slate-600 mb-3">
+              「更新」ボタンを押すと最新データを取得し、問題が検出された場合に
+              <strong>自動でAI診断</strong>が走ります。
+              Claude Opus 4.6（拡張思考モード）が運営状況を分析し、具体的な改善策をリアルタイムで回答します。
+            </p>
+
+            <div>
+              <h5 className="text-sm font-semibold text-slate-700 mb-2">AIに渡されるコンテキスト</h5>
+              <ul className="space-y-1 text-xs text-slate-600">
+                <li>• 空きコート数 / 総コート数</li>
+                <li>• 待機試合数 / 割り当て可能数</li>
+                <li>• 1部・2部の進行率</li>
+                <li>• ブロック中の試合一覧（理由・詳細付き）</li>
+                <li>• 検出された問題リスト</li>
+              </ul>
+            </div>
+
+            <div className="mt-3">
+              <h5 className="text-sm font-semibold text-slate-700 mb-2">診断カードの見方（紫ボーダー）</h5>
+              <div className="space-y-2">
+                <div className="p-3 rounded-lg border-l-4 border-purple-400 bg-purple-50 text-xs text-purple-800">
+                  <p className="font-semibold mb-1">「分析中...」バッジ表示中</p>
+                  <p>Claudeが回答を生成中です。文字が1文字ずつリアルタイムで流れ込んできます（ストリーミング表示）。点滅カーソルが出ている間はまだ生成中です。</p>
+                </div>
+                <div className="p-3 rounded-lg border-l-4 border-purple-400 bg-purple-50 text-xs text-purple-800">
+                  <p className="font-semibold mb-1">「再診断」ボタン</p>
+                  <p>分析完了後でも手動でAI診断を再実行できます。同じ状態（空きコート数・割り当て可能数・待機数）での重複実行は自動スキップされます。</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs text-amber-800">
+              <strong>注意：</strong> AI診断はサーバーAPIを経由します（<code className="bg-amber-100 px-1 rounded">/api/ai-diagnose</code>）。
+              問題が検出されない場合（blocked試合なし・コート満杯など）は診断が自動スキップされます。
+            </div>
           </div>
         </div>
       ),
