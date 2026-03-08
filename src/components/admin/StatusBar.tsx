@@ -30,7 +30,7 @@ export default function StatusBar({ isOnline }: StatusBarProps) {
     const unsubscribe = subscribeToCollection<Match>(
       'matches',
       (matches) => {
-        const playingCount = matches.filter(m => m.status === 'playing').length;
+        const playingCount = matches.filter(m => m.status === 'playing' || m.status === 'calling').length;
         setPlayingMatchCount(playingCount);
       },
       [where('campId', '==', camp.id)]
