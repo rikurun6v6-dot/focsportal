@@ -85,6 +85,8 @@ export async function dispatchToEmptyCourt(
     if (m.player2_id) busyPlayerIds.add(m.player2_id);
     if (m.player3_id) busyPlayerIds.add(m.player3_id);
     if (m.player4_id) busyPlayerIds.add(m.player4_id);
+    if ((m as any).player5_id) busyPlayerIds.add((m as any).player5_id);
+    if ((m as any).player6_id) busyPlayerIds.add((m as any).player6_id);
   });
 
   // 1部と2部の進行状況を計算（campIdでフィルタして他合宿の試合を混入させない）
@@ -143,6 +145,8 @@ export async function dispatchToEmptyCourt(
     if (busyPlayerIds.has(match.player1_id) || busyPlayerIds.has(match.player2_id)) return false;
     if (match.player3_id && match.player3_id !== '' && busyPlayerIds.has(match.player3_id)) return false;
     if (match.player4_id && match.player4_id !== '' && busyPlayerIds.has(match.player4_id)) return false;
+    if ((match as any).player5_id && busyPlayerIds.has((match as any).player5_id)) return false;
+    if ((match as any).player6_id && busyPlayerIds.has((match as any).player6_id)) return false;
 
     // available_at チェック: 試合が休息時間を完了しているか確認
     if (match.available_at && now < match.available_at.toMillis()) {
@@ -199,18 +203,20 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
-  // ✅ ラウンド順序の厳守: 同じtournament_type+divisionの中で最小ラウンドの試合のみを対象にする
-  // これにより、n回戦の試合があるのにn+1回戦が割り当てられる問題を防ぐ
+  // ✅ ラウンド順序の厳守: 同じtournament_type+division+phaseの中で最小ラウンドの試合のみを対象にする
+  // filteredWaitingMatches (ブロック済みも含む全待機) から計算することで、
+  // 「1回戦の選手が他試合中」でも2回戦が先に割り当てられるのを防ぐ
+  // phaseを含めることで予選の待機が本戦のラウンド順序を乱さないようにする
   const minRoundByGroup = new Map<string, number>();
-  for (const match of validMatches) {
-    const groupKey = `${match.tournament_type}_${match.division}`;
+  for (const match of filteredWaitingMatches) {
+    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
     const existing = minRoundByGroup.get(groupKey);
     if (existing === undefined || match.round < existing) {
       minRoundByGroup.set(groupKey, match.round);
     }
   }
   const roundFilteredMatches = validMatches.filter(match => {
-    const groupKey = `${match.tournament_type}_${match.division}`;
+    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
     return match.round === minRoundByGroup.get(groupKey);
   });
 

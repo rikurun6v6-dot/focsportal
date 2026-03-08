@@ -5,7 +5,8 @@ import { collection, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Lock, RefreshCw, TrendingUp, BarChart2 } from "lucide-react";
+import { Lock, RefreshCw, TrendingUp, BarChart2, AlertTriangle, CheckCircle2, Sparkles, Bot } from "lucide-react";
+import type { AIDiagnosePayload } from "@/app/api/ai-diagnose/route";
 import type { Match, Court, Player } from "@/types";
 
 interface Props {
@@ -44,6 +45,13 @@ interface ScoredMatch {
   totalScore: number;
   isBlocked: boolean;
   blockReason: string;
+  blockDetail: string; // 詳細説明
+}
+
+interface DiagnosisItem {
+  severity: "error" | "warn" | "info";
+  title: string;
+  detail: string;
 }
 
 interface DivisionData {
@@ -68,6 +76,10 @@ export default function AdvancedAnalytics({ campId }: Props) {
   const [scoredQueue, setScoredQueue] = useState<ScoredMatch[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
+  const [aiAnalysis, setAiAnalysis] = useState<string>("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiTriggeredKey, setAiTriggeredKey] = useState<string>(""); // 同じ状態で重複実行しない
 
   useEffect(() => {
     if (typeof window !== "undefined" && sessionStorage.getItem("adv_analytics_unlocked") === "1") {
@@ -119,64 +131,229 @@ export default function AdvancedAnalytics({ campId }: Props) {
       const waitingMatches = activeMatches.filter(m => m.status === "waiting");
       const now = Date.now();
 
+      // ── 試合中の選手セット（player5/6含む）──────────────────────────────────
       const busyPlayerIds = new Set<string>();
+      // playerId → コート番号
+      const playerCourtMap = new Map<string, number>();
       activeMatches
         .filter(m => m.status === "calling" || m.status === "playing")
         .forEach(m => {
-          if (m.player1_id) busyPlayerIds.add(m.player1_id);
-          if (m.player2_id) busyPlayerIds.add(m.player2_id);
-          if (m.player3_id) busyPlayerIds.add(m.player3_id);
-          if (m.player4_id) busyPlayerIds.add(m.player4_id);
+          const court = courtsData.find(c => c.current_match_id === m.id);
+          const courtNum = court?.number ?? 0;
+          for (const id of [m.player1_id, m.player2_id, m.player3_id, m.player4_id,
+                            (m as any).player5_id, (m as any).player6_id]) {
+            if (id) { busyPlayerIds.add(id); playerCourtMap.set(id, courtNum); }
+          }
         });
 
+      // ── ラウンド順序（dispatcher.ts と同一ロジック: phase込み、全waitingから計算）──
       const minRoundByGroup = new Map<string, number>();
       for (const m of waitingMatches) {
-        const key = `${m.tournament_type}_${m.division}`;
+        const key = `${m.tournament_type}_${m.division}_${(m as any).phase ?? "knockout"}`;
         const cur = minRoundByGroup.get(key);
         if (cur === undefined || m.round < cur) minRoundByGroup.set(key, m.round);
       }
 
+      // groupKey → そのグループで最小Rを持つ待機試合リスト（「前ラウンド待ち」の原因特定用）
+      const blockingRoundMatches = new Map<string, Match[]>();
+      for (const m of waitingMatches) {
+        const key = `${m.tournament_type}_${m.division}_${(m as any).phase ?? "knockout"}`;
+        const minR = minRoundByGroup.get(key);
+        if (minR !== undefined && m.round === minR) {
+          const arr = blockingRoundMatches.get(key) ?? [];
+          arr.push(m);
+          blockingRoundMatches.set(key, arr);
+        }
+      }
+
+      const pName = (id: string | null | undefined) =>
+        !id ? "?" : (playersData.find(p => p.id === id)?.name ?? id.slice(0, 5));
+
       const scored: ScoredMatch[] = waitingMatches.map(m => {
-        const key = `${m.tournament_type}_${m.division}`;
-        const isRoundEligible = m.round === minRoundByGroup.get(key);
+        const key = `${m.tournament_type}_${m.division}_${(m as any).phase ?? "knockout"}`;
+        const minR = minRoundByGroup.get(key);
+        const isRoundEligible = m.round === minR;
         const isRestBlocked = !!(m.available_at && now < m.available_at.toMillis());
-        const playerIds = [m.player1_id, m.player2_id, m.player3_id, m.player4_id].filter(Boolean) as string[];
-        const isBusyBlocked = playerIds.some(id => busyPlayerIds.has(id));
+        const allPlayerIds = [m.player1_id, m.player2_id, m.player3_id, m.player4_id,
+                              (m as any).player5_id, (m as any).player6_id].filter(Boolean) as string[];
+        const busyPlayers = allPlayerIds.filter(id => busyPlayerIds.has(id));
+        const isBusyBlocked = busyPlayers.length > 0;
+        const hasNoPlayers = !m.player1_id || !m.player2_id;
 
         const waitTime = Math.round((now - m.created_at.toMillis()) / 60000);
         const roundScore = ROUND_COEFFICIENT * (4 - m.round + 1);
         const divBonus = m.division === preferredDivision ? divisionBonusBase : 0;
-        const isBlocked = !isRoundEligible || isRestBlocked || isBusyBlocked;
+        const isBlocked = hasNoPlayers || !isRoundEligible || isRestBlocked || isBusyBlocked;
         const totalScore = isBlocked ? -1 : waitTime + roundScore + divBonus;
 
         let blockReason = "";
-        if (!isRoundEligible) blockReason = "前ラウンド待ち";
-        else if (isBusyBlocked) blockReason = "選手が試合中";
-        else if (isRestBlocked) {
+        let blockDetail = "";
+
+        if (hasNoPlayers) {
+          blockReason = "選手未確定";
+          blockDetail = "前ラウンドの結果待ちで対戦相手が決まっていません。";
+        } else if (!isRoundEligible) {
+          const blocking = blockingRoundMatches.get(key) ?? [];
+          const names = blocking.slice(0, 2).map(bm =>
+            `#${bm.match_number}（${pName(bm.player1_id)} vs ${pName(bm.player2_id)}）`
+          ).join("、");
+          blockReason = `${minR}回戦が未完了`;
+          blockDetail = `同種目の${minR}回戦が先に終わる必要があります。待機中: ${names}${blocking.length > 2 ? `他${blocking.length - 2}試合` : ""}`;
+        } else if (isBusyBlocked) {
+          const detail = busyPlayers.map(id => {
+            const courtNum = playerCourtMap.get(id);
+            return `${pName(id)}（第${courtNum}コート試合中）`;
+          }).join("、");
+          blockReason = "選手が試合中";
+          blockDetail = detail;
+        } else if (isRestBlocked) {
           const restLeft = Math.ceil((m.available_at!.toMillis() - now) / 60000);
           blockReason = `休憩中（あと${restLeft}分）`;
+          blockDetail = `available_at が設定されており、まだ休憩時間が残っています（残り約${restLeft}分）。`;
         }
 
-        return { match: m, waitTime, roundScore, divBonus, totalScore, isBlocked, blockReason };
+        return { match: m, waitTime, roundScore, divBonus, totalScore, isBlocked, blockReason, blockDetail };
       }).sort((a, b) => {
         if (a.isBlocked && !b.isBlocked) return 1;
         if (!a.isBlocked && b.isBlocked) return -1;
         return b.totalScore - a.totalScore;
       });
 
+      // ── AI診断 ─────────────────────────────────────────────────────────────
+      const freeCourts = courtsData.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
+      const diagItems: DiagnosisItem[] = [];
+
+      const assignable = scored.filter(s => !s.isBlocked);
+      const roundBlocked = scored.filter(s => s.isBlocked && s.blockReason.includes("回戦"));
+      const busyBlocked = scored.filter(s => s.isBlocked && s.blockReason === "選手が試合中");
+      const restBlocked = scored.filter(s => s.isBlocked && s.blockReason.includes("休憩"));
+      const noPlayerBlocked = scored.filter(s => s.isBlocked && s.blockReason === "選手未確定");
+
+      if (freeCourts.length > 0 && assignable.length === 0 && scored.length > 0) {
+        diagItems.push({
+          severity: "error",
+          title: `空きコート${freeCourts.length}面があるのに割り当て可能な試合がありません`,
+          detail: [
+            roundBlocked.length > 0 ? `前ラウンド待ち: ${roundBlocked.length}試合` : "",
+            busyBlocked.length > 0 ? `選手試合中: ${busyBlocked.length}試合` : "",
+            restBlocked.length > 0 ? `休憩中: ${restBlocked.length}試合` : "",
+            noPlayerBlocked.length > 0 ? `選手未確定: ${noPlayerBlocked.length}試合` : "",
+          ].filter(Boolean).join(" / "),
+        });
+      } else if (freeCourts.length > assignable.length && assignable.length < scored.length) {
+        diagItems.push({
+          severity: "warn",
+          title: `割り当て可能: ${assignable.length}試合、空きコート: ${freeCourts.length}面（コートが余っています）`,
+          detail: "ブロック中の試合が解除されると自動的に割り当てられます。",
+        });
+      } else if (assignable.length > 0) {
+        diagItems.push({
+          severity: "info",
+          title: `割り当て可能: ${assignable.length}試合 → 自動割り当てボタンで即時実行できます`,
+          detail: `優先度トップ: ${assignable[0] ? getTournamentLabel(assignable[0].match.tournament_type ?? "", assignable[0].match.division ?? 0) + ` ${assignable[0].match.round}回戦 #${assignable[0].match.match_number}` : "-"}`,
+        });
+      }
+
+      // ラウンドスキップ問題の警告
+      const roundIssueGroups = new Set<string>();
+      for (const s of scored) {
+        if (!s.isBlocked) continue;
+        if (!s.blockReason.includes("回戦")) continue;
+        const key = `${s.match.tournament_type}_${s.match.division}_${(s.match as any).phase ?? "knockout"}`;
+        const blocking = blockingRoundMatches.get(key) ?? [];
+        // 前ラウンドの試合が全てbusyBlocked → 「待てば解消」
+        const allBusy = blocking.every(bm => {
+          const ids = [bm.player1_id, bm.player2_id].filter(Boolean) as string[];
+          return ids.some(id => busyPlayerIds.has(id));
+        });
+        if (!allBusy) roundIssueGroups.add(key);
+      }
+      if (roundIssueGroups.size > 0) {
+        diagItems.push({
+          severity: "warn",
+          title: `${roundIssueGroups.size}グループで前ラウンドの試合が選手未確定のまま停止しています`,
+          detail: "前ラウンドの試合に選手が設定されていないか、ウォークオーバー処理が必要な可能性があります。安全タブの欠場処理をご確認ください。",
+        });
+      }
+
       setDivisionData({ div1Total, div2Total, div1Comp, div2Comp, div1Progress, div2Progress, preferredDivision, progressGap, divisionBonusBase });
       setScoredQueue(scored);
       setCourts(courtsData);
       setPlayers(playersData);
+      setDiagnosis(diagItems);
       setLastUpdated(new Date());
+
+      // エラーまたは警告がある場合のみAI診断ペイロードを返す
+      const hasIssue = diagItems.some(d => d.severity === "error" || d.severity === "warn");
+      if (hasIssue) {
+        const payload: AIDiagnosePayload = {
+          freeCourts: freeCourts.length,
+          totalCourts: courtsData.filter(c => c.is_active).length,
+          waitingTotal: waitingMatches.length,
+          assignable: scored.filter(s => !s.isBlocked).length,
+          div1Progress, div2Progress,
+          div1Comp, div1Total, div2Comp, div2Total,
+          blockedMatches: scored.filter(s => s.isBlocked).map(s => ({
+            matchNumber: s.match.match_number ?? 0,
+            label: getTournamentLabel(s.match.tournament_type ?? "", s.match.division ?? 0),
+            round: s.match.round,
+            blockReason: s.blockReason,
+            blockDetail: s.blockDetail,
+          })),
+          diagnosisItems: diagItems,
+        };
+        return payload;
+      }
+      return null;
     } finally {
       setLoading(false);
     }
   }, [campId]);
 
+  const runAIDiagnosis = useCallback(async (payload: AIDiagnosePayload, triggerKey: string) => {
+    if (aiTriggeredKey === triggerKey) return; // 同一状態で重複実行しない
+    setAiTriggeredKey(triggerKey);
+    setAiAnalysis("");
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/ai-diagnose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok || !res.body) {
+        const text = await res.text();
+        setAiAnalysis(`エラー: ${text}`);
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        setAiAnalysis(accumulated);
+      }
+    } catch (e: any) {
+      setAiAnalysis(`通信エラー: ${e?.message ?? e}`);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiTriggeredKey]);
+
+  const fetchAndMaybeDiagnose = useCallback(async () => {
+    const payload = await fetchData();
+    if (payload) {
+      // ブロック数とタイムスタンプをキーにして、同じ状態で重複しない
+      const key = `${payload.freeCourts}-${payload.assignable}-${payload.waitingTotal}-${Date.now().toString().slice(0, -4)}`;
+      runAIDiagnosis(payload, key);
+    }
+  }, [fetchData, runAIDiagnosis]);
+
   useEffect(() => {
-    if (isUnlocked) fetchData();
-  }, [isUnlocked, fetchData]);
+    if (isUnlocked) fetchAndMaybeDiagnose();
+  }, [isUnlocked, fetchAndMaybeDiagnose]);
 
   const getPlayerName = (id: string | null | undefined) => {
     if (!id) return "-";
@@ -230,14 +407,123 @@ export default function AdvancedAnalytics({ campId }: Props) {
           </p>
         </div>
         <button
-          onClick={fetchData}
-          disabled={loading}
+          onClick={fetchAndMaybeDiagnose}
+          disabled={loading || aiLoading}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm text-slate-700 transition-colors disabled:opacity-50"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           更新
         </button>
       </div>
+
+      {/* AI診断カード */}
+      {diagnosis.length > 0 && (
+        <Card className="border-t-4 border-t-amber-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              AI診断 — 割り当てブロック分析
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 pt-1">
+            {diagnosis.map((d, i) => (
+              <div
+                key={i}
+                className={`rounded-lg px-3 py-2.5 border text-sm ${
+                  d.severity === "error"
+                    ? "bg-red-50 border-red-200 text-red-800"
+                    : d.severity === "warn"
+                    ? "bg-amber-50 border-amber-200 text-amber-800"
+                    : "bg-sky-50 border-sky-200 text-sky-800"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {d.severity === "error" ? (
+                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-500" />
+                  ) : d.severity === "warn" ? (
+                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-sky-500" />
+                  )}
+                  <div>
+                    <p className="font-semibold leading-snug">{d.title}</p>
+                    {d.detail && <p className="text-xs mt-0.5 opacity-80 leading-snug">{d.detail}</p>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Claude AI 詳細分析カード */}
+      {(aiLoading || aiAnalysis) && (
+        <Card className="border-t-4 border-t-violet-600">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Bot className="w-4 h-4 text-violet-600" />
+                Claude AI による詳細分析
+                {aiLoading && (
+                  <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded animate-pulse font-medium">
+                    分析中...
+                  </span>
+                )}
+              </CardTitle>
+              {!aiLoading && aiAnalysis && (
+                <button
+                  onClick={() => {
+                    // 強制再診断
+                    const d = diagnosis;
+                    const scored = scoredQueue;
+                    const freeCourts = courts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
+                    const payload: AIDiagnosePayload = {
+                      freeCourts: freeCourts.length,
+                      totalCourts: courts.filter(c => c.is_active).length,
+                      waitingTotal: scored.length,
+                      assignable: scored.filter(s => !s.isBlocked).length,
+                      div1Progress: divisionData?.div1Progress ?? 0,
+                      div2Progress: divisionData?.div2Progress ?? 0,
+                      div1Comp: divisionData?.div1Comp ?? 0,
+                      div1Total: divisionData?.div1Total ?? 0,
+                      div2Comp: divisionData?.div2Comp ?? 0,
+                      div2Total: divisionData?.div2Total ?? 0,
+                      blockedMatches: scored.filter(s => s.isBlocked).map(s => ({
+                        matchNumber: s.match.match_number ?? 0,
+                        label: getTournamentLabel(s.match.tournament_type ?? "", s.match.division ?? 0),
+                        round: s.match.round,
+                        blockReason: s.blockReason,
+                        blockDetail: s.blockDetail,
+                      })),
+                      diagnosisItems: d,
+                    };
+                    runAIDiagnosis(payload, `force-${Date.now()}`);
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-800 transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  再診断
+                </button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-1">
+            {aiLoading && !aiAnalysis ? (
+              <div className="flex items-center gap-3 py-6 text-slate-400">
+                <Sparkles className="w-5 h-5 animate-pulse text-violet-400" />
+                <span className="text-sm">Claude が状況を分析しています...</span>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-violet-50 rounded-lg px-4 py-3 border border-violet-100">
+                {aiAnalysis}
+                {aiLoading && (
+                  <span className="inline-block w-1.5 h-4 bg-violet-400 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 1部 / 2部 進行バランス */}
       {divisionData && (
@@ -362,11 +648,18 @@ export default function AdvancedAnalytics({ campId }: Props) {
                         <td className="px-3 py-2 text-right font-bold text-sky-700">
                           {item.isBlocked ? "—" : Math.round(item.totalScore)}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 max-w-[220px]">
                           {item.isBlocked ? (
-                            <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded whitespace-nowrap">
-                              {item.blockReason}
-                            </span>
+                            <div>
+                              <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded whitespace-nowrap font-medium">
+                                {item.blockReason}
+                              </span>
+                              {item.blockDetail && (
+                                <p className="text-[10px] text-slate-400 mt-0.5 leading-tight break-words">
+                                  {item.blockDetail}
+                                </p>
+                              )}
+                            </div>
                           ) : isNext ? (
                             <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded font-bold">次</span>
                           ) : null}
@@ -389,7 +682,8 @@ export default function AdvancedAnalytics({ campId }: Props) {
             合計 = 待機時間(分) + ラウンドスコア(100×(4-R+1)) + 部ボーナス(gap×2000, 上限600)
           </p>
           <p className="text-[11px] text-slate-400 mt-1">
-            ※ 前ラウンド待ち / 選手試合中 / 休憩中 の試合はブロック扱いでキューに入らない
+            ※ ブロック条件（優先順位）: ①選手未確定（前ラウンド結果待ち） → ②同種目・同部の前ラウンドが待機中 → ③選手が他試合中 → ④休憩中（available_at）<br/>
+            ※ ラウンド順序は <strong>phase（予選/本戦）を分けて</strong> 計算。全waitingから最小Rを特定するため、選手が別試合中でも前ラウンドが残っていれば後ラウンドはブロックされます。
           </p>
         </CardContent>
       </Card>

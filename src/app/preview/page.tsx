@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -55,6 +55,8 @@ function PreviewContent() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [clockStr, setClockStr] = useState('');
   const [page, setPage] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const isHoveredRef = useRef(false);
   const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
   const [estimatedMinutes, setEstimatedMinutes] = useState(0);
   const [etaByType, setEtaByType] = useState<TournamentETAByType[]>([]);
@@ -104,7 +106,9 @@ function PreviewContent() {
 
   useEffect(() => {
     if (totalPages <= 1) return;
-    const t = setInterval(() => setPage((p) => (p + 1) % totalPages), PAGE_INTERVAL_MS);
+    const t = setInterval(() => {
+      if (!isHoveredRef.current) setPage((p) => (p + 1) % totalPages);
+    }, PAGE_INTERVAL_MS);
     return () => clearInterval(t);
   }, [totalPages]);
 
@@ -137,12 +141,31 @@ function PreviewContent() {
   const pagedCourts = activeCourts.slice(page * COURTS_PER_PAGE, (page + 1) * COURTS_PER_PAGE);
 
   // ── render ────────────────────────────────────────────────────────────────
+  const handleMouseEnter = () => { isHoveredRef.current = true;  setIsHovered(true);  };
+  const handleMouseLeave = () => { isHoveredRef.current = false; setIsHovered(false); };
+
   return (
-    <div className="h-[100dvh] bg-white flex flex-col overflow-hidden p-2">
+    <div
+      className="h-[100dvh] bg-white flex flex-col overflow-hidden p-2"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <style>{`
-        @keyframes shrinkBar {
-          from { transform: scaleX(1); }
-          to   { transform: scaleX(0); }
+        @keyframes growBar {
+          from { width: 0%; }
+          to   { width: 100%; }
+        }
+        @keyframes foxRun {
+          0%   { left: 2px;                  bottom: 6px; }
+          86%  {                              bottom: 6px; }
+          91%  {                              bottom: 22px; }
+          95%  {                              bottom: 4px; }
+          98%  {                              bottom: 11px; }
+          100% { left: calc(100% - 30px);    bottom: 6px; }
+        }
+        @keyframes foxIdle {
+          0%, 100% { transform: translateY(0px); }
+          50%       { transform: translateY(-3px); }
         }
       `}</style>
 
@@ -175,11 +198,10 @@ function PreviewContent() {
                 <button
                   key={i}
                   onClick={() => setPage(i)}
-                  className={`rounded-full transition-all ${
-                    i === page
+                  className={`rounded-full transition-all ${i === page
                       ? 'w-6 h-3 bg-sky-500'
                       : 'w-3 h-3 bg-slate-200 hover:bg-slate-300'
-                  }`}
+                    }`}
                 />
               ))}
             </div>
@@ -187,18 +209,32 @@ function PreviewContent() {
         </div>
       </div>
 
-      {/* ── Progress bar ── */}
+      {/* ── Fox Progress Bar ── */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 h-2 bg-slate-100 overflow-hidden">
+        <div className="flex-shrink-0 relative bg-gray-100" style={{ height: 36, zIndex: 50 }}>
+          {/* Sky-blue fill trail behind the fox */}
           <div
-            key={page}
-            className="h-full rounded-r-full origin-left"
+            key={`fill-${page}`}
+            className="absolute bottom-0 left-0 rounded-r-full bg-sky-400"
             style={{
-              background: 'linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%)',
-              boxShadow: '0 0 8px rgba(129, 140, 248, 0.6)',
-              animation: `shrinkBar ${PAGE_INTERVAL_MS}ms linear forwards`,
+              height: 6,
+              width: '0%',
+              animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
+              animationPlayState: isHovered ? 'paused' : 'running',
             }}
           />
+          {/* Fox emoji runner */}
+          <div
+            key={`fox-${page}`}
+            className="absolute text-xl leading-none select-none pointer-events-none"
+            style={{
+              animation: isHovered
+                ? `foxRun ${PAGE_INTERVAL_MS}ms linear forwards paused, foxIdle 0.5s ease-in-out infinite`
+                : `foxRun ${PAGE_INTERVAL_MS}ms linear forwards`,
+            }}
+          >
+            🦊
+          </div>
         </div>
       )}
 
@@ -215,14 +251,12 @@ function PreviewContent() {
           return (
             <Card
               key={court.id}
-              className={`flex flex-col overflow-hidden ${
-                isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'
-              }`}
+              className={`flex flex-col overflow-hidden ${isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'
+                }`}
             >
               <CardHeader
-                className={`flex-shrink-0 pb-2 ${
-                  isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'
-                }`}
+                className={`flex-shrink-0 pb-2 ${isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'
+                  }`}
               >
                 <CardTitle className="flex items-center justify-between">
                   <span className={`text-4xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
@@ -340,7 +374,7 @@ function PreviewContent() {
                   <span className="text-base font-black text-purple-600 tabular-nums">
                     {t.estimatedEndTime.getHours().toString().padStart(2, '0')}:{t.estimatedEndTime.getMinutes().toString().padStart(2, '0')}
                   </span>
-                  <span className="text-xs text-slate-400">残{t.estimatedMinutesRemaining}分</span>
+                  <span className="text-xs text-slate-400">残り{t.estimatedMinutesRemaining}分</span>
                 </>
               ) : (
                 <span className="text-xs text-slate-400">終了</span>
