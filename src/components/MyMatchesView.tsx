@@ -96,6 +96,9 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
       return partnerName ? `${name} / ${partnerName}` : name;
     }
 
+    // シード（不戦勝）の場合
+    if (match.is_walkover) return 'シード（不戦勝）';
+
     // 未確定の場合、next_match情報から取得
     const sourceMatchId = position === 1 ? findSourceMatch(match, 1) : findSourceMatch(match, 2);
     if (sourceMatchId) {
@@ -286,7 +289,7 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
                     </p>
                     <p className="text-xs text-gray-500 my-1">vs</p>
                     <p className={`${match.player2_id === playerId || match.player4_id === playerId ? 'font-bold text-blue-600' : ''}`}>
-                      {getPlayerName(match.player2_id)}
+                      {match.is_walkover && !match.player2_id ? 'シード（不戦勝）' : getPlayerName(match.player2_id)}
                       {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
                     </p>
                   </div>
@@ -380,7 +383,7 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
                         </p>
                         <p className="text-xs text-gray-500 my-1">vs</p>
                         <p className={`${match.player2_id === playerId || match.player4_id === playerId ? 'font-bold' : ''}`}>
-                          {getPlayerName(match.player2_id)}
+                          {match.is_walkover && !match.player2_id ? 'シード（不戦勝）' : getPlayerName(match.player2_id)}
                           {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
                         </p>
                       </div>

@@ -103,7 +103,7 @@ export default function ActiveMatchesView({ campId }: ActiveMatchesViewProps) {
                 </p>
                 <p className="text-xs text-gray-500 my-1">vs</p>
                 <p className="font-semibold">
-                  {getPlayerName(match.player2_id)}
+                  {match.is_walkover && !match.player2_id ? 'シード（不戦勝）' : getPlayerName(match.player2_id)}
                   {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
                 </p>
               </div>

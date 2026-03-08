@@ -182,6 +182,7 @@ export default function UserDashboard() {
     const [notifEnabled, setNotifEnabled] = useState(false);
     const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
     const [isIOSNotPWA, setIsIOSNotPWA] = useState(false);
+    const [showIOSGuide, setShowIOSGuide] = useState(false);
     const prevUnreadCount = useRef<number>(0);
     const notifEnabledRef = useRef(false); // onSnapshot コールバック内でステールにならないよう ref で管理
 
@@ -690,7 +691,7 @@ export default function UserDashboard() {
                         </p>
                         <p className="text-emerald-400 text-sm font-bold tracking-widest">vs</p>
                         <p className="text-white text-2xl md:text-3xl font-black leading-tight">
-                            {getPlayerById(currentMatch.player2_id)?.name || '未定'}
+                            {currentMatch.is_walkover && !currentMatch.player2_id ? 'シード（不戦勝）' : (getPlayerById(currentMatch.player2_id)?.name || '未定')}
                             {currentMatch.player4_id && getPlayerById(currentMatch.player4_id) && (
                                 <span> / {getPlayerById(currentMatch.player4_id)?.name}</span>
                             )}
@@ -752,31 +753,35 @@ export default function UserDashboard() {
                             </button>
                         </Link>
 
-                        {/* 通知許可トグルボタン */}
-                        {'Notification' in window && (
-                            <button
-                                onClick={isIOSNotPWA ? undefined : handleNotifToggle}
-                                className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-                                title={
-                                    isIOSNotPWA ? 'iOSで通知を受け取るにはホーム画面に追加してください'
-                                    : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
-                                    : notifEnabled ? '通知ON（タップでOFF）'
-                                    : '通知OFF（タップして許可）'
+                        {/* 通知許可トグルボタン（全端末で常時表示） */}
+                        <button
+                            onClick={() => {
+                                if (isIOSNotPWA) {
+                                    setShowIOSGuide(prev => !prev);
+                                } else {
+                                    handleNotifToggle();
                                 }
-                            >
-                                {isIOSNotPWA
-                                    ? <BellOff className="w-5 h-5 text-orange-300" />
-                                    : notifPermission === 'denied'
-                                        ? <BellOff className="w-5 h-5 text-slate-300" />
-                                        : notifEnabled
-                                            ? <Bell className="w-5 h-5 text-amber-400" />
-                                            : <Bell className="w-5 h-5 text-slate-400" />
-                                }
-                                <span className={`text-[10px] font-medium ${isIOSNotPWA ? 'text-orange-400' : notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
-                                    {isIOSNotPWA ? 'PWA必須' : notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
-                                </span>
-                            </button>
-                        )}
+                            }}
+                            className="flex flex-col items-center gap-0.5 px-2 py-1 min-h-[44px] justify-center rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                            title={
+                                isIOSNotPWA ? 'ホーム画面に追加すると通知が使えます'
+                                : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
+                                : notifEnabled ? '通知ON（タップでOFF）'
+                                : '通知OFF（タップして許可）'
+                            }
+                        >
+                            {isIOSNotPWA
+                                ? <BellOff className="w-5 h-5 text-orange-300" />
+                                : notifPermission === 'denied'
+                                    ? <BellOff className="w-5 h-5 text-slate-300" />
+                                    : notifEnabled
+                                        ? <Bell className="w-5 h-5 text-amber-400" />
+                                        : <Bell className="w-5 h-5 text-slate-400" />
+                            }
+                            <span className={`text-[10px] font-medium ${isIOSNotPWA ? 'text-orange-400' : notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
+                                {isIOSNotPWA ? 'PWA必須' : notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
+                            </span>
+                        </button>
 
                         {/* チャットボタン */}
                         {isChatEnabled && (
@@ -810,6 +815,47 @@ export default function UserDashboard() {
                     </div>
                 </div>
             </header>
+
+            {/* iOS PWA ガイドモーダル */}
+            {showIOSGuide && (
+                <div
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+                    onClick={() => setShowIOSGuide(false)}
+                >
+                    <div
+                        className="w-full max-w-lg bg-white rounded-t-2xl p-6 space-y-4 shadow-2xl"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                                <Bell className="w-5 h-5 text-orange-400" />
+                                通知を受け取るには
+                            </h3>
+                            <button
+                                onClick={() => setShowIOSGuide(false)}
+                                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+                            >✕</button>
+                        </div>
+                        <ol className="space-y-3 text-sm text-slate-700">
+                            <li className="flex gap-2">
+                                <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-xs">1</span>
+                                <span>Safariの画面下部にある <strong>「共有」ボタン（□↑）</strong> をタップ</span>
+                            </li>
+                            <li className="flex gap-2">
+                                <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-xs">2</span>
+                                <span>メニューから <strong>「ホーム画面に追加」</strong> をタップ</span>
+                            </li>
+                            <li className="flex gap-2">
+                                <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-xs">3</span>
+                                <span>ホーム画面のアイコンからアプリを起動し、通知をONにする</span>
+                            </li>
+                        </ol>
+                        <p className="text-xs text-slate-400 border-t pt-3">
+                            iPhoneのSafariはホーム画面追加（PWA）後のみ通知に対応しています
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {alertComponent && (
                 <div className="px-0">
