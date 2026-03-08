@@ -336,8 +336,23 @@ export function computeEncounterWinner(games: TeamGame[], total: number): 1 | 2 
   return null;
 }
 
-export function recordTeamGameResult(enc: TeamEncounter, slotId: string, winner: 1 | 2): TeamEncounter {
-  const games = enc.games.map(g => g.id === slotId ? { ...g, winner } : g);
+export function recordTeamGameResult(
+  enc: TeamEncounter,
+  slotId: string,
+  winner: 1 | 2,
+  score1?: number,
+  score2?: number
+): TeamEncounter {
+  const games = enc.games.map(g =>
+    g.id === slotId
+      ? {
+          ...g,
+          winner,
+          ...(score1 !== undefined ? { score1 } : {}),
+          ...(score2 !== undefined ? { score2 } : {}),
+        }
+      : g
+  );
   const total = games.length;
   const team1Wins = games.filter(g => g.winner === 1).length;
   const team2Wins = games.filter(g => g.winner === 2).length;
@@ -375,11 +390,26 @@ export function generateTeamPreliminaryEncounters(
   return encounters;
 }
 
-export function rankTeamGroup(encounters: TeamEncounter[]): TeamRankEntry[] {
+function getHeadToHead(
+  team1Id: string,
+  team2Id: string,
+  completedEncounters: TeamEncounter[]
+): string | null {
+  const enc = completedEncounters.find(
+    e => (e.team1_id === team1Id && e.team2_id === team2Id) ||
+         (e.team1_id === team2Id && e.team2_id === team1Id)
+  );
+  return enc?.winner_id ?? null;
+}
+
+export function rankTeamGroup(
+  encounters: TeamEncounter[],
+  jankenWinners?: Record<string, string>
+): TeamRankEntry[] {
   const completed = encounters.filter(e => e.completed && e.phase === 'preliminary');
   const map = new Map<string, TeamRankEntry>();
   const getOrCreate = (id: string): TeamRankEntry => {
-    if (!map.has(id)) map.set(id, { teamId: id, wins: 0, losses: 0, gameDiff: 0 });
+    if (!map.has(id)) map.set(id, { teamId: id, wins: 0, losses: 0, gameDiff: 0, pointDiff: 0 });
     return map.get(id)!;
   };
   for (const enc of completed) {
@@ -389,11 +419,56 @@ export function rankTeamGroup(encounters: TeamEncounter[]): TeamRankEntry[] {
     else if (enc.winner_id === enc.team2_id) { e2.wins++; e1.losses++; }
     e1.gameDiff += enc.team1_wins - enc.team2_wins;
     e2.gameDiff += enc.team2_wins - enc.team1_wins;
+    for (const game of enc.games) {
+      if (game.score1 !== undefined && game.score2 !== undefined) {
+        e1.pointDiff += game.score1 - game.score2;
+        e2.pointDiff += game.score2 - game.score1;
+      }
+    }
   }
   return Array.from(map.values()).sort((a, b) => {
+    // 1. 勝利数
     if (b.wins !== a.wins) return b.wins - a.wins;
-    return b.gameDiff - a.gameDiff;
+    // 2. 直接対決
+    const h2h = getHeadToHead(a.teamId, b.teamId, completed);
+    if (h2h !== null) return h2h === a.teamId ? -1 : 1;
+    // 3. 得失試合数差
+    if (b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
+    // 4. 得失点差
+    if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
+    // 5. じゃんけん
+    if (jankenWinners) {
+      const key = [a.teamId, b.teamId].sort().join('_');
+      const janken = jankenWinners[key];
+      if (janken) return janken === a.teamId ? -1 : 1;
+    }
+    return 0;
   });
+}
+
+/** じゃんけんが必要なペアを返す */
+export function getNeedJankenPairs(
+  entries: TeamRankEntry[],
+  encounters: TeamEncounter[],
+  jankenWinners?: Record<string, string>
+): [string, string][] {
+  const completed = encounters.filter(e => e.completed && e.phase === 'preliminary');
+  const pairs: [string, string][] = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i];
+      const b = entries[j];
+      if (a.wins !== b.wins) continue;
+      const h2h = getHeadToHead(a.teamId, b.teamId, completed);
+      if (h2h !== null) continue;
+      if (a.gameDiff !== b.gameDiff) continue;
+      if (a.pointDiff !== b.pointDiff) continue;
+      const key = [a.teamId, b.teamId].sort().join('_');
+      if (jankenWinners?.[key]) continue;
+      pairs.push([a.teamId, b.teamId]);
+    }
+  }
+  return pairs;
 }
 
 export function generateTeamFinalBracket(advancerCount: number, config: TeamMatchConfig): TeamEncounter[] {
@@ -445,6 +520,37 @@ export function applyTeamAdvancersToFinalBracket(
     });
     return updated;
   });
+}
+
+/** 同順位同士の順位決定戦を生成（2グループ対応） */
+export function generateTeamPlacementEncounters(
+  groupRankings: { [group: string]: TeamRankEntry[] },
+  groups: string[],
+  config: TeamMatchConfig
+): TeamEncounter[] {
+  if (groups.length < 2) return [];
+  const [groupA, groupB] = groups;
+  const rankingsA = groupRankings[groupA] ?? [];
+  const rankingsB = groupRankings[groupB] ?? [];
+  const maxRank = Math.max(rankingsA.length, rankingsB.length);
+  const encounters: TeamEncounter[] = [];
+  for (let rank = 0; rank < maxRank; rank++) {
+    const teamA = rankingsA[rank];
+    const teamB = rankingsB[rank];
+    if (!teamA || !teamB) continue;
+    encounters.push({
+      id: `placement_${rank + 1}`,
+      team1_id: teamA.teamId,
+      team2_id: teamB.teamId,
+      games: buildGameSlots(config),
+      team1_wins: 0, team2_wins: 0, winner_id: null,
+      phase: 'placement',
+      placement_rank: rank + 1,
+      round: 1,
+      completed: false,
+    });
+  }
+  return encounters;
 }
 
 export function advanceTeamWinnerToNextRound(

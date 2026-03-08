@@ -25,6 +25,7 @@ import GroupRankingManager from "@/components/admin/GroupRankingManager";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
+import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division } from "@/types";
 import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
@@ -620,6 +621,7 @@ export default function AdminDashboard() {
               { value: "bracket", label: "トーナメント表", icon: Trophy },
               { value: "pairseed", label: "ペア・シード", icon: Settings },
               { value: "messages", label: "メッセージ", icon: MessageCircle },
+              { value: "team_battle", label: "団体戦", icon: Users },
               { value: "safety", label: "安全", icon: ShieldAlert },
               { value: "advanced", label: "応用", icon: Lock },
             ].map((item) => {
@@ -1041,6 +1043,23 @@ export default function AdminDashboard() {
 
                 {/* 安全機能（Undo、Walkover、Subtitle） */}
                 <SafetyTab />
+              </TabsContent>
+
+              <TabsContent value="team_battle" className="space-y-6">
+                <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-violet-400">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Trophy className="w-5 h-5 text-violet-500" />
+                      団体戦
+                    </CardTitle>
+                    <CardDescription>
+                      チームを設定し、予選グループ→順位決定戦を進行します
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <TeamTournamentGenerator />
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="advanced" className="space-y-6">

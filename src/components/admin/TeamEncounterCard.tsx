@@ -1,15 +1,17 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { TeamEncounter, TeamGame } from '@/types';
-import { Trophy } from 'lucide-react';
+import { Trophy, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TeamEncounterCardProps {
   encounter: TeamEncounter;
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2) => void;
+  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => void;
   readOnly?: boolean;
 }
 
@@ -27,12 +29,22 @@ export default function TeamEncounterCard({
   onGameResult,
   readOnly = false,
 }: TeamEncounterCardProps) {
+  const [showScores, setShowScores] = useState(false);
+  const [scores, setScores] = useState<Record<string, { s1: string; s2: string }>>({});
+
   const team1Name = getTeamName(encounter.team1_id);
   const team2Name = getTeamName(encounter.team2_id);
 
   const borderColor = encounter.completed
     ? 'border-emerald-300'
     : 'border-slate-200';
+
+  const handleWinner = (game: TeamGame, winner: 1 | 2) => {
+    const s = scores[game.id];
+    const score1 = s?.s1 ? parseInt(s.s1) : undefined;
+    const score2 = s?.s2 ? parseInt(s.s2) : undefined;
+    onGameResult?.(encounter.id, game.id, winner, score1, score2);
+  };
 
   return (
     <Card className={`bg-white shadow-sm ${borderColor}`}>
@@ -67,28 +79,27 @@ export default function TeamEncounterCard({
         <div className="flex flex-wrap gap-1.5">
           {encounter.games.map((game: TeamGame) => {
             const label = GAME_TYPE_LABEL[game.type] ?? game.type;
+            const isLocked = readOnly || encounter.completed;
             return (
               <div key={game.id} className="flex flex-col items-center gap-0.5">
                 <span className="text-[10px] text-slate-500">{label}</span>
                 <div className="flex gap-0.5">
-                  {/* team1勝ボタン */}
                   <Button
                     size="sm"
                     variant={game.winner === 1 ? 'default' : 'outline'}
                     className={`h-7 w-7 p-0 text-xs ${game.winner === 1 ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
-                    disabled={readOnly || encounter.completed}
-                    onClick={() => onGameResult?.(encounter.id, game.id, 1)}
+                    disabled={isLocked}
+                    onClick={() => handleWinner(game, 1)}
                     title={`${team1Name} 勝`}
                   >
                     1
                   </Button>
-                  {/* team2勝ボタン */}
                   <Button
                     size="sm"
                     variant={game.winner === 2 ? 'default' : 'outline'}
                     className={`h-7 w-7 p-0 text-xs ${game.winner === 2 ? 'bg-red-600 hover:bg-red-700' : ''}`}
-                    disabled={readOnly || encounter.completed}
-                    onClick={() => onGameResult?.(encounter.id, game.id, 2)}
+                    disabled={isLocked}
+                    onClick={() => handleWinner(game, 2)}
                     title={`${team2Name} 勝`}
                   >
                     2
@@ -105,6 +116,56 @@ export default function TeamEncounterCard({
             );
           })}
         </div>
+
+        {/* 得点入力（折りたたみ） */}
+        {!readOnly && (
+          <button
+            className="text-[10px] text-slate-400 flex items-center gap-1 hover:text-slate-600 transition-colors"
+            onClick={() => setShowScores(v => !v)}
+          >
+            {showScores ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            得点入力（得失点差用）
+          </button>
+        )}
+
+        {showScores && !readOnly && (
+          <div className="space-y-1.5 pt-1 border-t border-slate-100">
+            <p className="text-[10px] text-slate-500">各種目の点数を入力してください（任意）</p>
+            {encounter.games.map(game => {
+              const label = GAME_TYPE_LABEL[game.type] ?? game.type;
+              const s = scores[game.id] ?? { s1: '', s2: '' };
+              return (
+                <div key={game.id} className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500 w-8 shrink-0">{label}</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={s.s1}
+                    onChange={e => setScores(prev => ({
+                      ...prev,
+                      [game.id]: { ...prev[game.id] ?? { s1: '', s2: '' }, s1: e.target.value }
+                    }))}
+                    className="h-6 w-12 text-xs text-center p-1"
+                    placeholder="0"
+                  />
+                  <span className="text-slate-400 text-xs">-</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={s.s2}
+                    onChange={e => setScores(prev => ({
+                      ...prev,
+                      [game.id]: { ...prev[game.id] ?? { s1: '', s2: '' }, s2: e.target.value }
+                    }))}
+                    className="h-6 w-12 text-xs text-center p-1"
+                    placeholder="0"
+                  />
+                </div>
+              );
+            })}
+            <p className="text-[9px] text-slate-400">勝者ボタンを押すと点数が保存されます</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

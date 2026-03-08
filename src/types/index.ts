@@ -332,6 +332,8 @@ export interface TeamGame {
   id: string;        // 例: "MD_1", "WD_1"
   type: TeamGameType;
   winner: 1 | 2 | null; // 1=team1勝, 2=team2勝
+  score1?: number;   // team1の得点（得失点差計算用）
+  score2?: number;   // team2の得点（得失点差計算用）
 }
 
 /** チーム間の1対戦 */
@@ -344,12 +346,13 @@ export interface TeamEncounter {
   team1_wins: number;
   team2_wins: number;
   winner_id: string | null;
-  phase: 'preliminary' | 'knockout';
+  phase: 'preliminary' | 'knockout' | 'placement';
   group?: string;
   round?: number;
   completed: boolean;
   next_encounter_id?: string;
   next_encounter_position?: 1 | 2;
+  placement_rank?: number; // 1=1位決定戦, 2=3位決定戦, 3=5位決定戦, 4=7位決定戦
 }
 
 /** グループ順位エントリー */
@@ -357,5 +360,6 @@ export interface TeamRankEntry {
   teamId: string;
   wins: number;
   losses: number;
-  gameDiff: number; // 種目勝利数の差分合計
+  gameDiff: number; // 種目勝利数の差分合計（得失試合数差）
+  pointDiff: number; // 得失点差（個別種目の点数合計）
 }
