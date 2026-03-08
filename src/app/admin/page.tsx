@@ -646,6 +646,22 @@ export default function AdminDashboard() {
               );
             })}
           </nav>
+
+          {/* ヘルプボタン（サイドバー下部） */}
+          <div className="border-t border-slate-200 p-2 shrink-0">
+            <button
+              onClick={handleOpenGuide}
+              className="w-full px-3 py-3 flex items-center gap-3 transition-all text-sky-500 hover:bg-sky-50 rounded-lg"
+              title="使い方ガイドを表示"
+            >
+              <HelpCircle className="w-5 h-5 shrink-0" />
+              {isExpanded && (
+                <span className="text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 opacity-100">
+                  ヘルプ
+                </span>
+              )}
+            </button>
+          </div>
         </aside>
 
         {/* メインコンテンツ */}
@@ -1069,15 +1085,6 @@ export default function AdminDashboard() {
           </main>
         </div>
       </div>
-
-      {/* ヘルプボタン（左下固定） */}
-      <button
-        onClick={handleOpenGuide}
-        className="fixed bottom-4 left-4 z-[90] bg-sky-500 hover:bg-sky-600 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-110 active:scale-95"
-        title="使い方ガイドを表示"
-      >
-        <HelpCircle className="w-6 h-6" />
-      </button>
 
       {/* ユーザーガイドモーダル */}
       <UserGuide isOpen={isGuideOpen} onClose={handleCloseGuide} isAdmin={true} />
