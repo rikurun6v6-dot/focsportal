@@ -348,7 +348,7 @@ export default function UserDashboard() {
         if (enabled && myPlayer) {
             subscribeToPush(myPlayer.id);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [myPlayer]);
 
     // notifEnabled が変わるたびに ref を同期
@@ -765,9 +765,9 @@ export default function UserDashboard() {
                             className="flex flex-col items-center gap-0.5 px-2 py-1 min-h-[44px] justify-center rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
                             title={
                                 isIOSNotPWA ? 'ホーム画面に追加すると通知が使えます'
-                                : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
-                                : notifEnabled ? '通知ON（タップでOFF）'
-                                : '通知OFF（タップして許可）'
+                                    : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
+                                        : notifEnabled ? '通知ON（タップでOFF）'
+                                            : '通知OFF（タップして許可）'
                             }
                         >
                             {isIOSNotPWA
@@ -779,7 +779,7 @@ export default function UserDashboard() {
                                         : <Bell className="w-5 h-5 text-slate-400" />
                             }
                             <span className={`text-[10px] font-medium ${isIOSNotPWA ? 'text-orange-400' : notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
-                                {isIOSNotPWA ? 'PWA必須' : notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
+                                {isIOSNotPWA ? '通知設定' : notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
                             </span>
                         </button>
 
@@ -819,11 +819,11 @@ export default function UserDashboard() {
             {/* iOS PWA ガイドモーダル */}
             {showIOSGuide && (
                 <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
                     onClick={() => setShowIOSGuide(false)}
                 >
                     <div
-                        className="w-full max-w-lg bg-white rounded-t-2xl p-6 space-y-4 shadow-2xl"
+                        className="w-full max-w-lg bg-white rounded-2xl p-6 space-y-4 shadow-2xl"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between">
@@ -833,25 +833,25 @@ export default function UserDashboard() {
                             </h3>
                             <button
                                 onClick={() => setShowIOSGuide(false)}
-                                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+                                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 text-xl"
                             >✕</button>
                         </div>
                         <ol className="space-y-3 text-sm text-slate-700">
-                            <li className="flex gap-2">
+                            <li className="flex gap-3">
                                 <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-xs">1</span>
-                                <span>Safariの画面下部にある <strong>「共有」ボタン（□↑）</strong> をタップ</span>
+                                <span>Safariのアドレスバー付近にある右上の <strong>「共有」ボタン（□から↑が出ているアイコン）</strong> をタップ</span>
                             </li>
-                            <li className="flex gap-2">
+                            <li className="flex gap-3">
                                 <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-xs">2</span>
-                                <span>メニューから <strong>「ホーム画面に追加」</strong> をタップ</span>
+                                <span>出てきたメニューを下にスクロールするか、<strong>「…その他」</strong> をタップして <strong>「ホーム画面に追加」</strong> を選ぶ</span>
                             </li>
-                            <li className="flex gap-2">
+                            <li className="flex gap-3">
                                 <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-xs">3</span>
-                                <span>ホーム画面のアイコンからアプリを起動し、通知をONにする</span>
+                                <span>追加後、ホーム画面のアイコンからアプリを開き直して通知をONにする</span>
                             </li>
                         </ol>
                         <p className="text-xs text-slate-400 border-t pt-3">
-                            iPhoneのSafariはホーム画面追加（PWA）後のみ通知に対応しています
+                            iPhoneでは、ホーム画面から起動した場合のみ通知が利用できます
                         </p>
                     </div>
                 </div>
@@ -883,122 +883,122 @@ export default function UserDashboard() {
                     </Card>
                 ) : (
                     <>
-                <Card className={`border-l-4 shadow-sm overflow-hidden bg-white border-l-${statusColor}-500`}>
-                    <CardHeader className={`bg-${statusColor}-50/50 pb-3`}>
-                        <CardTitle className={`text-base md:text-lg flex items-center gap-2 text-${statusColor}-800`}>
-                            {currentMatch?.status === 'calling' ? <AlertTriangle className="w-5 h-5" /> : restTimeRemaining ? <Clock className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-                            現在のステータス
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4 md:pt-6 pb-5 text-center space-y-3 min-h-[140px] md:min-h-[160px]">
-                        <div className={`inline-block px-3 md:px-4 py-1.5 md:py-2 bg-${statusColor}-100 text-${statusColor}-700 rounded-full font-bold text-base md:text-lg`}>
-                            {statusTitle}
-                        </div>
-                        <p className="text-slate-600 text-xs md:text-sm font-medium px-2 leading-relaxed">
-                            {statusMessage}
-                        </p>
-                        {/* 待ち時間予測 */}
-                        {!currentMatch && myEta && (
-                            <div className="mt-3 p-3 md:p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="flex items-center justify-center gap-2 mb-1">
-                                    <Clock className="w-4 h-4 text-blue-600" />
-                                    <span className="text-sm font-bold text-blue-800">待ち時間予測</span>
+                        <Card className={`border-l-4 shadow-sm overflow-hidden bg-white border-l-${statusColor}-500`}>
+                            <CardHeader className={`bg-${statusColor}-50/50 pb-3`}>
+                                <CardTitle className={`text-base md:text-lg flex items-center gap-2 text-${statusColor}-800`}>
+                                    {currentMatch?.status === 'calling' ? <AlertTriangle className="w-5 h-5" /> : restTimeRemaining ? <Clock className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+                                    現在のステータス
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-4 md:pt-6 pb-5 text-center space-y-3 min-h-[140px] md:min-h-[160px]">
+                                <div className={`inline-block px-3 md:px-4 py-1.5 md:py-2 bg-${statusColor}-100 text-${statusColor}-700 rounded-full font-bold text-base md:text-lg`}>
+                                    {statusTitle}
                                 </div>
-                                <p className="text-blue-700 font-medium text-sm md:text-base">{myEta}</p>
-                                <p className="text-xs text-blue-600 mt-1">※ AIによる予測のため、前後することがあります</p>
-                            </div>
-                        )}
-                        {!currentMatch && etaLoading && (
-                            <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                                <p className="text-sm text-slate-500">予測中...</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Tabs defaultValue="courts" className="w-full">
-                    <TabsList className="w-full grid grid-cols-3 bg-white border border-slate-200">
-                        <TabsTrigger value="courts" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
-                            コート状況
-                        </TabsTrigger>
-                        <TabsTrigger value="my-matches" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
-                            自分の試合
-                        </TabsTrigger>
-                        <TabsTrigger value="bracket" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
-                            トーナメント表
-                        </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="courts" className="mt-4">
-                        <div className="space-y-2">
-                            <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                                <Activity className="w-5 h-5 text-sky-500" /> コート稼働状況
-                            </h2>
-                            <CourtGrid />
-                        </div>
-                    </TabsContent>
-
-                    <TabsContent value="my-matches" className="mt-4">
-                        <div className="space-y-2">
-                            <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                                <User className="w-5 h-5 text-sky-500" /> 自分の試合一覧
-                            </h2>
-                            {camp && <MyMatchesView playerId={myPlayer.id!} campId={camp.id} />}
-                        </div>
-                    </TabsContent>
-
-                    <TabsContent value="bracket" className="mt-4">
-                        <div className="space-y-2">
-                            <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                                <Trophy className="w-5 h-5 text-sky-500" /> トーナメント表
-                            </h2>
-                            <VisualBracket readOnly={true} />
-                        </div>
-                    </TabsContent>
-                </Tabs>
-
-                <Card className="border-t-4 border-t-violet-400 bg-white">
-                    <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2 text-slate-800">
-                            <Clock className="w-5 h-5 text-violet-500" />
-                            他の人の状況を検索
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex gap-2">
-                            <Input
-                                placeholder="名前で検索（フルネーム）..."
-                                value={searchName}
-                                onChange={(e) => setSearchName(e.target.value)}
-                                className="bg-white text-slate-900 border-slate-300"
-                            />
-                            <Button onClick={handleSearch} disabled={searching} className="bg-sky-500 hover:bg-sky-600 text-white font-bold">
-                                検索
-                            </Button>
-                        </div>
-
-                        {etaResult && (
-                            <div className="p-4 bg-violet-50 rounded-lg border border-violet-100">
-                                <p className="font-bold text-violet-900">{etaResult.detail}</p>
-                                {etaResult.next_court && (
-                                    <p className="text-sm text-violet-700 mt-1 flex items-center gap-1">
-                                        <MapPin className="w-4 h-4" /> 予定: {String(etaResult.next_court).replace('court_', 'コート')}
-                                    </p>
+                                <p className="text-slate-600 text-xs md:text-sm font-medium px-2 leading-relaxed">
+                                    {statusMessage}
+                                </p>
+                                {/* 待ち時間予測 */}
+                                {!currentMatch && myEta && (
+                                    <div className="mt-3 p-3 md:p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div className="flex items-center justify-center gap-2 mb-1">
+                                            <Clock className="w-4 h-4 text-blue-600" />
+                                            <span className="text-sm font-bold text-blue-800">待ち時間予測</span>
+                                        </div>
+                                        <p className="text-blue-700 font-medium text-sm md:text-base">{myEta}</p>
+                                        <p className="text-xs text-blue-600 mt-1">※ AIによる予測のため、前後することがあります</p>
+                                    </div>
                                 )}
-                            </div>
-                        )}
-                        {searching && (
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
-                                <p className="text-sm text-slate-500">検索中...</p>
-                            </div>
-                        )}
-                        {!searching && !etaResult && searchName.trim() && (
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
-                                <p className="text-sm text-slate-600">現在、待機中の試合はありません</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+                                {!currentMatch && etaLoading && (
+                                    <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <p className="text-sm text-slate-500">予測中...</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        <Tabs defaultValue="courts" className="w-full">
+                            <TabsList className="w-full grid grid-cols-3 bg-white border border-slate-200">
+                                <TabsTrigger value="courts" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
+                                    コート状況
+                                </TabsTrigger>
+                                <TabsTrigger value="my-matches" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
+                                    自分の試合
+                                </TabsTrigger>
+                                <TabsTrigger value="bracket" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
+                                    トーナメント表
+                                </TabsTrigger>
+                            </TabsList>
+
+                            <TabsContent value="courts" className="mt-4">
+                                <div className="space-y-2">
+                                    <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                                        <Activity className="w-5 h-5 text-sky-500" /> コート稼働状況
+                                    </h2>
+                                    <CourtGrid />
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="my-matches" className="mt-4">
+                                <div className="space-y-2">
+                                    <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                                        <User className="w-5 h-5 text-sky-500" /> 自分の試合一覧
+                                    </h2>
+                                    {camp && <MyMatchesView playerId={myPlayer.id!} campId={camp.id} />}
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="bracket" className="mt-4">
+                                <div className="space-y-2">
+                                    <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                                        <Trophy className="w-5 h-5 text-sky-500" /> トーナメント表
+                                    </h2>
+                                    <VisualBracket readOnly={true} />
+                                </div>
+                            </TabsContent>
+                        </Tabs>
+
+                        <Card className="border-t-4 border-t-violet-400 bg-white">
+                            <CardHeader>
+                                <CardTitle className="text-lg flex items-center gap-2 text-slate-800">
+                                    <Clock className="w-5 h-5 text-violet-500" />
+                                    他の人の状況を検索
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="名前で検索（フルネーム）..."
+                                        value={searchName}
+                                        onChange={(e) => setSearchName(e.target.value)}
+                                        className="bg-white text-slate-900 border-slate-300"
+                                    />
+                                    <Button onClick={handleSearch} disabled={searching} className="bg-sky-500 hover:bg-sky-600 text-white font-bold">
+                                        検索
+                                    </Button>
+                                </div>
+
+                                {etaResult && (
+                                    <div className="p-4 bg-violet-50 rounded-lg border border-violet-100">
+                                        <p className="font-bold text-violet-900">{etaResult.detail}</p>
+                                        {etaResult.next_court && (
+                                            <p className="text-sm text-violet-700 mt-1 flex items-center gap-1">
+                                                <MapPin className="w-4 h-4" /> 予定: {String(etaResult.next_court).replace('court_', 'コート')}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                                {searching && (
+                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                                        <p className="text-sm text-slate-500">検索中...</p>
+                                    </div>
+                                )}
+                                {!searching && !etaResult && searchName.trim() && (
+                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                                        <p className="text-sm text-slate-600">現在、待機中の試合はありません</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
                     </>
                 )}
             </main>
