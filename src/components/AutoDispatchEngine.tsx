@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { Config } from '@/types';
 import { autoDispatchAll } from '@/lib/dispatcher';
 import { getDocument } from '@/lib/firestore-helpers';
+import { Timestamp } from 'firebase/firestore';
 import { useCamp } from '@/context/CampContext';
 
 const POLL_INTERVAL = 5000; // 5 seconds
@@ -22,6 +23,12 @@ export default function AutoDispatchEngine() {
     const runDispatcher = async () => {
       const config = await getDocument<Config>('config', 'system');
       if (!config?.auto_dispatch_enabled) return;
+
+      // 一時中断チェック
+      if (config.pause_until) {
+        const pauseMs = (config.pause_until as Timestamp).toMillis?.() ?? 0;
+        if (pauseMs > Date.now()) return;
+      }
 
       try {
         // ここで campId と default_rest_minutes を使う

@@ -27,7 +27,7 @@ import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division } from "@/types";
-import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock } from "lucide-react";
+import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
 import MessageManager from "@/components/admin/MessageManager";
@@ -61,6 +61,11 @@ export default function AdminDashboard() {
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [matchAnnouncements, setMatchAnnouncements] = useState<MatchAnnouncement[]>([]);
   const [defaultRestMinutes, setDefaultRestMinutes] = useState<number>(10);
+  const [pauseUntil, setPauseUntil] = useState<Date | null>(null);
+  const [pauseLabel, setPauseLabel] = useState<string>('');
+  const [customPauseMinutes, setCustomPauseMinutes] = useState<string>('');
+  const [customPauseLabel, setCustomPauseLabel] = useState<string>('');
+  const [remainingPauseSeconds, setRemainingPauseSeconds] = useState<number>(0);
   const prevMatchStatusesRef = useRef<Map<string, string>>(new Map());
 
   // 初回表示ロジック: localStorage でガイド表示フラグをチェック
@@ -204,6 +209,13 @@ export default function AdminDashboard() {
         setIsSequentialMode(config.is_sequential_mode || false);
         setFinalsWaitMode(config.finals_wait_mode || {});
         setDefaultRestMinutes(config.default_rest_minutes || 10);
+        if (config.pause_until) {
+          const until = (config.pause_until as any).toDate?.() as Date;
+          if (until && until > new Date()) {
+            setPauseUntil(until);
+            setPauseLabel(config.pause_label || '');
+          }
+        }
       }
     };
     loadConfig();
@@ -322,6 +334,50 @@ export default function AdminDashboard() {
     } catch (error) {
       toastError("エラーが発生しました");
     }
+  };
+
+  // 一時中断カウントダウン
+  useEffect(() => {
+    if (!pauseUntil) return;
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((pauseUntil.getTime() - Date.now()) / 1000));
+      setRemainingPauseSeconds(remaining);
+      if (remaining === 0) {
+        setPauseUntil(null);
+        setPauseLabel('');
+      }
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [pauseUntil]);
+
+  const formatPauseCountdown = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleStartPause = async (minutes: number, label: string) => {
+    const until = new Date(Date.now() + minutes * 60 * 1000);
+    await updateDocument('config', 'system', {
+      pause_until: Timestamp.fromDate(until),
+      pause_label: label,
+    });
+    setPauseUntil(until);
+    setPauseLabel(label);
+    toastSuccess(`「${label}」を開始しました（${minutes}分間）`);
+  };
+
+  const handleEndPause = async () => {
+    await updateDocument('config', 'system', {
+      pause_until: null,
+      pause_label: '',
+    });
+    setPauseUntil(null);
+    setPauseLabel('');
+    setRemainingPauseSeconds(0);
+    toastSuccess('中断を解除しました。試合配分を再開します');
   };
 
   const toggleSequentialMode = async () => {
@@ -877,6 +933,87 @@ export default function AdminDashboard() {
                         </Select>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* 一時中断カード */}
+                <Card className={`border-2 shadow-sm transition-colors ${pauseUntil && pauseUntil > new Date() ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
+                  <CardHeader>
+                    <CardTitle className={`flex items-center gap-2 text-lg ${pauseUntil && pauseUntil > new Date() ? 'text-amber-800' : 'text-slate-800'}`}>
+                      <PauseCircle className={`w-5 h-5 ${pauseUntil && pauseUntil > new Date() ? 'text-amber-600 animate-pulse' : 'text-amber-500'}`} />
+                      一時中断
+                    </CardTitle>
+                    <CardDescription>昼休憩・コート使用不可など、試合の自動割り当てを一時停止します（進行中の試合はそのまま続きます）</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {pauseUntil && pauseUntil > new Date() ? (
+                      <div className="space-y-4">
+                        <div className="bg-amber-100 border border-amber-300 rounded-lg p-4 text-center space-y-2">
+                          <p className="text-sm font-semibold text-amber-800">{pauseLabel}</p>
+                          <div className="text-4xl font-mono font-bold text-amber-700">{formatPauseCountdown(remainingPauseSeconds)}</div>
+                          <p className="text-xs text-amber-600">新しい試合の割り当てを停止中</p>
+                        </div>
+                        <Button
+                          onClick={handleEndPause}
+                          disabled={isArchived}
+                          className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                        >
+                          今すぐ再開する
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm text-slate-600 font-medium">プリセット</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { label: '小休憩', minutes: 15 },
+                            { label: '昼休憩', minutes: 60 },
+                            { label: '長休憩', minutes: 90 },
+                          ].map(({ label, minutes }) => (
+                            <Button
+                              key={label}
+                              onClick={() => handleStartPause(minutes, `${label}（${minutes}分）`)}
+                              variant="outline"
+                              disabled={isArchived}
+                              className="flex flex-col h-auto py-2 border-amber-200 text-amber-700 hover:bg-amber-50"
+                            >
+                              <span className="font-semibold">{label}</span>
+                              <span className="text-xs text-slate-500">{minutes}分</span>
+                            </Button>
+                          ))}
+                        </div>
+                        <p className="text-sm text-slate-600 font-medium">カスタム</p>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={customPauseLabel}
+                            onChange={e => setCustomPauseLabel(e.target.value)}
+                            placeholder="理由（例: コート整備）"
+                            className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                          />
+                          <input
+                            type="number"
+                            value={customPauseMinutes}
+                            onChange={e => setCustomPauseMinutes(e.target.value)}
+                            placeholder="分"
+                            min="1"
+                            max="480"
+                            className="w-20 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                          />
+                          <Button
+                            onClick={() => handleStartPause(
+                              parseInt(customPauseMinutes) || 30,
+                              customPauseLabel || `中断（${customPauseMinutes || 30}分）`
+                            )}
+                            disabled={isArchived}
+                            variant="outline"
+                            className="border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0"
+                          >
+                            開始
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 

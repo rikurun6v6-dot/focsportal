@@ -189,6 +189,8 @@ export interface Config {
   recent_durations_15?: number[]; // 直近10試合の15点マッチ時間
   recent_durations_21?: number[]; // 直近10試合の21点マッチ時間
   temporary_category_boost?: Record<string, number>; // AIアドバイザーによる一時的な優先度ブースト
+  pause_until?: Timestamp | null; // 一時中断の終了時刻
+  pause_label?: string; // 一時中断の理由ラベル
 }
 
 /**

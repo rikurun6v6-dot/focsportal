@@ -366,8 +366,17 @@ export async function calculateTournamentETA(campId: string): Promise<{
     const femaleMinutesRemaining = Math.ceil(femaleEstimatedMinutes / activeFemaleCourts);
     const mixedMinutesRemaining = Math.ceil(mixedEstimatedMinutes / totalActiveCourts);
 
-    // 全体の予想終了時刻は、最も遅く終わる種目の時刻
-    const estimatedMinutesRemaining = Math.max(maleMinutesRemaining, femaleMinutesRemaining, mixedMinutesRemaining);
+    // 一時中断の残り時間を算出
+    let pauseRemainingMinutes = 0;
+    if (configData?.pause_until) {
+      const pauseMs = (configData.pause_until as any).toMillis?.() ?? 0;
+      if (pauseMs > Date.now()) {
+        pauseRemainingMinutes = Math.ceil((pauseMs - Date.now()) / 60000);
+      }
+    }
+
+    // 全体の予想終了時刻は、最も遅く終わる種目 + 中断残り時間
+    const estimatedMinutesRemaining = Math.max(maleMinutesRemaining, femaleMinutesRemaining, mixedMinutesRemaining) + pauseRemainingMinutes;
 
     // 予想終了時刻を計算
     const now = new Date();
@@ -428,7 +437,7 @@ export async function calculateTournamentETA(campId: string): Promise<{
         courtsForType = totalActiveCourts; // 混合は全コート使用可
       }
 
-      const typeEstimatedMinutesRemaining = Math.ceil(typeEstimatedMinutes / courtsForType);
+      const typeEstimatedMinutesRemaining = Math.ceil(typeEstimatedMinutes / courtsForType) + pauseRemainingMinutes;
       const typeEstimatedEndTime = new Date(now.getTime() + typeEstimatedMinutesRemaining * 60 * 1000);
 
       byType.push({
