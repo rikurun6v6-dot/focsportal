@@ -21,7 +21,7 @@ import {
   resetMatchResult
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
-import type { Match, Court, MatchWithPlayers } from '@/types';
+import type { Match, Court, MatchWithPlayers, Team } from '@/types';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
 import { Clock, Users, Monitor } from 'lucide-react';
@@ -50,6 +50,8 @@ export default function ResultsTab() {
   const [showForceAssignFor, setShowForceAssignFor] = useState<string | null>(null);
   // コートが空で試合が休息待ちの場合の警告
   const [blockedMatchCount, setBlockedMatchCount] = useState(0);
+  // 団体戦: チーム名マップ (teamId → teamName)
+  const [teamsMap, setTeamsMap] = useState<Record<string, string>>({});
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -57,6 +59,15 @@ export default function ResultsTab() {
       setCurrentTime(Date.now());
     }, 10000); // 10秒ごと
     return () => clearInterval(timer);
+  }, []);
+
+  // 団体戦チーム名を取得
+  useEffect(() => {
+    getAllDocuments<Team>('teams').then(teams => {
+      const map: Record<string, string> = {};
+      teams.forEach(t => { map[t.id] = t.name; });
+      setTeamsMap(map);
+    }).catch(() => {});
   }, []);
 
   // 休憩中の試合を取得
@@ -489,6 +500,16 @@ export default function ResultsTab() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };;
 
+  // 団体戦: チーム名取得
+  const getTeamName = (match: MatchWithPlayers, side: 1 | 2): string => {
+    const player = side === 1 ? match.player1 : match.player2;
+    if (!player?.team_id) return `チーム${side}`;
+    return teamsMap[player.team_id] || player.team_id;
+  };
+
+  // 団体戦判定
+  const isTeamBattle = (match: MatchWithPlayers | null) => match?.tournament_type === 'team_battle';
+
   if (!camp) {
     return (
       <div className="bg-amber-50 border-l-4 border-amber-400 p-6 rounded-lg">
@@ -676,7 +697,7 @@ export default function ResultsTab() {
                           {getCategoryLabel(match.tournament_type)}
                         </span>
                         <span className="text-[10px] font-medium text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded-full">
-                          {getRoundLabel(match)}
+                          {match.subtitle || getRoundLabel(match)}
                         </span>
                         {match.division && (
                           <span className="text-[10px] font-medium text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
@@ -691,11 +712,13 @@ export default function ResultsTab() {
                 <CardContent className="pt-2">
                   {isOccupied && match ? (
                     <div className="space-y-2">
-                      {/* 選手表示 */}
+                      {/* 選手表示（団体戦はチーム名） */}
                       <div className="space-y-1.5">
                         <div className="bg-white p-2 rounded border border-slate-200">
-                          <p className="font-bold text-slate-800 text-center text-sm">
-                            {[match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ') || '未登録'}
+                          <p className={`font-bold text-slate-800 text-center ${isTeamBattle(match) ? 'text-base' : 'text-sm'}`}>
+                            {isTeamBattle(match)
+                              ? getTeamName(match, 1)
+                              : ([match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ') || '未登録')}
                           </p>
                         </div>
 
@@ -704,8 +727,10 @@ export default function ResultsTab() {
                         </div>
 
                         <div className="bg-white p-2 rounded border border-slate-200">
-                          <p className="font-bold text-slate-800 text-center text-sm">
-                            {[match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ') || '未登録'}
+                          <p className={`font-bold text-slate-800 text-center ${isTeamBattle(match) ? 'text-base' : 'text-sm'}`}>
+                            {isTeamBattle(match)
+                              ? getTeamName(match, 2)
+                              : ([match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ') || '未登録')}
                           </p>
                         </div>
                       </div>
@@ -745,11 +770,11 @@ export default function ResultsTab() {
                           <p className="text-center text-green-800 font-bold text-xs mb-1">試合終了</p>
                           <div className="flex justify-center gap-3 text-xl font-bold">
                             <span className={match.winner_id === match.player1_id ? 'text-green-600' : 'text-gray-400'}>
-                              {match.score_p1}
+                              {match.score_p1}{isTeamBattle(match) ? '勝' : ''}
                             </span>
                             <span className="text-gray-400">-</span>
                             <span className={match.winner_id === match.player2_id ? 'text-green-600' : 'text-gray-400'}>
-                              {match.score_p2}
+                              {match.score_p2}{isTeamBattle(match) ? '勝' : ''}
                             </span>
                           </div>
                           <Button
@@ -765,27 +790,65 @@ export default function ResultsTab() {
                         <>
                           {showInputFor === match.id ? (
                             <div className="space-y-2 mt-2">
-                              <div className="flex gap-1.5 items-center">
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  placeholder="0"
-                                  value={scores[match.id]?.p1 || ''}
-                                  onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
-                                  className="text-center text-base font-bold h-8"
-                                  disabled={submitting === match.id}
-                                />
-                                <span className="text-slate-400 font-bold text-sm">-</span>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  placeholder="0"
-                                  value={scores[match.id]?.p2 || ''}
-                                  onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
-                                  className="text-center text-base font-bold h-8"
-                                  disabled={submitting === match.id}
-                                />
-                              </div>
+                              {isTeamBattle(match) ? (
+                                /* 団体戦: チーム勝利数入力 */
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-slate-500 text-center">チーム勝利数を入力 (合計5本)</p>
+                                  <div className="flex gap-1.5 items-center">
+                                    <div className="flex-1 text-center">
+                                      <p className="text-[10px] text-slate-600 truncate">{getTeamName(match, 1)}</p>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        max="5"
+                                        placeholder="0"
+                                        value={scores[match.id]?.p1 || ''}
+                                        onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
+                                        className="text-center text-base font-bold h-8 mt-0.5"
+                                        disabled={submitting === match.id}
+                                      />
+                                    </div>
+                                    <span className="text-slate-400 font-bold text-sm">勝</span>
+                                    <div className="flex-1 text-center">
+                                      <p className="text-[10px] text-slate-600 truncate">{getTeamName(match, 2)}</p>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        max="5"
+                                        placeholder="0"
+                                        value={scores[match.id]?.p2 || ''}
+                                        onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
+                                        className="text-center text-base font-bold h-8 mt-0.5"
+                                        disabled={submitting === match.id}
+                                      />
+                                    </div>
+                                    <span className="text-slate-400 font-bold text-sm">勝</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* 通常試合: 個人スコア入力 */
+                                <div className="flex gap-1.5 items-center">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="0"
+                                    value={scores[match.id]?.p1 || ''}
+                                    onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
+                                    className="text-center text-base font-bold h-8"
+                                    disabled={submitting === match.id}
+                                  />
+                                  <span className="text-slate-400 font-bold text-sm">-</span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="0"
+                                    value={scores[match.id]?.p2 || ''}
+                                    onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
+                                    className="text-center text-base font-bold h-8"
+                                    disabled={submitting === match.id}
+                                  />
+                                </div>
+                              )}
 
                               <Button
                                 onClick={() => handleSubmit(match, court.id)}

@@ -967,6 +967,89 @@ function buildAdminSections(): Section[] {
         </div>
       ),
     },
+
+    // ─── 16. 団体戦（チーム戦） ───────────────────────────────
+    {
+      id: 'team_battle',
+      title: '団体戦（チーム戦）',
+      icon: '🏅',
+      keywords: ['団体', 'チーム', 'team_battle', '5本', '勝敗数', 'チーム名', '団体戦', 'team', 'matchLabel', '決勝', '順位決定戦', 'スコア', '勝利数'],
+      content: (
+        <div className="space-y-5">
+          <p className="text-sm text-slate-600">
+            「団体戦（team_battle）」モードでは、個人スコアの代わりにチーム合計の<strong>勝利数</strong>で結果を記録します。
+            コート表示・プレビュー画面にはチーム名が大きく表示されます。
+          </p>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">団体戦種目の作成方法</h4>
+            <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
+              <li>トーナメント生成タブで種目として「団体戦（team_battle）」を選択する</li>
+              <li>各チームに所属する選手を登録し、チーム名を設定しておく</li>
+              <li>通常と同様にトーナメントを生成すると、コート割り当て対象になる</li>
+            </ol>
+            <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200 text-xs text-slate-600">
+              チーム名は Firestore → teams コレクションの <code className="bg-slate-100 px-1 rounded">name</code> フィールドから自動取得されます。
+              選手の <code className="bg-slate-100 px-1 rounded">team_id</code> が一致するチームの名前が表示されます。
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">スコア入力：勝利数で記録</h4>
+            <p className="text-sm text-slate-600 mb-2">
+              コート結果タブで「結果入力」を押すと、個人スコアではなく<strong>チームごとの勝利数</strong>を入力する画面になります。
+            </p>
+            <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 text-xs text-sky-800">
+              <strong>例：</strong> 5本勝負の場合 → チームAが3勝・チームBが2勝 → 「3 勝」「2 勝」と入力して確定。<br />
+              内部では <code className="bg-sky-100 px-1 rounded">score_p1 = 3</code>、<code className="bg-sky-100 px-1 rounded">score_p2 = 2</code> として保存されます。
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">コート表示・プレビューの仕様</h4>
+            <div className="space-y-2">
+              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">
+                <p className="font-semibold text-slate-800">管理画面（コート結果タブ）</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  tournament_type が <code className="bg-slate-100 px-1 rounded">team_battle</code> の試合では、選手名の代わりに<strong>チーム名</strong>が表示されます。
+                </p>
+              </div>
+              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">
+                <p className="font-semibold text-slate-800">モニター（プレビュー画面）</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  プレビュー画面（/preview）でも同様に、団体戦のコートには<strong>「チームA vs チームB」</strong>のみが大きく表示されます。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">順位決定戦ラベル（matchLabel）の設定</h4>
+            <p className="text-sm text-slate-600">
+              「決勝」「3位決定戦」などのラベルは <strong>subtitle フィールド</strong> を使って設定します。
+            </p>
+            <ol className="space-y-1.5 text-sm text-slate-700 list-decimal list-inside mt-2">
+              <li>「安全」タブ → 「Subtitle（試合補足情報）」を開く</li>
+              <li>対象試合の match_id を入力する</li>
+              <li>テキストに「決勝」「3位決定戦」「5位決定戦」などを入力して設定</li>
+            </ol>
+            <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200 text-xs text-amber-800">
+              <strong>表示箇所：</strong>
+              コート結果タブのラウンドバッジ・トーナメント表（KnockoutTree）・プレビュー画面の各コートカードに表示されます。
+              subtitleが設定されると、ラウンド名（準決勝・決勝など）の代わりにsubtitleが優先表示されます。
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">Auto-Dispatchとの連携</h4>
+            <p className="text-sm text-slate-600">
+              団体戦の試合も他の種目と同様にAuto-Dispatchの対象になります。
+              「種目ごとの進行制御」で団体戦だけON/OFFの切り替えも可能です。
+            </p>
+          </div>
+        </div>
+      ),
+    },
   ];
 }
 

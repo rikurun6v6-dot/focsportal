@@ -157,8 +157,11 @@ export async function dispatchToEmptyCourt(
     if (nextReservedMatch && !canUseForShortMatch && match.id !== nextReservedMatch.id) {
       return false;
     }
-    // 休息時間チェック
-    const playerIds = [match.player1_id, match.player2_id, match.player3_id, match.player4_id].filter(id => id);
+    // 休息時間チェック（player5/6も含む）
+    const playerIds = [
+      match.player1_id, match.player2_id, match.player3_id, match.player4_id,
+      (match as any).player5_id, (match as any).player6_id
+    ].filter(id => id);
     for (const playerId of playerIds) {
       const player = allPlayers.find(p => p.id === playerId);
       if (player?.last_match_finished_at) {
@@ -203,12 +206,11 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
-  // ✅ ラウンド順序の厳守: 同じtournament_type+division+phaseの中で最小ラウンドの試合のみを対象にする
-  // filteredWaitingMatches (ブロック済みも含む全待機) から計算することで、
-  // 「1回戦の選手が他試合中」でも2回戦が先に割り当てられるのを防ぐ
-  // phaseを含めることで予選の待機が本戦のラウンド順序を乱さないようにする
+  // ✅ ラウンド順序の緩やか維持: 実際に割り当て可能な試合 (validMatches) の中で最小ラウンドを計算
+  // 休息中・players忙しいなどブロックされた試合は除外して計算することで、
+  // 全ての下位ラウンドがブロックされている場合でも上位ラウンドを割り当て可能にする
   const minRoundByGroup = new Map<string, number>();
-  for (const match of filteredWaitingMatches) {
+  for (const match of validMatches) {
     const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
     const existing = minRoundByGroup.get(groupKey);
     if (existing === undefined || match.round < existing) {

@@ -8,8 +8,9 @@ import {
   subscribeToActiveMatches,
   subscribeToPlayers,
   getDocument,
+  getAllDocuments,
 } from '@/lib/firestore-helpers';
-import type { Court, Match, Player, MatchWithPlayers, Camp } from '@/types';
+import type { Court, Match, Player, MatchWithPlayers, Camp, Team } from '@/types';
 import { Clock, Sparkles } from 'lucide-react';
 import { calculateTournamentETA } from '@/lib/eta';
 import type { TournamentETAByType } from '@/lib/eta';
@@ -28,7 +29,13 @@ function buildMWP(match: Match, pm: Map<string, Player>): MatchWithPlayers | nul
   return r;
 }
 
-function sideName(m: MatchWithPlayers, side: 1 | 2): string {
+function sideName(m: MatchWithPlayers, side: 1 | 2, teamsMap?: Map<string, string>): string {
+  // 団体戦はチーム名を表示
+  if (m.tournament_type === 'team_battle' && teamsMap) {
+    const player = side === 1 ? m.player1 : m.player2;
+    if (player?.team_id) return teamsMap.get(player.team_id) || `チーム${side}`;
+    return `チーム${side}`;
+  }
   if (side === 1)
     return [m.player1.name, m.player3?.name, m.player5?.name].filter(Boolean).join(' / ');
   return [m.player2.name, m.player4?.name, m.player6?.name].filter(Boolean).join(' / ');
@@ -52,6 +59,7 @@ function PreviewContent() {
   const [courts, setCourts] = useState<Court[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [playersMap, setPlayersMap] = useState<Map<string, Player>>(new Map());
+  const [teamsMap, setTeamsMap] = useState<Map<string, string>>(new Map());
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [clockStr, setClockStr] = useState('');
   const [page, setPage] = useState(0);
@@ -78,6 +86,15 @@ function PreviewContent() {
     if (!campId) return;
     getDocument<Camp>('camps', campId).then((c) => { if (c) setCampName(c.title); });
   }, [campId]);
+
+  // ── teams ─────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    getAllDocuments<Team>('teams').then(teams => {
+      const map = new Map<string, string>();
+      teams.forEach(t => map.set(t.id, t.name));
+      setTeamsMap(map);
+    }).catch(() => {});
+  }, []);
 
   // ── Firestore subscriptions ───────────────────────────────────────────────
   useEffect(() => {
@@ -280,11 +297,18 @@ function PreviewContent() {
               <CardContent className="flex-1 flex flex-col justify-center pt-3 pb-4">
                 {isOccupied && match ? (
                   <div className="space-y-3">
-                    {/* 選手表示 */}
+                    {/* 選手/チーム表示（団体戦はチーム名を大きく） */}
                     <div className="space-y-2">
+                      {match.subtitle && (
+                        <div className="flex justify-center">
+                          <span className="text-sm font-bold text-amber-700 bg-amber-100 px-3 py-0.5 rounded-full">
+                            {match.subtitle}
+                          </span>
+                        </div>
+                      )}
                       <div className="bg-white p-3 rounded border border-slate-200">
                         <p className="font-black text-slate-800 text-center text-2xl leading-snug">
-                          {sideName(match, 1) || '未登録'}
+                          {sideName(match, 1, teamsMap) || '未登録'}
                         </p>
                       </div>
                       <div className="flex items-center justify-center">
@@ -292,7 +316,7 @@ function PreviewContent() {
                       </div>
                       <div className="bg-white p-3 rounded border border-slate-200">
                         <p className="font-black text-slate-800 text-center text-2xl leading-snug">
-                          {sideName(match, 2) || '未登録'}
+                          {sideName(match, 2, teamsMap) || '未登録'}
                         </p>
                       </div>
                     </div>
