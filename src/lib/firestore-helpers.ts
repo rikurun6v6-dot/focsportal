@@ -727,7 +727,8 @@ export async function propagateByePlayerChange(
   } else if (changedMatch.next_match_number != null) {
     nextMatch = allMatches.find(m =>
       m.match_number === changedMatch.next_match_number &&
-      (changedMatch.division == null || m.division === changedMatch.division)
+      (changedMatch.division == null || m.division === changedMatch.division) &&
+      m.tournament_type === changedMatch.tournament_type
     );
   }
   if (!nextMatch || !nextMatch.id) return;

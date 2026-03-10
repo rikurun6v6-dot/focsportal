@@ -81,15 +81,15 @@ function generateGroupStageMatches(
   const matches: MatchData[] = [];
   const groupLabels: TeamGroup[] = ['A', 'B', 'C', 'D'];
 
-  // ペアをグループに振り分け
+  // ペアをグループに振り分け（余りを先頭グループに均等配分: 10÷3 → 4,3,3）
   const groups: { [key in TeamGroup]?: ([Player, Player] | [Player, Player, Player])[] } = {};
-  const pairsPerGroup = Math.ceil(pairs.length / groupCount);
-
+  const base = Math.floor(pairs.length / groupCount);
+  const remainder = pairs.length % groupCount;
+  let startIdx = 0;
   for (let i = 0; i < groupCount; i++) {
-    const groupLabel = groupLabels[i];
-    const startIdx = i * pairsPerGroup;
-    const endIdx = Math.min(startIdx + pairsPerGroup, pairs.length);
-    groups[groupLabel] = pairs.slice(startIdx, endIdx);
+    const count = base + (i < remainder ? 1 : 0);
+    groups[groupLabels[i]] = pairs.slice(startIdx, startIdx + count);
+    startIdx += count;
   }
 
   // 各グループで総当たり戦の試合を生成
@@ -407,6 +407,14 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
           matchNumMap.set('3rd', nextMN++);
         }
 
+        // 決勝トーナメントの各試合にFirestore doc IDを事前割り当て（next_match_id参照に使用）
+        const knockoutDocRefMap = new Map<number, ReturnType<typeof doc>>();
+        matchNumMap.forEach((matchNum) => {
+          knockoutDocRefMap.set(matchNum, doc(matchesRef));
+        });
+        // 予選試合のdoc refも事前割り当て
+        const groupDocRefs = groupMatches.map(() => doc(matchesRef));
+
         const knockoutMatches: MatchData[] = [];
 
         // --- 1回戦 ---
@@ -417,6 +425,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
           const nextPos = Math.ceil(pos / 2);
           const nextMatchNum = totalRounds >= 2 ? matchNumMap.get(`2_${nextPos}`) : undefined;
           const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
+          const nextMatchId = nextMatchNum !== undefined ? knockoutDocRefMap.get(nextMatchNum)?.id : undefined;
 
           knockoutMatches.push({
             campId: camp.id,
@@ -439,7 +448,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
             points_per_match: pointsForRound,
             // BYE枠：is_walkover=true でKnockoutTreeがシード表示する
             ...(isBye ? { is_walkover: true, walkover_winner: 1 as const } : {}),
-            ...(totalRounds >= 2 ? { next_match_number: nextMatchNum, next_match_position: nextMatchPos } : {}),
+            ...(totalRounds >= 2 ? { next_match_number: nextMatchNum, next_match_position: nextMatchPos, ...(nextMatchId ? { next_match_id: nextMatchId } : {}) } : {}),
           });
         }
 
@@ -453,6 +462,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
             const nextPos = Math.ceil(pos / 2);
             const nextMatchNum = !isLastRound ? matchNumMap.get(`${round + 1}_${nextPos}`) : undefined;
             const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
+            const nextMatchId = nextMatchNum !== undefined ? knockoutDocRefMap.get(nextMatchNum)?.id : undefined;
 
             knockoutMatches.push({
               campId: camp.id,
@@ -473,7 +483,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
               start_time: null,
               end_time: null,
               points_per_match: pointsForRound,
-              ...(!isLastRound ? { next_match_number: nextMatchNum, next_match_position: nextMatchPos } : {}),
+              ...(!isLastRound ? { next_match_number: nextMatchNum, next_match_position: nextMatchPos, ...(nextMatchId ? { next_match_id: nextMatchId } : {}) } : {}),
             });
           }
         }
@@ -528,8 +538,15 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
             count: chunk.length
           });
 
-          chunk.forEach(matchData => {
-            const docRef = doc(matchesRef);
+          chunk.forEach((matchData, chunkIdx) => {
+            const globalIdx = i + chunkIdx;
+            // 事前割り当てdoc refを使用（next_match_idと一致させるため）
+            let docRef: ReturnType<typeof doc>;
+            if (globalIdx < groupDocRefs.length) {
+              docRef = groupDocRefs[globalIdx];
+            } else {
+              docRef = knockoutDocRefMap.get(matchData.match_number!)!;
+            }
             batchChunk.set(docRef, {
               ...matchData,
               id: docRef.id,

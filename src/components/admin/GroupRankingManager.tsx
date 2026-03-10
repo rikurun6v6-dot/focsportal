@@ -106,51 +106,49 @@ export default function GroupRankingManager() {
       return;
     }
 
-    // クロスマッチング: A1 vs B2, C1 vs D2, B1 vs A2, D1 vs C2
-    const matchups: Array<{ player1: GroupStanding; player2: GroupStanding }> = [];
-
-    if (groups.length === 4 && qualifiersPerGroup === 2) {
-      // 4グループ各2名通過の典型的なパターン
-      const [A, B, C, D] = groups;
-      const aStandings = qualifiersByGroup.get(A)!;
-      const bStandings = qualifiersByGroup.get(B)!;
-      const cStandings = qualifiersByGroup.get(C)!;
-      const dStandings = qualifiersByGroup.get(D)!;
-
-      matchups.push(
-        { player1: aStandings[0], player2: bStandings[1] }, // A1 vs B2
-        { player1: cStandings[0], player2: dStandings[1] }, // C1 vs D2
-        { player1: bStandings[0], player2: aStandings[1] }, // B1 vs A2
-        { player1: dStandings[0], player2: cStandings[1] }  // D1 vs C2
-      );
-    } else {
-      // 一般的なケース: 順番に割り当て
-      const allQualifiers: GroupStanding[] = [];
-      groups.forEach(group => {
-        const standings = qualifiersByGroup.get(group)!;
-        allQualifiers.push(...standings);
-      });
-
-      for (let i = 0; i < allQualifiers.length; i += 2) {
-        if (i + 1 < allQualifiers.length) {
-          matchups.push({ player1: allQualifiers[i], player2: allQualifiers[i + 1] });
-        }
+    // クロスマッチング: 同グループの選手が反対ブロックに入るように配置
+    // flat = [A1,B1,..(順位1 forward), D2,C2,..(順位2 reversed), A3,B3,..(順位3 forward), ...]
+    const flat: GroupStanding[] = [];
+    for (let rank = 0; rank < qualifiersPerGroup; rank++) {
+      const rankSlice = groups.map(g => qualifiersByGroup.get(g)![rank]);
+      if (rank % 2 === 0) {
+        flat.push(...rankSlice); // 奇数順位: グループ順
+      } else {
+        flat.push(...rankSlice.slice().reverse()); // 偶数順位: 逆順
       }
     }
 
-    // 試合を更新
+    // BYEスロット（is_walkover=true）は先頭シードが1人で入り、実試合スロットは2人ペア
+    const byeSlots = knockoutMatches.filter(m => m.is_walkover);
+    const realSlots = knockoutMatches.filter(m => !m.is_walkover);
+
+    const byeSeeds = flat.slice(0, byeSlots.length);
+    const remainders = flat.slice(byeSlots.length);
+    const remHalf = Math.floor(remainders.length / 2);
+    const remTops = remainders.slice(0, remHalf);
+    const remBottoms = remainders.slice(remHalf); // 既に逆順済み（偶数ランクで反転済み）
+
     try {
       const { updateDocument } = await import('@/lib/firestore-helpers');
 
-      for (let i = 0; i < Math.min(matchups.length, knockoutMatches.length); i++) {
-        const matchup = matchups[i];
-        const match = knockoutMatches[i];
+      // BYEスロット: player1のみ設定（walkover_winner=1なので自動勝ち抜け）
+      for (let i = 0; i < Math.min(byeSeeds.length, byeSlots.length); i++) {
+        const seed = byeSeeds[i];
+        await updateDocument('matches', byeSlots[i].id, {
+          player1_id: seed.playerId,
+          player3_id: seed.partnerId || '',
+          player2_id: '',
+          player4_id: '',
+        });
+      }
 
-        await updateDocument('matches', match.id, {
-          player1_id: matchup.player1.playerId,
-          player3_id: matchup.player1.partnerId || '',
-          player2_id: matchup.player2.playerId,
-          player4_id: matchup.player2.partnerId || '',
+      // 実試合スロット: tops vs bottoms クロスマッチング
+      for (let i = 0; i < Math.min(remTops.length, remBottoms.length, realSlots.length); i++) {
+        await updateDocument('matches', realSlots[i].id, {
+          player1_id: remTops[i].playerId,
+          player3_id: remTops[i].partnerId || '',
+          player2_id: remBottoms[i].playerId,
+          player4_id: remBottoms[i].partnerId || '',
         });
       }
 

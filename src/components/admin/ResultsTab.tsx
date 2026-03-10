@@ -413,6 +413,26 @@ export default function ResultsTab() {
   };
 
   const handleForceAssign = async (matchId: string, courtId: string) => {
+    // 種目ロック確認（enabled_tournamentsに含まれない種目は警告）
+    const match = waitingMatches.find(m => m.id === matchId);
+    if (match?.tournament_type) {
+      try {
+        const configs = await getAllDocuments<{ id: string; enabled_tournaments?: string[] }>('config');
+        const systemConfig = configs.find(c => c.id === 'system');
+        const enabled = systemConfig?.enabled_tournaments;
+        if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type)) {
+          const lockOk = await confirm({
+            title: '⚠️ 種目ロック中',
+            message: `「${match.tournament_type}」は現在ロックされています。それでも強制アサインしますか？`,
+            confirmText: '強制実行',
+            cancelText: 'キャンセル',
+            type: 'info',
+          });
+          if (!lockOk) { setShowForceAssignFor(null); return; }
+        }
+      } catch { /* config取得失敗時はスルー */ }
+    }
+
     const confirmed = await confirm({
       title: '⚡ 強制アサイン',
       message: `この試合をコートに強制的に割り当てますか？`,
