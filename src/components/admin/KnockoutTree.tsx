@@ -391,7 +391,7 @@ export default function KnockoutTree({
             const roundMatches = roundGroups[round] || [];
 
             return (
-              <div key={round} className="min-w-[220px]" style={{ position: 'relative', height: `${containerHeight}px`, zIndex: 1 }}>
+              <div key={round} className="min-w-[220px] flex-shrink-0" style={{ position: 'relative', height: `${containerHeight}px`, zIndex: 1 }}>
                 {/* ラウンドヘッダー */}
                 <div className="text-center mb-16" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
                   <h3 className="inline-block font-bold text-slate-900 text-sm bg-white rounded-lg py-2 px-5 shadow-md border-2 border-slate-200">
@@ -441,7 +441,7 @@ export default function KnockoutTree({
                     const cardTop = position ? position.top : matchIndex * 340;
 
                     return (
-                      <div key={match.id} style={{ position: 'absolute', top: `${cardTop}px`, width: '100%' }}>
+                      <div key={match.id} style={{ position: 'absolute', top: `${cardTop}px`, width: '100%', minWidth: '220px' }}>
                       <Card
                         key={match.id}
                         className={`rounded-lg shadow-md transition-all ${

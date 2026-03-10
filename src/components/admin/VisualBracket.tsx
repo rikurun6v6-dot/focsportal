@@ -136,10 +136,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             // スクロール領域を含む全体を取得
             const originalOverflow = target.style.overflow;
             const originalMaxHeight = target.style.maxHeight;
-            const originalZoom = target.style.zoom;
+            const originalTransform = target.style.transform;
             target.style.overflow = 'visible';
             target.style.maxHeight = 'none';
-            target.style.zoom = '1';
+            target.style.transform = 'none';
 
             const fullWidth = Math.max(target.scrollWidth, target.offsetWidth);
             const fullHeight = Math.max(target.scrollHeight, target.offsetHeight);
@@ -156,7 +156,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
 
             target.style.overflow = originalOverflow;
             target.style.maxHeight = originalMaxHeight;
-            target.style.zoom = originalZoom;
+            target.style.transform = originalTransform;
 
             // ファイル名を生成
             const tournamentName = getTournamentTypeName(tournamentType);
@@ -564,7 +564,8 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     )}
 
                     {!loading && divisionMatches.length > 0 && (
-                        <div className="space-y-8" ref={bracketContentRef} style={{ zoom: zoom }}>
+                        <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
+                        <div className="space-y-8" ref={bracketContentRef} style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: `${Math.round(100 / zoom)}%` }}>
                             {/* 予選リーグ */}
                             {hasPreliminary && (
                                 <PreliminaryGroup
@@ -589,6 +590,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                     onSlotClick={handleSlotClick}
                                 />
                             )}
+                        </div>
                         </div>
                     )}
                 </CardContent>
