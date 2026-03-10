@@ -26,6 +26,7 @@ import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
+import LeagueManager from "@/components/admin/LeagueManager";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division } from "@/types";
 import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
@@ -678,6 +679,7 @@ export default function AdminDashboard() {
               { value: "pairseed", label: "ペア・シード", icon: Settings },
               { value: "messages", label: "メッセージ", icon: MessageCircle },
               { value: "team_battle", label: "団体戦", icon: Users },
+              { value: "league_setup", label: "リーグ編成", icon: Trophy },
               { value: "safety", label: "安全", icon: ShieldAlert },
               { value: "advanced", label: "応用", icon: Lock },
             ].map((item) => {
@@ -1211,6 +1213,23 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <TeamTournamentGenerator />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="league_setup" className="space-y-6">
+                <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-indigo-400">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Trophy className="w-5 h-5 text-indigo-500" />
+                      リーグ編成
+                    </CardTitle>
+                    <CardDescription>
+                      チームを予選ブロック（A〜D）に手動割り当てします。設定は試合生成時に自動反映されます。
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <LeagueManager />
                   </CardContent>
                 </Card>
               </TabsContent>

@@ -50,6 +50,8 @@ export default function ResultsTab() {
   const [showForceAssignFor, setShowForceAssignFor] = useState<string | null>(null);
   // コートが空で試合が休息待ちの場合の警告
   const [blockedMatchCount, setBlockedMatchCount] = useState(0);
+  // 予選グループ進行度マップ: `${type}_${division}_${group}` → {done, total}
+  const [groupProgressMap, setGroupProgressMap] = useState<Record<string, { done: number; total: number }>>({});
   // 団体戦: チーム名マップ (teamId → teamName)
   const [teamsMap, setTeamsMap] = useState<Record<string, string>>({});
 
@@ -86,6 +88,18 @@ export default function ResultsTab() {
           if (!byType[key] || m.round > byType[key]) byType[key] = m.round;
         });
         setMaxRoundByType(byType);
+
+        // 予選グループ進行度を計算（この合宿のgroupあり試合のみ）
+        const gMap: Record<string, { done: number; total: number }> = {};
+        allMatches.filter(m => m.campId === camp.id && m.group).forEach(m => {
+          const gKey = `${m.tournament_type}_${m.division}_${m.group}`;
+          if (!gMap[gKey]) gMap[gKey] = { done: 0, total: 0 };
+          gMap[gKey].total++;
+          if (m.status === 'calling' || m.status === 'playing' || m.status === 'completed') {
+            gMap[gKey].done++;
+          }
+        });
+        setGroupProgressMap(gMap);
 
         const breaking = allMatches.filter(m =>
           m.campId === camp.id &&
@@ -1064,22 +1078,38 @@ export default function ResultsTab() {
                   .sort((a, b) => {
                     const aBlocked = !!(a.available_at && currentTime < a.available_at.toMillis());
                     const bBlocked = !!(b.available_at && currentTime < b.available_at.toMillis());
-                    if (aBlocked && !bBlocked) return 1;
-                    if (!aBlocked && bBlocked) return -1;
-                    return (a.match_number || 0) - (b.match_number || 0);
+                    // 最優先: 待機可能 > 休息中
+                    if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
+                    // 優先度1: グループ進行度が少ない順（予選グループ平準化）
+                    const getGroupDone = (m: MatchWithPlayers) => {
+                      if (!m.group) return -1;
+                      const k = `${m.tournament_type}_${m.division}_${m.group}`;
+                      return groupProgressMap[k]?.done ?? 0;
+                    };
+                    const aDone = getGroupDone(a);
+                    const bDone = getGroupDone(b);
+                    if (aDone !== bDone) return aDone - bDone;
+                    // 優先度2: ラウンドが若い順
+                    if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+                    // 優先度3: 待機時間が長い（作成日時が古い）順
+                    return (a.created_at?.toMillis() || 0) - (b.created_at?.toMillis() || 0);
                   })
-                  .map(match => {
+                  .map((match, idx) => {
                     const isBlocked = !!(match.available_at && currentTime < match.available_at.toMillis());
                     const remainingMinutes = match.available_at
                       ? Math.max(0, Math.ceil((match.available_at.toMillis() - currentTime) / (1000 * 60)))
                       : 0;
+                    const groupKey = match.group
+                      ? `${match.tournament_type}_${match.division}_${match.group}`
+                      : null;
+                    const groupProg = groupKey ? groupProgressMap[groupKey] : null;
                     return (
                       <div
                         key={match.id}
-                        className={`flex items-center gap-2 px-4 py-2.5 text-sm ${isBlocked ? 'opacity-50 bg-slate-50' : 'hover:bg-slate-50'}`}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-sm ${isBlocked ? 'opacity-50 bg-slate-50' : idx % 2 === 0 ? 'hover:bg-slate-50' : 'bg-slate-50/50 hover:bg-slate-100'}`}
                       >
-                        <span className="text-xs text-slate-400 w-8 flex-shrink-0 font-mono">
-                          #{match.match_number}
+                        <span className="text-xs text-slate-400 w-6 flex-shrink-0 font-mono text-right">
+                          {idx + 1}
                         </span>
                         <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full flex-shrink-0">
                           {getCategoryLabel(match.tournament_type)}
@@ -1090,6 +1120,11 @@ export default function ResultsTab() {
                         {match.division && (
                           <span className="text-[10px] text-purple-600 flex-shrink-0">
                             {match.division}部
+                          </span>
+                        )}
+                        {groupProg !== null && match.group && (
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0" title="グループ進行度 (消化済み/合計)">
+                            G{match.group}: {groupProg.done}/{groupProg.total}
                           </span>
                         )}
                         <span className="flex-1 text-slate-700 text-xs truncate min-w-0">

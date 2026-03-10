@@ -981,6 +981,53 @@ function buildAdminSections(): Section[] {
             コート表示・プレビュー画面にはチーム名が大きく表示されます。
           </p>
 
+          {/* 事前準備 */}
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+            <h4 className="font-semibold text-indigo-800 mb-2 flex items-center gap-1.5">
+              📋 事前準備: リーグ編成タブでブロック分け
+            </h4>
+            <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
+              <li>サイドバーの <strong>「リーグ編成」</strong> タブを開く</li>
+              <li>登録済みチームの一覧が表示される。未割り当てのチームには <strong>A / B / C / D</strong> ボタンが表示される</li>
+              <li>ボタンをクリックして各チームをブロックへ割り当てる（Firestore に即時保存）</li>
+              <li>全チームを割り当てたら緑色のバナーで完了と表示される</li>
+              <li>その後「初期設定 → トーナメント生成」で試合を作成すると、<code className="bg-indigo-100 px-1 rounded text-xs">match.group</code> にA〜Dが自動設定される</li>
+            </ol>
+            <div className="mt-3 p-2 bg-white border border-indigo-200 rounded text-xs text-indigo-700">
+              <strong>例：</strong> チームA・B・C を予選Aブロックへ、チームD・E・F を予選Bブロックへ割り当て
+              → それぞれのブロック内でリーグ戦の試合が生成されます
+            </div>
+          </div>
+
+          {/* 当日運営 */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+            <h4 className="font-semibold text-emerald-800 mb-2 flex items-center gap-1.5">
+              🏸 当日運営: コート表示とスコア入力
+            </h4>
+            <div className="space-y-2 text-sm text-slate-700">
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">コート表示:</span>
+                <span>
+                  <code className="bg-emerald-100 px-1 rounded text-xs">tournament_type: team_battle</code> の試合では、
+                  コート名の下に選手名ではなく <strong>チーム名</strong> が大きく表示されます（例:「チームA vs チームB」）
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">スコア入力:</span>
+                <span>
+                  「結果入力」を押すと、個人スコアではなく <strong>チームごとの合計勝利数</strong> を入力する画面になります。
+                  合計5本勝負なら 3〜2 や 4〜1 などを入力して「結果を確定」します
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">重複防止:</span>
+                <span>
+                  自動割り当て時、<strong>同一チームが複数コートで同時に試合することはありません</strong>（チームIDでロック）
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div>
             <h4 className="font-semibold text-slate-800 mb-2">団体戦種目の作成方法</h4>
             <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
