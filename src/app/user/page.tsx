@@ -911,10 +911,6 @@ export default function UserDashboard() {
                                 </div>
                                 {/* ステータスタイトル */}
                                 <div className="flex items-center gap-3 mb-2">
-                                    {/* 待機中のみ狐アイコン＋呼吸アニメーション */}
-                                    {!currentMatch && !restTimeRemaining && (
-                                        <span className="text-2xl animate-pulse select-none" style={{ animationDuration: '2.5s' }}>🦊</span>
-                                    )}
                                     <span className="text-white text-2xl font-black tracking-tight drop-shadow-sm">{statusTitle}</span>
                                     {currentMatch?.status === 'calling' && (
                                         <span className="relative flex h-3 w-3">
@@ -926,23 +922,19 @@ export default function UserDashboard() {
                                 <p className="text-white/90 text-sm font-semibold leading-snug drop-shadow-sm">{statusMessage}</p>
                             </div>
 
-                            {/* 待ち時間予測 — グラスモフィズム */}
+                            {/* 待ち時間予測 */}
                             {!currentMatch && (myEta || etaLoading) && (
-                                <div className="relative backdrop-blur-md bg-white/10 border border-white/20 mx-3 mb-3 rounded-xl p-3 shadow-inner">
+                                <div className="bg-white/95 mx-3 mb-3 rounded-xl p-3 shadow-sm">
                                     {etaLoading ? (
-                                        <p className="text-white/70 text-xs text-center">予測中...</p>
+                                        <p className="text-slate-500 text-xs text-center">予測中...</p>
                                     ) : myEta && (
                                         <>
                                             <div className="flex items-center gap-1.5 mb-1">
-                                                <Clock className="w-3.5 h-3.5 text-white/80" />
-                                                <span className="text-white/80 text-xs font-semibold tracking-wide">待ち時間予測</span>
+                                                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                                                <span className="text-blue-800 text-xs font-bold">待ち時間予測</span>
                                             </div>
-                                            <p className="text-white font-bold text-base">{myEta}</p>
-                                            {/* プログレスバー（視覚的装飾） */}
-                                            <div className="mt-2 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                                                <div className="h-full bg-white/60 rounded-full w-1/3 animate-pulse" />
-                                            </div>
-                                            <p className="text-white/50 text-[10px] mt-1">※ AIによる予測のため前後することがあります</p>
+                                            <p className="text-blue-900 font-black text-xl leading-tight">{myEta}</p>
+                                            <p className="text-slate-500 text-[10px] mt-1.5">※ AIによる予測のため前後することがあります</p>
                                         </>
                                     )}
                                 </div>
