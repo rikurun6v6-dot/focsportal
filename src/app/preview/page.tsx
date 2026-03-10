@@ -157,6 +157,14 @@ function PreviewContent() {
   const activeCategories = [...new Set(matches.map((m) => m.tournament_type))].filter(Boolean);
   const pagedCourts = activeCourts.slice(page * COURTS_PER_PAGE, (page + 1) * COURTS_PER_PAGE);
 
+  // 団体戦マルチコート: 同一matchIdを持つコート数を計算
+  const courtCountByMatch: Record<string, number> = {};
+  activeCourts.forEach(c => {
+    if (c.current_match_id) {
+      courtCountByMatch[c.current_match_id] = (courtCountByMatch[c.current_match_id] || 0) + 1;
+    }
+  });
+
   // ── render ────────────────────────────────────────────────────────────────
   const handleMouseEnter = () => { isHoveredRef.current = true;  setIsHovered(true);  };
   const handleMouseLeave = () => { isHoveredRef.current = false; setIsHovered(false); };
@@ -264,6 +272,8 @@ function PreviewContent() {
           const isOccupied = !!match;
           const isCalling = match?.status === 'calling';
           const isPlaying = match?.status === 'playing';
+          const matchCourtCount = match ? (courtCountByMatch[match.id] || 1) : 1;
+          const isTeamBattle = match?.tournament_type === 'team_battle';
 
           return (
             <Card
@@ -284,6 +294,12 @@ function PreviewContent() {
                       <span className="text-sm font-bold text-white bg-sky-500 px-2.5 py-0.5 rounded-full">
                         {CAT[match.tournament_type] ?? match.tournament_type}
                       </span>
+                      {/* 団体戦マルチコートバッジ */}
+                      {isTeamBattle && matchCourtCount > 1 && (
+                        <span className="text-sm font-bold text-white bg-rose-500 px-2.5 py-0.5 rounded-full">
+                          {matchCourtCount}面同時
+                        </span>
+                      )}
                       {match.division && (
                         <span className="text-sm font-medium text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
                           {match.division}部
@@ -299,7 +315,7 @@ function PreviewContent() {
                   <div className="space-y-3">
                     {/* 選手/チーム表示（団体戦はチーム名を大きく） */}
                     <div className="space-y-2">
-                      {match.subtitle && (
+                      {match.subtitle && !isTeamBattle && (
                         <div className="flex justify-center">
                           <span className="text-sm font-bold text-amber-700 bg-amber-100 px-3 py-0.5 rounded-full">
                             {match.subtitle}

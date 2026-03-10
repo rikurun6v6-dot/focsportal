@@ -12,27 +12,51 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const emptyCourts = courts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
 
   if (emptyCourts.length === 0) return 0;
-  
+
   const allMatches = await getAllDocuments<Match>('matches');
   const matches = campId ? allMatches.filter(m => m.campId === campId) : allMatches;
   const waitingMatches = matches.filter(m => m.status === 'waiting');
-  
+
   if (waitingMatches.length === 0) return 0;
-  
+
   let dispatchedCount = 0;
   // 同一ループ内で確定した割り当て済み試合IDを記録（Firestore 反映前の二重割り当て防止）
   const assignedMatchIds = new Set<string>();
+  // 団体戦マルチコート: このループで既に確保済みのコートIDを追跡
+  const claimedCourtIds = new Set<string>();
 
   for (const court of emptyCourts) {
+    // 団体戦マルチコートとして既に確保済みのコートはスキップ
+    if (claimedCourtIds.has(court.id)) continue;
+
     const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds);
     if (assigned) {
       dispatchedCount++;
       assignedMatchIds.add(assigned.id);
+      claimedCourtIds.add(court.id);
       const idx = waitingMatches.findIndex(m => m.id === assigned.id);
       if (idx >= 0) waitingMatches.splice(idx, 1);
+
+      // 団体戦: 同一試合を最大3面に同時割り当て（追加2面分）
+      if (assigned.tournament_type === 'team_battle') {
+        let extraCount = 0;
+        for (const extraCourt of emptyCourts) {
+          if (extraCount >= 2) break; // 合計3面まで（最初の1面 + 追加2面）
+          if (claimedCourtIds.has(extraCourt.id)) continue;
+          if (!extraCourt.is_active || extraCourt.manually_freed) continue;
+          try {
+            await updateDocument('courts', extraCourt.id, { current_match_id: assigned.id });
+            claimedCourtIds.add(extraCourt.id);
+            dispatchedCount++;
+            extraCount++;
+          } catch {
+            // 割り当て失敗は無視して次のコートを試みる
+          }
+        }
+      }
     }
   }
-  
+
   return dispatchedCount;
 }
 
@@ -158,6 +182,18 @@ export async function dispatchToEmptyCourt(
       if (rep2?.team_id) busyTeamIds.add(rep2.team_id);
     });
 
+  // 団体戦グループ排他制御: アクティブな団体戦の予選グループを収集
+  // 同一グループに進行中の対戦がある場合、そのグループの他の対戦は待機させる
+  const activeTeamBattleGroupKeys = new Set<string>();
+  // dedupe: 同じ matchId が複数コートに割り当てられていても1回だけカウント
+  const seenActiveMatchIds = new Set<string>();
+  activeMatches
+    .filter(m => m.tournament_type === 'team_battle' && m.group && !seenActiveMatchIds.has(m.id))
+    .forEach(m => {
+      seenActiveMatchIds.add(m.id);
+      activeTeamBattleGroupKeys.add(`${m.campId ?? ''}_${m.division ?? ''}_${m.group}`);
+    });
+
   // ✅ 空き時間の有効活用: このコートに予約がある場合、復帰までの時間を確認
   const AVERAGE_MATCH_DURATION = 20; // 平均試合時間（分）
   const nextReservedMatch = waitingMatches.find(m =>
@@ -183,11 +219,15 @@ export async function dispatchToEmptyCourt(
 
     if (match.tournament_type === 'team_battle') {
       // 団体戦: チームID単位で重複チェック（同一チームが複数コートに同時出場しないようロック）
-      // player5/6 は team_battle では不使用のためスキップ
       const rep1 = allPlayers.find(p => p.id === match.player1_id);
       const rep2 = allPlayers.find(p => p.id === match.player2_id);
       if (rep1?.team_id && busyTeamIds.has(rep1.team_id)) return false;
       if (rep2?.team_id && busyTeamIds.has(rep2.team_id)) return false;
+      // グループ排他制御: 同一グループに進行中の対戦があれば待機
+      if (match.group) {
+        const gKey = `${match.campId ?? ''}_${match.division ?? ''}_${match.group}`;
+        if (activeTeamBattleGroupKeys.has(gKey)) return false;
+      }
     } else {
       // 通常試合: 個人選手ID単位で重複チェック
       if (busyPlayerIds.has(match.player1_id) || busyPlayerIds.has(match.player2_id)) return false;

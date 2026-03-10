@@ -214,7 +214,9 @@ export default function ResultsTab() {
 
     try {
       await updateMatchResult(match.id, score.p1, score.p2, winnerId);
-      await updateDocument('courts', courtId, { current_match_id: null });
+      // 同じ試合IDが割り当てられている全コートを解放（団体戦3面同時対応）
+      const courtsToFree = courts.filter(c => c.current_match_id === match.id);
+      await Promise.all(courtsToFree.map(c => updateDocument('courts', c.id, { current_match_id: null })));
       await recordMatchDuration(match.id);
 
       setScores(prev => {
@@ -693,10 +695,33 @@ export default function ResultsTab() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {courts.map((court) => {
+          {(() => {
+            // 同一matchIdを持つコート数と、プライマリ（最小コート番号）を計算
+            const courtCountByMatch: Record<string, number> = {};
+            const primaryCourtByMatch: Record<string, string> = {};
+            courts.forEach(c => {
+              if (!c.current_match_id) return;
+              courtCountByMatch[c.current_match_id] = (courtCountByMatch[c.current_match_id] || 0) + 1;
+              const existingPrimaryId = primaryCourtByMatch[c.current_match_id];
+              if (!existingPrimaryId) {
+                primaryCourtByMatch[c.current_match_id] = c.id;
+              } else {
+                const existing = courts.find(ct => ct.id === existingPrimaryId);
+                if (existing && c.number < existing.number) {
+                  primaryCourtByMatch[c.current_match_id] = c.id;
+                }
+              }
+            });
+
+            return courts.map((court) => {
             const courtNumber = court.number || court.id.replace('court_', '');
             const isOccupied = !!court.current_match_id;
             const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
+            const matchCourtCount = match ? (courtCountByMatch[match.id] || 1) : 1;
+            const isPrimaryCourtForMatch = match ? primaryCourtByMatch[match.id] === court.id : true;
+            const primaryCourtNumber = (!isPrimaryCourtForMatch && match)
+              ? (courts.find(c => c.id === primaryCourtByMatch[match.id])?.number ?? '?')
+              : null;
 
             return (
               <Card key={court.id} className={`relative ${isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
@@ -710,8 +735,16 @@ export default function ResultsTab() {
                         <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full">
                           {getCategoryLabel(match.tournament_type)}
                         </span>
+                        {/* 団体戦マルチコートバッジ */}
+                        {isTeamBattle(match) && matchCourtCount > 1 && (
+                          <span className="text-[10px] font-bold text-white bg-rose-500 px-1.5 py-0.5 rounded-full">
+                            {matchCourtCount}面同時
+                          </span>
+                        )}
                         <span className="text-[10px] font-medium text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded-full">
-                          {match.subtitle || getRoundLabel(match)}
+                          {isTeamBattle(match)
+                            ? (match.group ? `グループ${match.group}` : '団体')
+                            : (match.subtitle || getRoundLabel(match))}
                         </span>
                         {match.division && (
                           <span className="text-[10px] font-medium text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
@@ -778,8 +811,17 @@ export default function ResultsTab() {
                         </div>
                       )}
 
+                      {/* 団体戦セカンダリコート: スコア入力は別カードに委譲 */}
+                      {isTeamBattle(match) && matchCourtCount > 1 && !isPrimaryCourtForMatch && match.status !== 'completed' && (
+                        <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded text-center">
+                          <p className="text-[10px] text-rose-700 font-medium">
+                            スコア入力は第{primaryCourtNumber}コートのカードから
+                          </p>
+                        </div>
+                      )}
+
                       {/* スコア入力（結果入力ボタンクリック時に表示） */}
-                      {match.status === 'completed' ? (
+                      {(isTeamBattle(match) && matchCourtCount > 1 && !isPrimaryCourtForMatch && match.status !== 'completed') ? null : match.status === 'completed' ? (
                         <div className="bg-green-50 border border-green-200 rounded p-2">
                           <p className="text-center text-green-800 font-bold text-xs mb-1">試合終了</p>
                           <div className="flex justify-center gap-3 text-xl font-bold">
@@ -1062,7 +1104,8 @@ export default function ResultsTab() {
                 </CardContent>
               </Card>
             );
-          })}
+          }); // closes courts.map
+          })()}
         </div>
 
         {/* 次の待機試合一覧 */}
