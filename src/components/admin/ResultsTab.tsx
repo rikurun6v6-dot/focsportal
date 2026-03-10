@@ -111,7 +111,7 @@ export default function ResultsTab() {
           m.player1_id && m.player2_id
         );
         const waitingWithPlayers = await Promise.all(
-          waiting.slice(0, 20).map(m => getMatchWithPlayers(m.id))
+          waiting.slice(0, 50).map(m => getMatchWithPlayers(m.id))
         );
         setWaitingMatches(waitingWithPlayers.filter((m): m is MatchWithPlayers => m !== null));
 
@@ -1050,6 +1050,70 @@ export default function ResultsTab() {
             );
           })}
         </div>
+
+        {/* 次の待機試合一覧 */}
+        {waitingMatches.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              次の待機試合 ({waitingMatches.length}試合)
+            </h3>
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              <div className="divide-y divide-slate-100">
+                {[...waitingMatches]
+                  .sort((a, b) => {
+                    const aBlocked = !!(a.available_at && currentTime < a.available_at.toMillis());
+                    const bBlocked = !!(b.available_at && currentTime < b.available_at.toMillis());
+                    if (aBlocked && !bBlocked) return 1;
+                    if (!aBlocked && bBlocked) return -1;
+                    return (a.match_number || 0) - (b.match_number || 0);
+                  })
+                  .map(match => {
+                    const isBlocked = !!(match.available_at && currentTime < match.available_at.toMillis());
+                    const remainingMinutes = match.available_at
+                      ? Math.max(0, Math.ceil((match.available_at.toMillis() - currentTime) / (1000 * 60)))
+                      : 0;
+                    return (
+                      <div
+                        key={match.id}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-sm ${isBlocked ? 'opacity-50 bg-slate-50' : 'hover:bg-slate-50'}`}
+                      >
+                        <span className="text-xs text-slate-400 w-8 flex-shrink-0 font-mono">
+                          #{match.match_number}
+                        </span>
+                        <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                          {getCategoryLabel(match.tournament_type)}
+                        </span>
+                        <span className="text-[10px] text-slate-500 flex-shrink-0">
+                          {getRoundLabel(match)}
+                        </span>
+                        {match.division && (
+                          <span className="text-[10px] text-purple-600 flex-shrink-0">
+                            {match.division}部
+                          </span>
+                        )}
+                        <span className="flex-1 text-slate-700 text-xs truncate min-w-0">
+                          {[match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ')}
+                          <span className="text-slate-400 mx-1.5">vs</span>
+                          {[match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ')}
+                        </span>
+                        {isBlocked ? (
+                          <span className="text-[10px] text-orange-500 flex-shrink-0 flex items-center gap-0.5">
+                            <Clock className="w-3 h-3" />
+                            あと{remainingMinutes}分
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-green-600 flex-shrink-0 font-medium">
+                            待機中
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
