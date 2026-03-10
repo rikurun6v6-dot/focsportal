@@ -883,19 +883,23 @@ export default function UserDashboard() {
                 ) : (
                     <>
                         {/* ステータス ヒーローカード */}
-                        <div className={`rounded-2xl shadow-md overflow-hidden ${
+                        <div className={`rounded-2xl shadow-lg overflow-hidden relative ${
                             currentMatch?.status === 'calling'
-                                ? 'bg-gradient-to-br from-orange-500 to-red-600'
+                                ? 'bg-gradient-to-br from-orange-500 via-red-500 to-rose-600'
                                 : currentMatch?.status === 'playing'
-                                    ? 'bg-gradient-to-br from-blue-700 to-indigo-800'
+                                    ? 'bg-gradient-to-br from-blue-700 via-indigo-600 to-blue-900'
                                     : restTimeRemaining
-                                        ? 'bg-gradient-to-br from-sky-500 to-blue-700'
-                                        : 'bg-gradient-to-br from-sky-400 to-blue-600'
+                                        ? 'bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700'
+                                        : 'bg-gradient-to-br from-blue-600 via-indigo-500 to-sky-400'
                         }`}>
-                            <div className="px-4 pt-4 pb-3">
+                            {/* 装飾: 右上の光彩サークル */}
+                            <div className="pointer-events-none absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
+                            <div className="pointer-events-none absolute bottom-0 left-0 w-24 h-24 rounded-full bg-black/10 blur-xl" />
+
+                            <div className="relative px-4 pt-4 pb-3">
                                 {/* ヘッダー行 */}
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className="bg-white/20 rounded-full p-1.5">
+                                    <div className="bg-white/20 rounded-full p-1.5 ring-1 ring-white/30">
                                         {currentMatch?.status === 'calling'
                                             ? <AlertTriangle className="w-4 h-4 text-white" />
                                             : restTimeRemaining
@@ -903,38 +907,42 @@ export default function UserDashboard() {
                                                 : <Sparkles className="w-4 h-4 text-white" />
                                         }
                                     </div>
-                                    <span className="text-white text-xs font-semibold tracking-wide">現在のステータス</span>
+                                    <span className="text-white/90 text-xs font-semibold tracking-widest uppercase">現在のステータス</span>
                                 </div>
                                 {/* ステータスタイトル */}
                                 <div className="flex items-center gap-3 mb-2">
+                                    {/* 待機中のみ狐アイコン＋呼吸アニメーション */}
+                                    {!currentMatch && !restTimeRemaining && (
+                                        <span className="text-2xl animate-pulse select-none" style={{ animationDuration: '2.5s' }}>🦊</span>
+                                    )}
                                     <span className="text-white text-2xl font-black tracking-tight drop-shadow-sm">{statusTitle}</span>
-                                    {(currentMatch?.status === 'calling') && (
+                                    {currentMatch?.status === 'calling' && (
                                         <span className="relative flex h-3 w-3">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                                             <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-white text-sm font-semibold leading-snug drop-shadow-sm">{statusMessage}</p>
+                                <p className="text-white/90 text-sm font-semibold leading-snug drop-shadow-sm">{statusMessage}</p>
                             </div>
 
-                            {/* 待ち時間予測 */}
+                            {/* 待ち時間予測 — グラスモフィズム */}
                             {!currentMatch && (myEta || etaLoading) && (
-                                <div className="bg-white/15 backdrop-blur-sm mx-3 mb-3 rounded-xl p-3">
+                                <div className="relative backdrop-blur-md bg-white/10 border border-white/20 mx-3 mb-3 rounded-xl p-3 shadow-inner">
                                     {etaLoading ? (
                                         <p className="text-white/70 text-xs text-center">予測中...</p>
                                     ) : myEta && (
                                         <>
                                             <div className="flex items-center gap-1.5 mb-1">
                                                 <Clock className="w-3.5 h-3.5 text-white/80" />
-                                                <span className="text-white/80 text-xs font-semibold">待ち時間予測</span>
+                                                <span className="text-white/80 text-xs font-semibold tracking-wide">待ち時間予測</span>
                                             </div>
                                             <p className="text-white font-bold text-base">{myEta}</p>
                                             {/* プログレスバー（視覚的装飾） */}
                                             <div className="mt-2 h-1.5 bg-white/20 rounded-full overflow-hidden">
                                                 <div className="h-full bg-white/60 rounded-full w-1/3 animate-pulse" />
                                             </div>
-                                            <p className="text-white/60 text-[10px] mt-1">※ AIによる予測のため前後することがあります</p>
+                                            <p className="text-white/50 text-[10px] mt-1">※ AIによる予測のため前後することがあります</p>
                                         </>
                                     )}
                                 </div>
