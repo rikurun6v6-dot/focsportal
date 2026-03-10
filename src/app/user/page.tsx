@@ -924,17 +924,17 @@ export default function UserDashboard() {
 
                             {/* 待ち時間予測 */}
                             {!currentMatch && (myEta || etaLoading) && (
-                                <div className="bg-white/95 mx-3 mb-3 rounded-xl p-3 shadow-sm">
+                                <div className="bg-blue-950/70 mx-3 mb-3 rounded-xl p-3 border border-white/10">
                                     {etaLoading ? (
                                         <p className="text-slate-500 text-xs text-center">予測中...</p>
                                     ) : myEta && (
                                         <>
                                             <div className="flex items-center gap-1.5 mb-1">
-                                                <Clock className="w-3.5 h-3.5 text-blue-600" />
-                                                <span className="text-blue-800 text-xs font-bold">待ち時間予測</span>
+                                                <Clock className="w-3.5 h-3.5 text-sky-300" />
+                                                <span className="text-sky-200 text-xs font-bold">待ち時間予測</span>
                                             </div>
-                                            <p className="text-blue-900 font-black text-xl leading-tight">{myEta}</p>
-                                            <p className="text-slate-500 text-[10px] mt-1.5">※ AIによる予測のため前後することがあります</p>
+                                            <p className="text-white font-black text-xl leading-tight">{myEta}</p>
+                                            <p className="text-white/50 text-[10px] mt-1.5">※ AIによる予測のため前後することがあります</p>
                                         </>
                                     )}
                                 </div>
