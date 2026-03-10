@@ -746,10 +746,11 @@ export default function UserDashboard() {
                         {/* ホームボタン */}
                         <Link href="/">
                             <button
-                                className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                className="flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
                                 title="ホームに戻る"
                             >
                                 <Home className="w-4 h-4 text-slate-600" />
+                                <span className="text-[9px] text-slate-500 leading-none font-medium">ホーム</span>
                             </button>
                         </Link>
 
@@ -762,7 +763,7 @@ export default function UserDashboard() {
                                     handleNotifToggle();
                                 }
                             }}
-                            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                            className="flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
                             title={
                                 isIOSNotPWA ? 'ホーム画面に追加すると通知が使えます'
                                     : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
@@ -778,13 +779,14 @@ export default function UserDashboard() {
                                         ? <Bell className="w-4 h-4 text-amber-400" />
                                         : <Bell className="w-4 h-4 text-slate-400" />
                             }
+                            <span className="text-[9px] text-slate-500 leading-none font-medium">通知</span>
                         </button>
 
                         {/* チャットボタン */}
                         {isChatEnabled && (
                             <button
                                 onClick={() => setIsChatOpen(true)}
-                                className="relative flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                className="relative flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
                                 title="メッセージを開く"
                             >
                                 <div className="relative">
@@ -796,16 +798,18 @@ export default function UserDashboard() {
                                         </span>
                                     )}
                                 </div>
+                                <span className="text-[9px] text-slate-500 leading-none font-medium">チャット</span>
                             </button>
                         )}
 
                         {/* ログアウト */}
                         <button
                             onClick={handleLogout}
-                            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                            className="flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
                             title="ログアウト"
                         >
                             <LogOut className="w-4 h-4 text-slate-400" />
+                            <span className="text-[9px] text-slate-500 leading-none font-medium">退出</span>
                         </button>
                     </div>
                 </div>
@@ -881,10 +885,12 @@ export default function UserDashboard() {
                         {/* ステータス ヒーローカード */}
                         <div className={`rounded-2xl shadow-md overflow-hidden ${
                             currentMatch?.status === 'calling'
-                                ? 'bg-gradient-to-br from-orange-400 to-rose-500'
-                                : restTimeRemaining
-                                    ? 'bg-gradient-to-br from-blue-400 to-sky-500'
-                                    : 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                                ? 'bg-gradient-to-br from-orange-500 to-red-600'
+                                : currentMatch?.status === 'playing'
+                                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700'
+                                    : restTimeRemaining
+                                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                                        : 'bg-gradient-to-br from-emerald-600 to-teal-700'
                         }`}>
                             <div className="px-4 pt-4 pb-3">
                                 {/* ヘッダー行 */}
@@ -897,11 +903,11 @@ export default function UserDashboard() {
                                                 : <Sparkles className="w-4 h-4 text-white" />
                                         }
                                     </div>
-                                    <span className="text-white/80 text-xs font-semibold tracking-wide">現在のステータス</span>
+                                    <span className="text-white text-xs font-semibold tracking-wide">現在のステータス</span>
                                 </div>
                                 {/* ステータスタイトル */}
                                 <div className="flex items-center gap-3 mb-2">
-                                    <span className="text-white text-2xl font-black tracking-tight">{statusTitle}</span>
+                                    <span className="text-white text-2xl font-black tracking-tight drop-shadow-sm">{statusTitle}</span>
                                     {(currentMatch?.status === 'calling') && (
                                         <span className="relative flex h-3 w-3">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
@@ -909,7 +915,7 @@ export default function UserDashboard() {
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-white/90 text-sm font-medium leading-snug">{statusMessage}</p>
+                                <p className="text-white text-sm font-semibold leading-snug drop-shadow-sm">{statusMessage}</p>
                             </div>
 
                             {/* 待ち時間予測 */}
