@@ -887,10 +887,10 @@ export default function UserDashboard() {
                             currentMatch?.status === 'calling'
                                 ? 'bg-gradient-to-br from-orange-500 to-red-600'
                                 : currentMatch?.status === 'playing'
-                                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700'
+                                    ? 'bg-gradient-to-br from-blue-700 to-indigo-800'
                                     : restTimeRemaining
-                                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                                        : 'bg-gradient-to-br from-emerald-600 to-teal-700'
+                                        ? 'bg-gradient-to-br from-sky-500 to-blue-700'
+                                        : 'bg-gradient-to-br from-sky-400 to-blue-600'
                         }`}>
                             <div className="px-4 pt-4 pb-3">
                                 {/* ヘッダー行 */}
