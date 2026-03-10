@@ -725,35 +725,35 @@ export default function UserDashboard() {
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 relative">
-            <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
-                <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+                <div className="container mx-auto px-3 py-2 flex flex-nowrap items-center justify-between gap-1">
+                    {/* 左: ロゴ + プレイヤー名 */}
+                    <div className="flex items-center gap-1.5 min-w-0 flex-shrink">
                         <Image
                             src="/new-logo_transparent.png"
                             alt="Logo"
-                            width={32}
-                            height={32}
-                            className="object-cover brightness-140 saturate-180"
+                            width={28}
+                            height={28}
+                            className="object-cover brightness-140 saturate-180 flex-shrink-0"
                         />
-                        <div>
-                            <h1 className="text-xs font-bold text-slate-500 leading-none mb-0.5">Foc's Portal</h1>
-                            <p className="text-sm font-bold text-slate-800 leading-none">{myPlayer.name} さん</p>
+                        <div className="min-w-0">
+                            <h1 className="text-[10px] font-bold text-slate-400 leading-none mb-0.5 whitespace-nowrap">Foc's Portal</h1>
+                            <p className="text-xs font-bold text-slate-800 leading-none whitespace-nowrap overflow-hidden text-ellipsis max-w-[110px] sm:max-w-none">{myPlayer.name} さん</p>
                         </div>
-                        {/* ブラウザ通知機能は廃止（アプリ内通知のみ使用） */}
                     </div>
-                    <div className="flex items-center gap-1">
+                    {/* 右: アイコン群（1行固定） */}
+                    <div className="flex flex-nowrap items-center gap-0.5 flex-shrink-0">
                         {/* ホームボタン */}
                         <Link href="/">
                             <button
-                                className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
                                 title="ホームに戻る"
                             >
-                                <Home className="w-5 h-5 text-slate-600" />
-                                <span className="text-[10px] font-medium text-slate-600">ホーム</span>
+                                <Home className="w-4 h-4 text-slate-600" />
                             </button>
                         </Link>
 
-                        {/* 通知許可トグルボタン（全端末で常時表示） */}
+                        {/* 通知トグル */}
                         <button
                             onClick={() => {
                                 if (isIOSNotPWA) {
@@ -762,7 +762,7 @@ export default function UserDashboard() {
                                     handleNotifToggle();
                                 }
                             }}
-                            className="flex flex-col items-center gap-0.5 px-2 py-1 min-h-[44px] justify-center rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
                             title={
                                 isIOSNotPWA ? 'ホーム画面に追加すると通知が使えます'
                                     : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
@@ -771,46 +771,41 @@ export default function UserDashboard() {
                             }
                         >
                             {isIOSNotPWA
-                                ? <BellOff className="w-5 h-5 text-orange-300" />
+                                ? <BellOff className="w-4 h-4 text-orange-300" />
                                 : notifPermission === 'denied'
-                                    ? <BellOff className="w-5 h-5 text-slate-300" />
+                                    ? <BellOff className="w-4 h-4 text-slate-300" />
                                     : notifEnabled
-                                        ? <Bell className="w-5 h-5 text-amber-400" />
-                                        : <Bell className="w-5 h-5 text-slate-400" />
+                                        ? <Bell className="w-4 h-4 text-amber-400" />
+                                        : <Bell className="w-4 h-4 text-slate-400" />
                             }
-                            <span className={`text-[10px] font-medium ${isIOSNotPWA ? 'text-orange-400' : notifEnabled ? 'text-amber-500' : 'text-slate-400'}`}>
-                                {isIOSNotPWA ? '通知設定' : notifPermission === 'denied' ? '通知不可' : notifEnabled ? '通知ON' : '通知OFF'}
-                            </span>
                         </button>
 
                         {/* チャットボタン */}
                         {isChatEnabled && (
                             <button
                                 onClick={() => setIsChatOpen(true)}
-                                className="relative flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                className="relative flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
                                 title="メッセージを開く"
                             >
                                 <div className="relative">
-                                    <MessageCircle className="w-5 h-5 text-sky-500" />
+                                    <MessageCircle className="w-4 h-4 text-sky-500" />
                                     {hasUnreadMessages && (
-                                        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                                        <span className="absolute -top-1 -right-1 flex h-2 w-2">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                                         </span>
                                     )}
                                 </div>
-                                <span className="text-[10px] font-medium text-sky-600">メッセージ</span>
                             </button>
                         )}
 
-                        {/* ログアウトボタン */}
+                        {/* ログアウト */}
                         <button
                             onClick={handleLogout}
-                            className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
                             title="ログアウト"
                         >
-                            <LogOut className="w-5 h-5 text-slate-400" />
-                            <span className="text-[10px] font-medium text-slate-400">ログアウト</span>
+                            <LogOut className="w-4 h-4 text-slate-400" />
                         </button>
                     </div>
                 </div>
@@ -863,7 +858,7 @@ export default function UserDashboard() {
                 </div>
             )}
 
-            <main className="container mx-auto px-4 py-6 max-w-4xl space-y-6">
+            <main className="container mx-auto px-3 py-3 max-w-4xl space-y-3">
 
                 {campStatus === 'archived' ? (
                     <Card className="border-t-4 border-t-slate-400 bg-white shadow-sm">
@@ -883,48 +878,81 @@ export default function UserDashboard() {
                     </Card>
                 ) : (
                     <>
-                        <Card className={`border-l-4 shadow-sm overflow-hidden bg-white border-l-${statusColor}-500`}>
-                            <CardHeader className={`bg-${statusColor}-50/50 pb-3`}>
-                                <CardTitle className={`text-base md:text-lg flex items-center gap-2 text-${statusColor}-800`}>
-                                    {currentMatch?.status === 'calling' ? <AlertTriangle className="w-5 h-5" /> : restTimeRemaining ? <Clock className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-                                    現在のステータス
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="pt-4 md:pt-6 pb-5 text-center space-y-3 min-h-[140px] md:min-h-[160px]">
-                                <div className={`inline-block px-3 md:px-4 py-1.5 md:py-2 bg-${statusColor}-100 text-${statusColor}-700 rounded-full font-bold text-base md:text-lg`}>
-                                    {statusTitle}
+                        {/* ステータス ヒーローカード */}
+                        <div className={`rounded-2xl shadow-md overflow-hidden ${
+                            currentMatch?.status === 'calling'
+                                ? 'bg-gradient-to-br from-orange-400 to-rose-500'
+                                : restTimeRemaining
+                                    ? 'bg-gradient-to-br from-blue-400 to-sky-500'
+                                    : 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                        }`}>
+                            <div className="px-4 pt-4 pb-3">
+                                {/* ヘッダー行 */}
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className="bg-white/20 rounded-full p-1.5">
+                                        {currentMatch?.status === 'calling'
+                                            ? <AlertTriangle className="w-4 h-4 text-white" />
+                                            : restTimeRemaining
+                                                ? <Clock className="w-4 h-4 text-white" />
+                                                : <Sparkles className="w-4 h-4 text-white" />
+                                        }
+                                    </div>
+                                    <span className="text-white/80 text-xs font-semibold tracking-wide">現在のステータス</span>
                                 </div>
-                                <p className="text-slate-600 text-xs md:text-sm font-medium px-2 leading-relaxed">
-                                    {statusMessage}
-                                </p>
-                                {/* 待ち時間予測 */}
-                                {!currentMatch && myEta && (
-                                    <div className="mt-3 p-3 md:p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                        <div className="flex items-center justify-center gap-2 mb-1">
-                                            <Clock className="w-4 h-4 text-blue-600" />
-                                            <span className="text-sm font-bold text-blue-800">待ち時間予測</span>
-                                        </div>
-                                        <p className="text-blue-700 font-medium text-sm md:text-base">{myEta}</p>
-                                        <p className="text-xs text-blue-600 mt-1">※ AIによる予測のため、前後することがあります</p>
-                                    </div>
-                                )}
-                                {!currentMatch && etaLoading && (
-                                    <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                                        <p className="text-sm text-slate-500">予測中...</p>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                {/* ステータスタイトル */}
+                                <div className="flex items-center gap-3 mb-2">
+                                    <span className="text-white text-2xl font-black tracking-tight">{statusTitle}</span>
+                                    {(currentMatch?.status === 'calling') && (
+                                        <span className="relative flex h-3 w-3">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-white/90 text-sm font-medium leading-snug">{statusMessage}</p>
+                            </div>
+
+                            {/* 待ち時間予測 */}
+                            {!currentMatch && (myEta || etaLoading) && (
+                                <div className="bg-white/15 backdrop-blur-sm mx-3 mb-3 rounded-xl p-3">
+                                    {etaLoading ? (
+                                        <p className="text-white/70 text-xs text-center">予測中...</p>
+                                    ) : myEta && (
+                                        <>
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <Clock className="w-3.5 h-3.5 text-white/80" />
+                                                <span className="text-white/80 text-xs font-semibold">待ち時間予測</span>
+                                            </div>
+                                            <p className="text-white font-bold text-base">{myEta}</p>
+                                            {/* プログレスバー（視覚的装飾） */}
+                                            <div className="mt-2 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                                                <div className="h-full bg-white/60 rounded-full w-1/3 animate-pulse" />
+                                            </div>
+                                            <p className="text-white/60 text-[10px] mt-1">※ AIによる予測のため前後することがあります</p>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         <Tabs defaultValue="courts" className="w-full">
-                            <TabsList className="w-full grid grid-cols-3 bg-white border border-slate-200">
-                                <TabsTrigger value="courts" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
+                            <TabsList className="w-full grid grid-cols-3 bg-slate-200/80 rounded-xl p-1 gap-0.5 h-auto">
+                                <TabsTrigger
+                                    value="courts"
+                                    className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                                >
                                     コート状況
                                 </TabsTrigger>
-                                <TabsTrigger value="my-matches" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
+                                <TabsTrigger
+                                    value="my-matches"
+                                    className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                                >
                                     自分の試合
                                 </TabsTrigger>
-                                <TabsTrigger value="bracket" className="data-[state=active]:bg-sky-100 data-[state=active]:text-sky-700">
+                                <TabsTrigger
+                                    value="bracket"
+                                    className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                                >
                                     トーナメント表
                                 </TabsTrigger>
                             </TabsList>
