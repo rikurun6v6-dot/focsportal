@@ -130,17 +130,6 @@ export async function calculateCourtUtilization(campId: string): Promise<CourtUt
     const matches = campId ? allMatches.filter(m => m.campId === campId) : allMatches;
     const waitingMatches = matches.filter(m => m.status === 'waiting');
 
-    // 稼働率低下の判定: 空きコートが2面以上 かつ 待機試合が0の場合のみ警告
-    // それ以外は通常運転として扱う（誤検知を防ぐ）
-    let adjustedUtilizationRate = utilizationRate;
-    if (idleCourts >= 2 && waitingMatches.length === 0) {
-      // 稼働率低下として明確に判定
-      adjustedUtilizationRate = utilizationRate;
-    } else if (idleCourts > 0 && waitingMatches.length > 0) {
-      // 空きコートがあるが待機試合もある場合は、通常運転として扱う
-      // （Auto-Dispatchが動作中の可能性があるため）
-      adjustedUtilizationRate = Math.max(utilizationRate, 60); // 最低60%として扱う
-    }
 
     // アイドル時間予測（空きコート数 × 平均試合時間）
     const estimatedIdleTime = idleCourts > 0 && waitingMatches.length === 0 ? idleCourts * 15 : 0;
@@ -148,7 +137,7 @@ export async function calculateCourtUtilization(campId: string): Promise<CourtUt
     return {
       totalCourts,
       activeCourts,
-      utilizationRate: adjustedUtilizationRate,
+      utilizationRate,
       maleCourtRate,
       femaleCourtRate,
       estimatedIdleTime
