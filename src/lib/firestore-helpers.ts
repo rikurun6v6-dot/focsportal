@@ -1139,6 +1139,16 @@ export const unarchiveCamp = async (campId: string) => {
   }
 };
 
+export const updateCamp = async (campId: string, title: string, courtCount: number) => {
+  try {
+    await updateDocument('camps', campId, { title, court_count: courtCount });
+    return true;
+  } catch (error) {
+    console.error('Error updating camp:', error);
+    return false;
+  }
+};
+
 export const deleteCamp = async (campId: string) => {
   try {
     const campRef = doc(db, 'camps', campId);

@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData } from "@/lib/firestore-helpers";
+import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData, updateCamp } from "@/lib/firestore-helpers";
 import { auth } from "@/lib/firebase";
 import { useCamp } from "@/context/CampContext";
 import type { Camp } from "@/types";
-import { Plus, Play, Settings, CheckCircle, Calendar, ArrowRight, Archive, ArchiveRestore, Trash2, AlertTriangle, Lock, Unlock } from "lucide-react";
+import { Plus, Play, Settings, CheckCircle, Calendar, ArrowRight, Archive, ArchiveRestore, Trash2, AlertTriangle, Lock, Unlock, Pencil, Check, X } from "lucide-react";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { toastSuccess, toastError } from "@/lib/toast";
 
@@ -31,6 +31,38 @@ export default function CampManager() {
     const [passwordInput, setPasswordInput] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+    // インライン編集
+    const [editingCampId, setEditingCampId] = useState<string | null>(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editCourtCount, setEditCourtCount] = useState(6);
+
+    const handleStartEdit = (camp: Camp) => {
+        setEditingCampId(camp.id);
+        setEditTitle(camp.title);
+        setEditCourtCount(camp.court_count);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingCampId(null);
+    };
+
+    const handleSaveEdit = async (camp: Camp) => {
+        if (!editTitle.trim()) return;
+        setLoading(true);
+        const ok = await updateCamp(camp.id, editTitle.trim(), editCourtCount);
+        if (ok) {
+            // コート数が変わった場合はコートも更新（activeな合宿のみ）
+            if (camp.status === 'active' && editCourtCount !== camp.court_count) {
+                await setupCampCourts(editCourtCount, camp.id);
+            }
+            toastSuccess('合宿情報を更新しました');
+            setEditingCampId(null);
+        } else {
+            toastError('更新に失敗しました');
+        }
+        setLoading(false);
+    };
 
     const requireUnlock = (action: () => void) => {
         if (isUnlocked) {
@@ -363,20 +395,66 @@ export default function CampManager() {
                                     <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
 
                                         {/* 情報部分 */}
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="text-lg font-bold text-slate-900">{camp.title}</h3>
-                                                {camp.status === 'active' ? (
-                                                    <Badge className="bg-emerald-500 hover:bg-emerald-600">開催中</Badge>
-                                                ) : camp.status === 'archived' ? (
-                                                    <Badge variant="outline" className="text-amber-600 border-amber-300">アーカイブ済み</Badge>
-                                                ) : (
-                                                    <Badge variant="outline" className="text-slate-500">準備中</Badge>
-                                                )}
-                                            </div>
-                                            <p className="text-sm text-slate-500">
-                                                コート数: {camp.court_count}面 | ID: {camp.id.slice(0, 8)}...
-                                            </p>
+                                        <div className="space-y-1 flex-1">
+                                            {editingCampId === camp.id ? (
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                        <Input
+                                                            value={editTitle}
+                                                            onChange={(e) => setEditTitle(e.target.value)}
+                                                            placeholder="合宿名..."
+                                                            className="w-48"
+                                                            autoFocus
+                                                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(camp); if (e.key === 'Escape') handleCancelEdit(); }}
+                                                        />
+                                                        <div className="flex items-center gap-1">
+                                                            <label className="text-xs text-slate-500 whitespace-nowrap">コート数</label>
+                                                            <Input
+                                                                type="number"
+                                                                value={editCourtCount}
+                                                                onChange={(e) => setEditCourtCount(Number(e.target.value))}
+                                                                min={1}
+                                                                max={20}
+                                                                className="w-16"
+                                                            />
+                                                        </div>
+                                                        <Button size="sm" onClick={() => handleSaveEdit(camp)} disabled={loading || !editTitle.trim()} className="bg-emerald-500 hover:bg-emerald-600 text-white">
+                                                            <Check className="w-4 h-4" />
+                                                        </Button>
+                                                        <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                                                            <X className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
+                                                    {camp.status === 'active' && editCourtCount !== camp.court_count && (
+                                                        <p className="text-xs text-amber-600">コート数変更→開催中のため即時反映されます</p>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-lg font-bold text-slate-900">{camp.title}</h3>
+                                                        {camp.status === 'active' ? (
+                                                            <Badge className="bg-emerald-500 hover:bg-emerald-600">開催中</Badge>
+                                                        ) : camp.status === 'archived' ? (
+                                                            <Badge variant="outline" className="text-amber-600 border-amber-300">アーカイブ済み</Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className="text-slate-500">準備中</Badge>
+                                                        )}
+                                                        {camp.status !== 'archived' && (
+                                                            <button
+                                                                onClick={() => requireUnlock(() => handleStartEdit(camp))}
+                                                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                                                title="名前・コート数を編集"
+                                                            >
+                                                                {isUnlocked ? <Pencil className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-slate-500">
+                                                        コート数: {camp.court_count}面 | ID: {camp.id.slice(0, 8)}...
+                                                    </p>
+                                                </>
+                                            )}
                                         </div>
 
                                         {/* ボタン部分 */}
