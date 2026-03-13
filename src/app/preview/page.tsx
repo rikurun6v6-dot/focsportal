@@ -234,32 +234,52 @@ function PreviewContent() {
         </div>
       </div>
 
-      {/* ── Fox Progress Bar ── */}
+      {/* ── Progress Bar ── */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 relative bg-gray-100" style={{ height: 36, zIndex: 50 }}>
-          {/* Sky-blue fill trail behind the fox */}
+        <div className="flex-shrink-0 relative bg-slate-900" style={{ height: 36, zIndex: 50 }}>
+          {/* Glow backdrop */}
           <div
-            key={`fill-${page}`}
-            className="absolute bottom-0 left-0 rounded-r-full bg-sky-400"
+            key={`glow-${page}`}
+            className="absolute bottom-0 left-0"
             style={{
               height: 6,
               width: '0%',
+              background: 'linear-gradient(90deg, #6366f1, #06b6d4)',
+              filter: 'blur(6px)',
+              opacity: 0.6,
               animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
               animationPlayState: isHovered ? 'paused' : 'running',
             }}
           />
-          {/* Fox emoji runner */}
+          {/* Gradient fill */}
           <div
-            key={`fox-${page}`}
-            className="absolute text-xl leading-none select-none pointer-events-none"
+            key={`fill-${page}`}
+            className="absolute bottom-0 left-0 rounded-r-full"
             style={{
+              height: 4,
+              width: '0%',
+              background: 'linear-gradient(90deg, #6366f1, #a855f7, #06b6d4)',
+              animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
+              animationPlayState: isHovered ? 'paused' : 'running',
+            }}
+          />
+          {/* Glowing marker at leading edge */}
+          <div
+            key={`marker-${page}`}
+            className="absolute select-none pointer-events-none"
+            style={{
+              bottom: 0,
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              background: '#67e8f9',
+              boxShadow: '0 0 8px 3px #67e8f9, 0 0 18px 6px #a855f7',
+              transform: 'translateY(4px)',
               animation: isHovered
                 ? `foxRun ${PAGE_INTERVAL_MS}ms linear forwards paused, foxIdle 0.5s ease-in-out infinite`
                 : `foxRun ${PAGE_INTERVAL_MS}ms linear forwards`,
             }}
-          >
-            🦊
-          </div>
+          />
         </div>
       )}
 
