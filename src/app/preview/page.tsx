@@ -181,17 +181,10 @@ function PreviewContent() {
           to   { width: 100%; }
         }
         @keyframes foxRun {
-          0%   { left: 2px;                  bottom: 6px; }
-          86%  {                              bottom: 6px; }
-          91%  {                              bottom: 22px; }
-          95%  {                              bottom: 4px; }
-          98%  {                              bottom: 11px; }
-          100% { left: calc(100% - 30px);    bottom: 6px; }
+          0%   { left: 2px;               bottom: 6px; }
+          100% { left: calc(100% - 30px); bottom: 6px; }
         }
-        @keyframes foxIdle {
-          0%, 100% { transform: translateY(0px); }
-          50%       { transform: translateY(-3px); }
-        }
+
       `}</style>
 
       {/* ── Header ── */}
@@ -236,7 +229,7 @@ function PreviewContent() {
 
       {/* ── Progress Bar ── */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 relative bg-slate-900" style={{ height: 36, zIndex: 50 }}>
+        <div className="flex-shrink-0 relative bg-slate-100" style={{ height: 36, zIndex: 50 }}>
           {/* Glow backdrop */}
           <div
             key={`glow-${page}`}
@@ -248,7 +241,6 @@ function PreviewContent() {
               filter: 'blur(6px)',
               opacity: 0.6,
               animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
-              animationPlayState: isHovered ? 'paused' : 'running',
             }}
           />
           {/* Gradient fill */}
@@ -260,7 +252,6 @@ function PreviewContent() {
               width: '0%',
               background: 'linear-gradient(90deg, #6366f1, #a855f7, #06b6d4)',
               animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
-              animationPlayState: isHovered ? 'paused' : 'running',
             }}
           />
           {/* Glowing marker at leading edge */}
@@ -275,9 +266,7 @@ function PreviewContent() {
               background: '#67e8f9',
               boxShadow: '0 0 8px 3px #67e8f9, 0 0 18px 6px #a855f7',
               transform: 'translateY(4px)',
-              animation: isHovered
-                ? `foxRun ${PAGE_INTERVAL_MS}ms linear forwards paused, foxIdle 0.5s ease-in-out infinite`
-                : `foxRun ${PAGE_INTERVAL_MS}ms linear forwards`,
+              animation: `foxRun ${PAGE_INTERVAL_MS}ms linear forwards`,
             }}
           />
         </div>
