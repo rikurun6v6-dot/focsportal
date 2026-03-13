@@ -22,6 +22,7 @@ import TournamentTypeControl from "@/components/admin/TournamentTypeControl";
 import VisualBracket from "@/components/admin/VisualBracket";
 import PairSeedManager from "@/components/admin/PairSeedManager";
 import GroupRankingManager from "@/components/admin/GroupRankingManager";
+import VisualSeedingEditor from "@/components/admin/VisualSeedingEditor";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
@@ -632,8 +633,8 @@ export default function AdminDashboard() {
       <div className="min-h-screen bg-slate-50 text-slate-900 flex">
         {autoDispatchEnabled && <AutoDispatchEngine />}
 
-        {/* サイドバー */}
-        <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-slate-200 shadow-sm transition-all duration-300 z-50 flex flex-col ${isExpanded ? 'w-64' : 'w-16'}`}>
+        {/* サイドバー: モバイルはw-16、iPad(md+)は常にw-52でラベル表示、展開時はw-64 */}
+        <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-slate-200 shadow-sm transition-all duration-300 z-50 flex flex-col ${isExpanded ? 'w-64' : 'w-16 md:w-52'}`}>
           <div className="p-3 border-b border-slate-200 flex items-center justify-center relative">
             <Image
               src="/new-logo_transparent.png"
@@ -687,17 +688,16 @@ export default function AdminDashboard() {
                 <button
                   key={item.value}
                   onClick={() => setActiveTab(item.value)}
-                  className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
+                  className={`w-full px-3 py-4 flex items-center gap-3 transition-all ${isActive
                     ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
                     : 'text-slate-600 hover:bg-slate-50'
                     }`}
                 >
                   <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
-                  {isExpanded && (
-                    <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0'}`}>
-                      {item.label}
-                    </span>
-                  )}
+                  {/* モバイル: isExpanded時のみ表示。iPad(md+): 常に表示 */}
+                  <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'hidden md:block md:opacity-100'}`}>
+                    {item.label}
+                  </span>
                 </button>
               );
             })}
@@ -707,21 +707,19 @@ export default function AdminDashboard() {
           <div className="border-t border-slate-200 p-2 shrink-0">
             <button
               onClick={handleOpenGuide}
-              className="w-full px-3 py-3 flex items-center gap-3 transition-all text-sky-500 hover:bg-sky-50 rounded-lg"
+              className="w-full px-3 py-4 flex items-center gap-3 transition-all text-sky-500 hover:bg-sky-50 rounded-lg"
               title="使い方ガイドを表示"
             >
               <HelpCircle className="w-5 h-5 shrink-0" />
-              {isExpanded && (
-                <span className="text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 opacity-100">
-                  ヘルプ
-                </span>
-              )}
+              <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'hidden md:block md:opacity-100'}`}>
+                ヘルプ
+              </span>
             </button>
           </div>
         </aside>
 
-        {/* メインコンテンツ */}
-        <div className={`flex-1 flex flex-col transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-16'}`}>
+        {/* メインコンテンツ: iPad(md+)は常にml-52 */}
+        <div className={`flex-1 flex flex-col transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-16 md:ml-52'}`}>
           <header className="bg-white border-b border-slate-200 sticky top-0 z-[100] shadow-sm">
             <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1142,6 +1140,7 @@ export default function AdminDashboard() {
               </TabsContent>
 
               <TabsContent value="pairseed" className="space-y-6">
+                <VisualSeedingEditor readOnly={isArchived} />
                 <PairSeedManager readOnly={isArchived} />
               </TabsContent>
 

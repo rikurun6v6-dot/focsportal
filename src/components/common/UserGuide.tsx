@@ -252,7 +252,7 @@ function buildAdminSections(): Section[] {
       id: 'pairing',
       title: 'ペア・シード設定',
       icon: '🎯',
-      keywords: ['ペア', 'シード', 'ダブルス', 'ミックス', 'ランダム', '手動', '配置', 'スワップ', '入れ替え'],
+      keywords: ['ペア', 'シード', 'ダブルス', 'ミックス', 'ランダム', '手動', '配置', 'スワップ', '入れ替え', 'ビジュアル', 'ドラッグ', 'シャッフル', 'ブラケット配置'],
       content: (
         <div className="space-y-5">
           <div>
@@ -279,6 +279,30 @@ function buildAdminSections(): Section[] {
               第3・4シードも準決勝まで当たらない位置に入ります。
               シード未設定のペアはランダム配置です。
             </p>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">ビジュアル配置エディタ（ドラッグ＆ドロップ）</h4>
+            <p className="text-sm text-slate-600 mb-3">
+              「ペア・シード」タブ上部に表示される<strong>ビジュアル配置エディタ</strong>を使うと、
+              ブラケットの初戦スロットを視覚的に編集できます。
+            </p>
+            <div className="space-y-2">
+              {[
+                ['左ペイン（未配置プール）', 'まだブラケットに入っていない選手・ペアの一覧です。ここからスロットへドラッグして配置できます。'],
+                ['右ペイン（ブラケット）', '初戦の対戦スロットが並びます。スロット間のドラッグでそのまま入れ替えができます。'],
+                ['マウス操作', 'ドラッグ＆ドロップで選手をスロットへ配置・スワップ。スロットをプール側へドロップすると配置解除。'],
+                ['iPad / タッチ操作', 'タップして選択（青枠）→もう一方をタップで入れ替え。プール側をタップすると配置解除。'],
+                ['シャッフルボタン', '全スロットをランダムに並び替えます。確認ダイアログなしで即時実行されます。'],
+                ['BYEスロット', '不戦勝スロットはA側のみ編集可能です。B側は「不戦勝で次ラウンドへ進出」と表示されます。'],
+                ['保存', '「変更を保存」ボタンを押すまでFirestoreには書き込まれません。保存後にBYE伝搬が自動実行されます。'],
+              ].map(([label, desc]) => (
+                <div key={String(label)} className="p-3 rounded-lg border border-slate-200 text-sm">
+                  <span className="font-semibold text-sky-700">{label}：</span>
+                  <span className="text-slate-600 ml-1">{desc}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -341,7 +365,7 @@ function buildAdminSections(): Section[] {
       id: 'groupranking',
       title: '予選順位・グループランキング',
       icon: '📊',
-      keywords: ['予選', 'グループ', 'ランキング', '順位', '勝点', '同点', '手動', '決定', '本戦'],
+      keywords: ['予選', 'グループ', 'ランキング', '順位', '勝利数', '失点率', '同点', '手動', '決定', '本戦', 'スーパーシード', '直接対決'],
       content: (
         <div className="space-y-5">
           <p className="text-sm text-slate-600">
@@ -351,12 +375,29 @@ function buildAdminSections(): Section[] {
 
           <div>
             <h4 className="font-semibold text-slate-800 mb-2">自動計算ロジック</h4>
+            <p className="text-sm text-slate-600 mb-2">予選リーグ（シングルス・ダブルス）の優先順位：</p>
             <ol className="space-y-1.5 text-sm text-slate-700 list-decimal list-inside">
-              <li>勝点（勝利: 2点、引き分け: 1点、敗北: 0点）</li>
-              <li>得失点差（得点 − 失点）</li>
-              <li>直接対決の結果</li>
+              <li>勝利数（多い方が上位）</li>
+              <li>直接対決の結果（当該ペア間の勝敗）</li>
+              <li>失点率＝総失点 ÷（総得点＋総失点）（低い方が上位）</li>
               <li>上記で決まらない場合は手動介入が必要</li>
             </ol>
+            <p className="text-sm text-slate-600 mt-3 mb-2">団体戦の優先順位：</p>
+            <ol className="space-y-1.5 text-sm text-slate-700 list-decimal list-inside">
+              <li>勝利数</li>
+              <li>直接対決の結果</li>
+              <li>ゲーム得失差（勝ちゲーム数 − 負けゲーム数）</li>
+              <li>上記で決まらない場合はじゃんけん扱い（手動介入）</li>
+            </ol>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">スーパーシード（3グループ以上）</h4>
+            <p className="text-sm text-slate-600">
+              グループが3つ以上ある大会では、各グループの1位を上記ロジックで比較し、
+              最も成績の良い選手・ペアが<strong>スーパーシード（👑）</strong>として選ばれます。
+              本戦進出確定時、スーパーシードは最もBYEを得やすい位置（先頭スロット）に配置されます。
+            </p>
           </div>
 
           <div>

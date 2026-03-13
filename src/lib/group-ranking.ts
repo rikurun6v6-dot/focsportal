@@ -9,6 +9,8 @@ export interface GroupStanding {
   losses: number;
   gameDiff: number; // 得失ゲーム差
   pointDiff: number; // 得失点差
+  totalPointsFor: number;    // 総得点
+  totalPointsAgainst: number; // 総失点
   rank?: number; // 確定順位（手動設定可能）
 }
 
@@ -43,6 +45,8 @@ export function calculateGroupStandings(
         losses: 0,
         gameDiff: 0,
         pointDiff: 0,
+        totalPointsFor: 0,
+        totalPointsAgainst: 0,
       });
     }
 
@@ -63,6 +67,8 @@ export function calculateGroupStandings(
         losses: 0,
         gameDiff: 0,
         pointDiff: 0,
+        totalPointsFor: 0,
+        totalPointsAgainst: 0,
       });
     }
 
@@ -82,9 +88,13 @@ export function calculateGroupStandings(
     if (!match.is_walkover) {
       p1Standing.gameDiff += match.score_p1 - match.score_p2;
       p1Standing.pointDiff += match.score_p1 - match.score_p2;
+      p1Standing.totalPointsFor += match.score_p1;
+      p1Standing.totalPointsAgainst += match.score_p2;
 
       p2Standing.gameDiff += match.score_p2 - match.score_p1;
       p2Standing.pointDiff += match.score_p2 - match.score_p1;
+      p2Standing.totalPointsFor += match.score_p2;
+      p2Standing.totalPointsAgainst += match.score_p1;
     }
   });
 
@@ -130,10 +140,50 @@ function getHeadToHeadWinner(
 }
 
 /**
+ * 失点率を計算: 総失点 / (総得点 + 総失点)、低い方が上位
+ */
+export function getLossRatio(standing: GroupStanding): number {
+  const total = standing.totalPointsFor + standing.totalPointsAgainst;
+  return total > 0 ? standing.totalPointsAgainst / total : 0;
+}
+
+/**
+ * 2チームを比較するコンパレータ（手動順位なし）
+ * 優先順位: 勝利数 > 直接対決 > 失点率
+ */
+export function compareStandings(
+  a: GroupStanding,
+  b: GroupStanding,
+  groupMatches?: Match[]
+): number {
+  // 1. 勝利数（降順）
+  if (b.wins !== a.wins) return b.wins - a.wins;
+
+  // 2. 直接対決
+  if (groupMatches) {
+    const h2hWinner = getHeadToHeadWinner(a, b, groupMatches);
+    if (h2hWinner === a) return -1;
+    if (h2hWinner === b) return 1;
+  }
+
+  // 3. 失点率（昇順 = 低い方が上位）
+  const aRatio = getLossRatio(a);
+  const bRatio = getLossRatio(b);
+  if (Math.abs(bRatio - aRatio) > 0.00001) return aRatio - bRatio;
+
+  return 0;
+}
+
+/**
  * 順位決定ロジック
- * 優先順位: 勝敗数 > 直接対決 > 得失ゲーム差 > 得失点差
+ * 優先順位: 勝利数 > 失点率 > 直接対決 > 得失ゲーム差 > 得失点差
+ * 手動順位が設定されている場合はそれを最優先
  */
 export function rankStandings(standings: GroupStanding[], matches?: Match[], group?: string): GroupStanding[] {
+  const groupMatches = matches && group
+    ? matches.filter(m => m.group === group && m.status === 'completed')
+    : undefined;
+
   const sorted = [...standings].sort((a, b) => {
     // 手動で順位が設定されている場合はそれを優先
     if (a.rank !== undefined && b.rank !== undefined) {
@@ -142,24 +192,7 @@ export function rankStandings(standings: GroupStanding[], matches?: Match[], gro
     if (a.rank !== undefined) return -1;
     if (b.rank !== undefined) return 1;
 
-    // 1. 勝敗数
-    if (b.wins !== a.wins) return b.wins - a.wins;
-
-    // 2. 直接対決（Head-to-Head）- 勝敗数が同じ場合のみ
-    if (b.wins === a.wins && matches && group) {
-      const groupMatches = matches.filter(m => m.group === group && m.status === 'completed');
-      const h2hWinner = getHeadToHeadWinner(a, b, groupMatches);
-
-      if (h2hWinner === a) return -1; // aが直接対決で勝っている
-      if (h2hWinner === b) return 1;  // bが直接対決で勝っている
-      // 直接対決がない、または引き分けの場合は次の基準へ
-    }
-
-    // 3. 得失ゲーム差
-    if (b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
-
-    // 4. 得失点差
-    return b.pointDiff - a.pointDiff;
+    return compareStandings(a, b, groupMatches);
   });
 
   // 自動で順位を付与（手動設定がない場合のみ）
@@ -184,9 +217,9 @@ export function needsManualIntervention(standings: GroupStanding[]): boolean {
   const first = ranked[0];
   const second = ranked[1];
 
+  // 勝利数・失点率がともに同じ場合は手動介入が必要
   return (
     first.wins === second.wins &&
-    first.gameDiff === second.gameDiff &&
-    first.pointDiff === second.pointDiff
+    Math.abs(getLossRatio(first) - getLossRatio(second)) < 0.00001
   );
 }
