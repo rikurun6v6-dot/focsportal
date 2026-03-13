@@ -987,6 +987,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="2">2グループ</SelectItem>
+                      <SelectItem value="3">3グループ</SelectItem>
                       <SelectItem value="4">4グループ</SelectItem>
                       <SelectItem value="8">8グループ</SelectItem>
                     </SelectContent>
