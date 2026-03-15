@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Bell, Play, X } from "lucide-react";
+import { Bell, Play, X, CheckCircle2 } from "lucide-react";
 
 export interface MatchAnnouncement {
   id: string;
@@ -9,10 +9,12 @@ export interface MatchAnnouncement {
   player1Name: string;
   player2Name: string;
   roundName: string;
-  status: 'calling' | 'playing';
+  status: 'calling' | 'playing' | 'info';
   timestamp: number;
   tournamentType?: string;
   division?: number;
+  phase?: string;
+  message?: string;
 }
 
 interface NotificationBarProps {
@@ -21,7 +23,7 @@ interface NotificationBarProps {
   sidebarExpanded?: boolean;
 }
 
-function getTournamentLabel(type: string, division: number): string {
+export function getTournamentLabel(type: string, division: number): string {
   const gender = type.includes('mens') && !type.includes('wo')
     ? '男子'
     : type.includes('womens')
@@ -78,6 +80,15 @@ export default function NotificationBar({
           processedIdsRef.current.delete(item.id);
         }, 10400);
         timersRef.current[item.id] = [mountTimer, hideTimer, dismissTimer];
+      } else if (item.status === 'info') {
+        const hideTimer = setTimeout(() => {
+          setVisible((prev) => ({ ...prev, [item.id]: false }));
+        }, 30000);
+        const dismissTimer = setTimeout(() => {
+          onDismiss(item.id);
+          processedIdsRef.current.delete(item.id);
+        }, 30400);
+        timersRef.current[item.id] = [mountTimer, hideTimer, dismissTimer];
       } else {
         timersRef.current[item.id] = [mountTimer];
       }
@@ -129,6 +140,7 @@ export default function NotificationBar({
               </div>
             ) : (
               announcements.map((announcement) => {
+                const isInfo = announcement.status === 'info';
                 const isCalling = announcement.status === 'calling';
                 const isVis = visible[announcement.id];
                 const isFresh = freshIds.has(announcement.id);
@@ -138,6 +150,38 @@ export default function NotificationBar({
                       announcement.division ?? 0
                     )
                   : '';
+                // フェーズに応じたラウンド表示
+                const phaseLabel = announcement.phase === 'preliminary'
+                  ? '予選ブロック'
+                  : announcement.roundName;
+
+                if (isInfo) {
+                  return (
+                    <div
+                      key={announcement.id}
+                      style={{
+                        transform: isVis ? 'translateX(0) scale(1)' : 'translateX(-20px) scale(0.95)',
+                        opacity: isVis ? 1 : 0,
+                        transition:
+                          'transform 0.38s cubic-bezier(0.34,1.56,0.64,1), opacity 0.32s ease',
+                      }}
+                      className="relative flex items-center gap-2 flex-shrink-0 w-96 h-full rounded-xl border border-blue-300 shadow-md shadow-blue-100 bg-blue-50 px-3 py-2 overflow-hidden"
+                    >
+                      <div className="absolute inset-0 rounded-xl bg-blue-200 opacity-10 pointer-events-none" />
+                      <CheckCircle2 className="relative w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <span className="relative text-xs text-slate-700 leading-tight">
+                        {announcement.message}
+                      </span>
+                      <button
+                        onClick={() => handleDismiss(announcement.id)}
+                        className="relative ml-auto text-slate-300 hover:text-slate-500 transition-colors flex-shrink-0"
+                        aria-label="閉じる"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                }
 
                 return (
                   <div
@@ -222,7 +266,7 @@ export default function NotificationBar({
                         {announcement.player2Name}
                       </span>
                       <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1">
-                        {announcement.roundName}
+                        {phaseLabel}
                       </span>
                     </div>
                   </div>

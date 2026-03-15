@@ -37,7 +37,7 @@ import { toastSuccess, toastError, toastInfo } from "@/lib/toast";
 import StatusBar from "@/components/admin/StatusBar";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import UserGuide from "@/components/common/UserGuide";
-import NotificationBar, { MatchAnnouncement } from "@/components/NotificationBar";
+import NotificationBar, { MatchAnnouncement, getTournamentLabel } from "@/components/NotificationBar";
 import OperationalAdvisor from "@/components/admin/OperationalAdvisor";
 import { getRoundName } from "@/lib/formatters";
 import { subscribeToCollection, getPlayerById } from "@/lib/firestore-helpers";
@@ -68,6 +68,7 @@ export default function AdminDashboard() {
   const [customPauseLabel, setCustomPauseLabel] = useState<string>('');
   const [remainingPauseSeconds, setRemainingPauseSeconds] = useState<number>(0);
   const prevMatchStatusesRef = useRef<Map<string, string>>(new Map());
+  const completedPrelimDivisionsRef = useRef<Set<string>>(new Set());
 
   // 初回表示ロジック: localStorage でガイド表示フラグをチェック
   useEffect(() => {
@@ -259,17 +260,20 @@ export default function AdminDashboard() {
               const player1Name = p3 ? `${p1.name} / ${p3.name}` : p1.name;
               const player2Name = p4 ? `${p2.name} / ${p4.name}` : p2.name;
 
-              // totalRoundsを計算（同じ種目・部門の試合から）
-              const allSameTypeMatches = matches.filter(m =>
-                m.tournament_type === match.tournament_type &&
-                m.division === match.division
-              );
-              const maxRound = allSameTypeMatches.length > 0
-                ? Math.max(...allSameTypeMatches.map(m => m.round))
-                : match.round;
-
-              // ラウンド名を取得
-              const roundName = getRoundName(match.round, maxRound);
+              // ラウンド名: 予選は固定、決勝は動的計算
+              let roundName = '予選ブロック';
+              if (match.phase !== 'preliminary') {
+                // 決勝トーナメントのラウンド数はknockoutフェーズの試合のみで計算
+                const knockoutMatches = matches.filter(m =>
+                  m.tournament_type === match.tournament_type &&
+                  m.division === match.division &&
+                  m.phase === 'knockout'
+                );
+                const maxRound = knockoutMatches.length > 0
+                  ? Math.max(...knockoutMatches.map(m => m.round))
+                  : match.round;
+                roundName = getRoundName(match.round, maxRound);
+              }
 
               // 絶対的な一意性を保証するID生成（crypto.randomUUID()使用）
               const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -286,6 +290,7 @@ export default function AdminDashboard() {
                 timestamp: Date.now(),
                 tournamentType: match.tournament_type,
                 division: match.division,
+                phase: match.phase,
               });
             } catch (error) {
               console.error('Error creating announcement:', error);
@@ -296,6 +301,44 @@ export default function AdminDashboard() {
         // 状態マップを更新（useRefを使用）
         prevMatchStatusesRef.current = new Map<string, string>();
         activeMatches.forEach(m => prevMatchStatusesRef.current.set(m.id, m.status));
+
+        // 予選ブロック完了チェック
+        const prelimMatches = matches.filter(m => m.phase === 'preliminary');
+        const divisionGroupMap = new Map<string, Match[]>();
+        for (const m of prelimMatches) {
+          const key = `${m.tournament_type ?? ''}-${m.division ?? 0}`;
+          if (!divisionGroupMap.has(key)) divisionGroupMap.set(key, []);
+          divisionGroupMap.get(key)!.push(m);
+        }
+        for (const [key, groupMatches] of divisionGroupMap) {
+          if (completedPrelimDivisionsRef.current.has(key)) continue;
+          if (groupMatches.length === 0) continue;
+          const allCompleted = groupMatches.every(m => m.status === 'completed');
+          if (allCompleted) {
+            completedPrelimDivisionsRef.current.add(key);
+            const lastDash = key.lastIndexOf('-');
+            const type = key.substring(0, lastDash);
+            const divStr = key.substring(lastDash + 1);
+            const divNum = parseInt(divStr, 10);
+            const label = getTournamentLabel(type, divNum);
+            const infoId = typeof crypto !== 'undefined' && crypto.randomUUID
+              ? `prelim-done-${key}-${crypto.randomUUID()}`
+              : `prelim-done-${key}-${Date.now()}`;
+            newAnnouncements.push({
+              id: infoId,
+              courtNumber: '',
+              player1Name: '',
+              player2Name: '',
+              roundName: '',
+              message: `【完了】${label} 予選ブロックの全試合が終了しました。順位確定と決勝Tへの進出操作を行ってください。`,
+              status: 'info',
+              timestamp: Date.now(),
+              tournamentType: type,
+              division: divNum,
+              phase: 'preliminary',
+            });
+          }
+        }
 
         // 新しいアナウンスを左端に追加（既存を右へプッシュ）
         if (newAnnouncements.length > 0) {
