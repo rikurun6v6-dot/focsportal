@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Foc's Portal | 大会運営システム",
+  title: "Foc's Portal",
   description: "試合状況のリアルタイム確認、待ち時間検索、コートの自動割り当て",
   icons: {
     icon: "/icon-192.png",

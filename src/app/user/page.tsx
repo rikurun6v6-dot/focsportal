@@ -45,7 +45,7 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
     useEffect(() => {
         const fetchCamps = async () => {
             try {
-                const q = query(collection(db, 'camps'), orderBy('created_at', 'desc'), limit(5));
+                const q = query(collection(db, 'camps'), where('status', '==', 'active'), orderBy('created_at', 'desc'));
                 const snapshot = await safeGetDocs(q);
                 const campList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Camp));
 
@@ -102,47 +102,55 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
                     <CardTitle className="text-xl text-slate-800">Foc's Portal ログイン</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-bold text-slate-500">1. 合宿を選択</label>
-                        <Select value={selectedCampId} onValueChange={setSelectedCampId}>
-                            <SelectTrigger className="bg-white text-slate-900 border-slate-300">
-                                <SelectValue placeholder="合宿を選択" />
-                            </SelectTrigger>
-                            {/* ▼ 背景色を白(bg-white)に明示的に指定 */}
-                            <SelectContent className="bg-white border-slate-200 shadow-xl text-slate-900 z-50">
-                                {camps.map(camp => (
-                                    <SelectItem key={camp.id} value={camp.id} className="cursor-pointer hover:bg-slate-100 focus:bg-slate-100">
-                                        {camp.title}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                    {camps.length === 0 ? (
+                        <div className="text-center py-6 text-slate-500">
+                            <MapPin className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                            <p className="font-medium">現在開催中のイベントはありません</p>
+                            <p className="text-xs mt-1 text-slate-400">管理者にお問い合わせください</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-slate-500">1. 合宿を選択</label>
+                                <Select value={selectedCampId} onValueChange={setSelectedCampId}>
+                                    <SelectTrigger className="bg-white text-slate-900 border-slate-300">
+                                        <SelectValue placeholder="合宿を選択" />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-white border-slate-200 shadow-xl text-slate-900 z-50">
+                                        {camps.map(camp => (
+                                            <SelectItem key={camp.id} value={camp.id} className="cursor-pointer hover:bg-slate-100 focus:bg-slate-100">
+                                                {camp.title}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-bold text-slate-500">2. あなたの名前を選択</label>
-                        <Select value={selectedPlayerId} onValueChange={setSelectedPlayerId}>
-                            <SelectTrigger className="bg-white text-slate-900 border-slate-300" disabled={!selectedCampId}>
-                                <SelectValue placeholder="名前を選択してください" />
-                            </SelectTrigger>
-                            {/* ▼ 背景色を白(bg-white)に明示的に指定 */}
-                            <SelectContent className="max-h-[200px] bg-white border-slate-200 shadow-xl text-slate-900 z-50">
-                                {players.map(player => (
-                                    <SelectItem key={player.id} value={player.id!} className="cursor-pointer hover:bg-slate-100 focus:bg-slate-100">
-                                        {player.name} <span className="text-xs text-slate-400 ml-2">({player.gender === 'male' ? '男' : '女'})</span>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-slate-500">2. あなたの名前を選択</label>
+                                <Select value={selectedPlayerId} onValueChange={setSelectedPlayerId}>
+                                    <SelectTrigger className="bg-white text-slate-900 border-slate-300" disabled={!selectedCampId}>
+                                        <SelectValue placeholder="名前を選択してください" />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-[200px] bg-white border-slate-200 shadow-xl text-slate-900 z-50">
+                                        {players.map(player => (
+                                            <SelectItem key={player.id} value={player.id!} className="cursor-pointer hover:bg-slate-100 focus:bg-slate-100">
+                                                {player.name} <span className="text-xs text-slate-400 ml-2">({player.gender === 'male' ? '男' : '女'})</span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                    <Button
-                        className="w-full h-12 text-lg font-bold bg-sky-500 hover:bg-sky-600 text-white mt-4"
-                        onClick={handleStart}
-                        disabled={!selectedPlayerId}
-                    >
-                        利用を開始する
-                    </Button>
+                            <Button
+                                className="w-full h-12 text-lg font-bold bg-sky-500 hover:bg-sky-600 text-white mt-4"
+                                onClick={handleStart}
+                                disabled={!selectedPlayerId}
+                            >
+                                利用を開始する
+                            </Button>
+                        </>
+                    )}
                 </CardContent>
             </Card>
         </div>

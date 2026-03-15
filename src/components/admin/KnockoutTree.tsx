@@ -385,7 +385,7 @@ export default function KnockoutTree({
           決勝トーナメント
         </h2>
       )}
-      <div className="overflow-x-auto pb-6">
+      <div className="overflow-x-auto pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex gap-x-16 min-w-max" style={{ position: 'relative' }}>
           {rounds.map((round, roundIndex) => {
             const roundMatches = roundGroups[round] || [];
@@ -441,7 +441,7 @@ export default function KnockoutTree({
                     const cardTop = position ? position.top : matchIndex * 340;
 
                     return (
-                      <div key={match.id} style={{ position: 'absolute', top: `${cardTop}px`, width: '100%', minWidth: '220px' }}>
+                      <div key={match.id} style={{ position: 'absolute', top: `${cardTop}px`, width: '100%', minWidth: '220px', flexShrink: 0 }}>
                       <Card
                         key={match.id}
                         className={`rounded-lg shadow-md transition-all ${
@@ -535,7 +535,7 @@ export default function KnockoutTree({
                                     )}
                                   </div>
                                   {match.status === 'completed' && match.score_p1 !== undefined && !isBye && (
-                                    <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums">
+                                    <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums flex-shrink-0">
                                       {match.score_p1}
                                     </span>
                                   )}
@@ -582,7 +582,7 @@ export default function KnockoutTree({
                                     )}
                                   </div>
                                   {match.status === 'completed' && match.score_p2 !== undefined && !isBye && (
-                                    <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums">
+                                    <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums flex-shrink-0">
                                       {match.score_p2}
                                     </span>
                                   )}

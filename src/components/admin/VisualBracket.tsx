@@ -352,9 +352,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         <div className="space-y-4">
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2">
-                            <Trophy className="w-5 h-5 text-amber-500" />
+                    {/* 1行目: タイトル + 編集ボタン */}
+                    <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
+                            <Trophy className="w-5 h-5 text-amber-500 flex-shrink-0" />
                             トーナメント表
                         </CardTitle>
                         {!readOnly && (
@@ -362,13 +363,15 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                 onClick={() => { setEditMode(e => !e); setSelectedSlot(null); }}
                                 variant={editMode ? "default" : "outline"}
                                 size="sm"
-                                className={editMode ? "bg-blue-500 text-white" : "border-blue-200 text-blue-700 hover:bg-blue-50"}
+                                className={`flex-shrink-0 ${editMode ? "bg-blue-500 text-white" : "border-blue-200 text-blue-700 hover:bg-blue-50"}`}
                             >
                                 {editMode ? <><Check className="w-4 h-4 mr-1" />編集完了</> : <><Pencil className="w-4 h-4 mr-1" />ペア入替</>}
                             </Button>
                         )}
-                        {/* ズームコントロール */}
-                        <div className="flex items-center gap-1">
+                    </div>
+                    {/* 2行目: ズームコントロール + 保存ボタン */}
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                             <Button
                                 onClick={() => setZoom(z => Math.max(0.4, Math.round((z - 0.1) * 10) / 10))}
                                 variant="outline"
@@ -399,7 +402,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                             disabled={exporting || matches.length === 0}
                             variant="outline"
                             size="sm"
-                            className="border-amber-200 text-amber-700 hover:bg-amber-50"
+                            className="flex-shrink-0 border-amber-200 text-amber-700 hover:bg-amber-50"
                         >
                             {exporting ? (
                                 <>
