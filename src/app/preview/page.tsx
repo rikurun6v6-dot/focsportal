@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -63,8 +63,6 @@ function PreviewContent() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [clockStr, setClockStr] = useState('');
   const [page, setPage] = useState(0);
-  const [isHovered, setIsHovered] = useState(false);
-  const isHoveredRef = useRef(false);
   const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
   const [estimatedMinutes, setEstimatedMinutes] = useState(0);
   const [etaByType, setEtaByType] = useState<TournamentETAByType[]>([]);
@@ -124,7 +122,7 @@ function PreviewContent() {
   useEffect(() => {
     if (totalPages <= 1) return;
     const t = setInterval(() => {
-      if (!isHoveredRef.current) setPage((p) => (p + 1) % totalPages);
+      setPage((p) => (p + 1) % totalPages);
     }, PAGE_INTERVAL_MS);
     return () => clearInterval(t);
   }, [totalPages]);
@@ -165,15 +163,9 @@ function PreviewContent() {
     }
   });
 
-  // ── render ────────────────────────────────────────────────────────────────
-  const handleMouseEnter = () => { isHoveredRef.current = true;  setIsHovered(true);  };
-  const handleMouseLeave = () => { isHoveredRef.current = false; setIsHovered(false); };
-
   return (
     <div
       className="h-[100dvh] bg-white flex flex-col overflow-hidden p-2"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
       <style>{`
         @keyframes growBar {
