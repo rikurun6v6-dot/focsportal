@@ -225,7 +225,7 @@ function PreviewContent() {
 
       {/* ── Progress Bar ── */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 relative bg-slate-100" style={{ height: 36, zIndex: 50 }}>
+        <div className="flex-shrink-0 relative" style={{ height: 4, zIndex: 50 }}>
           {/* Glow backdrop */}
           <div
             key={`glow-${page}`}

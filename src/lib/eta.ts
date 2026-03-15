@@ -326,6 +326,20 @@ export async function calculateTournamentETA(campId: string): Promise<{
     const avgDuration15 = (configData?.avg_match_duration_15 as number | undefined) || DEFAULT_DURATION_15;
     const avgDuration21 = (configData?.avg_match_duration_21 as number | undefined) || DEFAULT_DURATION_21;
 
+    // enabled_tournamentsフィルタ（選択されている種目のみ対象）
+    const enabledTypes = (configData?.enabled_tournaments as TournamentType[] | undefined);
+    const filterByEnabled = <T extends { tournament_type: string }>(arr: T[]) =>
+      enabledTypes && enabledTypes.length > 0
+        ? arr.filter(m => enabledTypes.includes(m.tournament_type as TournamentType))
+        : arr;
+
+    const filteredWaitingMatches = filterByEnabled(waitingMatches);
+    const filteredActiveMatches = filterByEnabled(activeMatches);
+
+    if (filteredWaitingMatches.length === 0 && filteredActiveMatches.length === 0) {
+      return { estimatedEndTime: null, remainingMatches: 0, activeMatches: 0, estimatedMinutesRemaining: 0, byType: [] };
+    }
+
     // 男子・女子・混合別に試合時間を計算
     let maleEstimatedMinutes = 0;
     let femaleEstimatedMinutes = 0;
@@ -337,8 +351,8 @@ export async function calculateTournamentETA(campId: string): Promise<{
       return avgDuration;
     };
 
-    // 待機中の試合を種目別に集計
-    for (const match of waitingMatches) {
+    // 待機中の試合を種目別に集計（enabled_tournamentsでフィルタ済み）
+    for (const match of filteredWaitingMatches) {
       const duration = await calculateMatchDuration(match);
       if (match.tournament_type === 'mens_singles' || match.tournament_type === 'mens_doubles') {
         maleEstimatedMinutes += duration;
@@ -350,7 +364,7 @@ export async function calculateTournamentETA(campId: string): Promise<{
     }
 
     // 進行中の試合を種目別に集計（残り半分と仮定）
-    for (const match of activeMatches) {
+    for (const match of filteredActiveMatches) {
       const duration = await calculateMatchDuration(match);
       if (match.tournament_type === 'mens_singles' || match.tournament_type === 'mens_doubles') {
         maleEstimatedMinutes += duration * 0.5;
@@ -404,8 +418,8 @@ export async function calculateTournamentETA(campId: string): Promise<{
     const byType: TournamentETAByType[] = [];
 
     for (const type of tournamentTypes) {
-      const typeWaitingMatches = waitingMatches.filter(m => m.tournament_type === type);
-      const typeActiveMatches = activeMatches.filter(m => m.tournament_type === type);
+      const typeWaitingMatches = filteredWaitingMatches.filter(m => m.tournament_type === type);
+      const typeActiveMatches = filteredActiveMatches.filter(m => m.tournament_type === type);
 
       if (typeWaitingMatches.length === 0 && typeActiveMatches.length === 0) {
         continue; // この種目には試合がない
