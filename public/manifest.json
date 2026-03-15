@@ -1,6 +1,6 @@
 {
-  "name": "Badmin-Ops 大会運営システム",
-  "short_name": "Badmin-Ops",
+  "name": "Foc's Portal",
+  "short_name": "Foc's Portal",
   "description": "バドミントン大会運営システム",
   "start_url": "/",
   "display": "standalone",
@@ -8,20 +8,16 @@
   "theme_color": "#3b82f6",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml"
-    },
-    {
-      "src": "/icon.svg",
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

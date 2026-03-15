@@ -18,8 +18,8 @@ export const metadata: Metadata = {
   title: "Foc's Portal | 大会運営システム",
   description: "試合状況のリアルタイム確認、待ち時間検索、コートの自動割り当て",
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
   },
   manifest: "/manifest.json",
   appleWebApp: {
