@@ -180,10 +180,6 @@ function PreviewContent() {
           from { width: 0%; }
           to   { width: 100%; }
         }
-        @keyframes foxRun {
-          0%   { left: 2px;               bottom: 6px; }
-          100% { left: calc(100% - 30px); bottom: 6px; }
-        }
 
       `}</style>
 
@@ -252,21 +248,6 @@ function PreviewContent() {
               width: '0%',
               background: 'linear-gradient(90deg, #6366f1, #a855f7, #06b6d4)',
               animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
-            }}
-          />
-          {/* Glowing marker at leading edge */}
-          <div
-            key={`marker-${page}`}
-            className="absolute select-none pointer-events-none"
-            style={{
-              bottom: 0,
-              width: 12,
-              height: 12,
-              borderRadius: '50%',
-              background: '#67e8f9',
-              boxShadow: '0 0 8px 3px #67e8f9, 0 0 18px 6px #a855f7',
-              transform: 'translateY(4px)',
-              animation: `foxRun ${PAGE_INTERVAL_MS}ms linear forwards`,
             }}
           />
         </div>

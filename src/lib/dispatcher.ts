@@ -139,10 +139,10 @@ export async function dispatchToEmptyCourt(
   // 進行が遅れている方（進行率が低い方）を優先
   // 同率の場合は2部をデフォルト優先（ただしgap=0のためボーナス0なので実質差なし）
   const preferredDivision = division1Progress < division2Progress ? 1 : 2;
-  // ギャップに比例したボーナス（固定150→比例式に変更）
-  // gap 0% → 0, gap 5% → 100, gap 10% → 200, gap 30%+ → 600（上限）
+  // ギャップに比例したボーナス（弱体化: 最大50点に抑制して平準化より投入優先）
+  // gap 0% → 0, gap 10% → 17, gap 30%+ → 50（上限）
   const progressGap = Math.abs(division1Progress - division2Progress);
-  const divisionBonusBase = Math.round(Math.min(600, progressGap * 2000));
+  const divisionBonusBase = Math.round(Math.min(50, progressGap * 167));
 
   // 種目・部・フェーズごとの最大ラウンド数を動的計算（固定値 4 を廃止）
   const maxRoundByTypeDiv = new Map<string, number>();
@@ -247,17 +247,22 @@ export async function dispatchToEmptyCourt(
       return false;
     }
     // 休息時間チェック（player5/6も含む）
-    const playerIds = [
-      match.player1_id, match.player2_id, match.player3_id, match.player4_id,
-      (match as any).player5_id, (match as any).player6_id
-    ].filter(id => id);
-    for (const playerId of playerIds) {
-      const player = allPlayers.find(p => p.id === playerId);
-      if (player?.last_match_finished_at) {
-        const lastFinished = player.last_match_finished_at.toMillis();
-        const timeSinceLastMatch = (now - lastFinished) / (1000 * 60); // 分単位
-        if (timeSinceLastMatch < defaultRestMinutes) {
-          return false; // 休息時間が不足している選手がいる
+    // ただし available_at が null（管理者が手動クリア済み）の場合はプレイヤーレベルの休息チェックをスキップ
+    // これにより「休憩解除操作 → 即座に自動割当」が機能する
+    const manuallyReleased = !match.available_at;
+    if (!manuallyReleased) {
+      const playerIds = [
+        match.player1_id, match.player2_id, match.player3_id, match.player4_id,
+        (match as any).player5_id, (match as any).player6_id
+      ].filter(id => id);
+      for (const playerId of playerIds) {
+        const player = allPlayers.find(p => p.id === playerId);
+        if (player?.last_match_finished_at) {
+          const lastFinished = player.last_match_finished_at.toMillis();
+          const timeSinceLastMatch = (now - lastFinished) / (1000 * 60); // 分単位
+          if (timeSinceLastMatch < defaultRestMinutes) {
+            return false; // 休息時間が不足している選手がいる
+          }
         }
       }
     }
@@ -298,16 +303,17 @@ export async function dispatchToEmptyCourt(
   // ✅ ラウンド順序の緩やか維持: 実際に割り当て可能な試合 (validMatches) の中で最小ラウンドを計算
   // 休息中・players忙しいなどブロックされた試合は除外して計算することで、
   // 全ての下位ラウンドがブロックされている場合でも上位ラウンドを割り当て可能にする
+  // グループキーに group フィールドを含める: 予選グループA/B/Cが互いにブロックしないようにする
   const minRoundByGroup = new Map<string, number>();
   for (const match of validMatches) {
-    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
+    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}_${(match as any).group ?? ''}`;
     const existing = minRoundByGroup.get(groupKey);
     if (existing === undefined || match.round < existing) {
       minRoundByGroup.set(groupKey, match.round);
     }
   }
   const roundFilteredMatches = validMatches.filter(match => {
-    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
+    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}_${(match as any).group ?? ''}`;
     return match.round === minRoundByGroup.get(groupKey);
   });
 
@@ -375,13 +381,12 @@ export async function dispatchToEmptyCourt(
       }
     }
 
-    // 予選グループ進行度ペナルティ（最優先: 遅れているグループを優先）
-    // 進行済み試合1本あたり -1500 のペナルティを付与し、他の全スコアを上回る重みにする
+    // 予選グループ進行度ペナルティ（弱体化: -100/試合 に抑制して空きコートへの投入を優先）
     let groupBalancePenalty = 0;
     if (match.group) {
       const gKey = `${match.tournament_type}_${match.division}_${match.group}`;
       const groupDone = groupProgressMap.get(gKey) || 0;
-      groupBalancePenalty = -1500 * groupDone;
+      groupBalancePenalty = -100 * groupDone;
     }
 
     const priorityScore = waitTime + roundScore + divisionBonus + categoryBoost + groupBalancePenalty;
