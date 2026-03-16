@@ -313,7 +313,7 @@ export async function initializeCourts(courtCount: number, campId: string): Prom
   }
 }
 
-export async function initializeConfig(): Promise<boolean> {
+export async function initializeConfig(campId: string): Promise<boolean> {
   try {
     const config: Config = {
       auto_dispatch_enabled: false,
@@ -321,7 +321,7 @@ export async function initializeConfig(): Promise<boolean> {
       tournament_date: Timestamp.now(),
       last_operation: null,
     };
-    await setDoc(doc(db, COLLECTIONS.config, 'system'), config);
+    await setDoc(doc(db, COLLECTIONS.config, campId), config);
     return true;
   } catch (error) {
     console.error('Error initializing config:', error);
@@ -365,9 +365,9 @@ export async function importPlayers(players: Omit<Player, 'id'>[]): Promise<{ su
   }
 }
 
-export async function deleteAllPlayers(): Promise<boolean> {
+export async function deleteAllPlayers(campId: string): Promise<boolean> {
   try {
-    const players = await getAllPlayers();
+    const players = await getAllPlayers(campId);
     for (const player of players) { await deleteDocument(COLLECTIONS.players, player.id); }
     return true;
   } catch (error) {

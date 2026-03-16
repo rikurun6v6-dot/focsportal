@@ -430,7 +430,7 @@ function buildAdminSections(): Section[] {
       id: 'dispatch',
       title: 'Auto-Dispatch・操作タブ',
       icon: '⚡',
-      keywords: ['Auto-Dispatch', '自動', '割当', 'コート', '運営', '進行制御', '順次', '休憩', '呼び出し', '強制割当', '手動', '3位', '決勝', '待機', '休息時間'],
+      keywords: ['Auto-Dispatch', '自動', '割当', 'コート', '運営', '進行制御', '順次', '休憩', '呼び出し', '強制割当', '手動', '3位', '決勝', '待機', '休息時間', '優先順位', 'ラウンド順', '上から', 'ブラケット', '順番'],
       content: (
         <div className="space-y-5">
           <div>
@@ -494,6 +494,22 @@ function buildAdminSections(): Section[] {
               待機モードがONの場合、種目内の全試合が完了するまで決勝戦はAuto-Dispatch対象になりません。
               会場全員が見守れるよう、センターコートで決勝戦を行いたいときに使います。
             </p>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">割り当て優先順位</h4>
+            <p className="text-sm text-slate-600 mb-2">
+              Auto-Dispatch が次の試合を選ぶ際、以下の優先順位で決まります。
+            </p>
+            <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
+              <li><strong>早いラウンド優先</strong> — 同じ種目・部門内では、上位ラウンドより下位ラウンド（1回戦 → 2回戦 → …）を先に割り当てます。下位ラウンドが残っている限り上位ラウンドは割り当てられません。</li>
+              <li><strong>ブラケット上位優先</strong> — 同じラウンド内では、トーナメント表の<strong>上から順</strong>（試合番号が小さい順）に優先して割り当てます。</li>
+              <li><strong>部のバランス</strong> — 1部と2部の進行率に差がある場合、遅れている部を優先します。</li>
+              <li><strong>待機時間</strong> — 選手が試合を待っている時間が長いほど優先度が上がります。</li>
+            </ol>
+            <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200 text-xs text-slate-600">
+              ブラケット上位優先と待機時間は同じスケールで競合します。同じラウンドの試合でも、下の枠の選手が30分以上長く待っていれば逆転することがあります。
+            </div>
           </div>
         </div>
       ),

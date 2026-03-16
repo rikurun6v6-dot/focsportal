@@ -164,7 +164,7 @@ export async function dispatchToEmptyCourt(
   });
 
   // Load config for finals wait mode
-  const config = await getDocument<Config>('config', 'system');
+  const config = await getDocument<Config>('config', court.campId || 'system');
   const finalsWaitMode = config?.finals_wait_mode || {};
 
   // 休息時間チェック用の設定を取得
@@ -391,7 +391,10 @@ export async function dispatchToEmptyCourt(
       groupBalancePenalty = -100 * groupDone;
     }
 
-    const priorityScore = waitTime + roundScore + divisionBonus + categoryBoost + groupBalancePenalty;
+    // ブラケット順序: match_number が小さい（上位）ほど優先（係数2 = 1枠差≒2分待機相当）
+    const matchOrderScore = -(match.match_number ?? 0) * 2;
+
+    const priorityScore = waitTime + roundScore + divisionBonus + categoryBoost + groupBalancePenalty + matchOrderScore;
 
     const preferredGender = getPreferredGender(match);
     const matchesCourt = preferredGender ? preferredGender === court.preferred_gender : true;

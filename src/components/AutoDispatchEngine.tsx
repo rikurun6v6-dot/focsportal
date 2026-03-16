@@ -21,7 +21,7 @@ export default function AutoDispatchEngine() {
     if (!campId) return;
 
     const runDispatcher = async () => {
-      const config = await getDocument<Config>('config', 'system');
+      const config = await getDocument<Config>('config', campId);
       if (!config?.auto_dispatch_enabled) return;
 
       // 一時中断チェック

@@ -14,16 +14,16 @@ const TOURNAMENT_TYPES: { value: TournamentType; label: string }[] = [
   { value: "team_battle", label: "団体戦" },
 ];
 
-export default function TournamentTypeControl({ readOnly = false }: { readOnly?: boolean }) {
+export default function TournamentTypeControl({ readOnly = false, campId }: { readOnly?: boolean; campId: string }) {
   const [enabledTypes, setEnabledTypes] = useState<TournamentType[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadConfig();
-  }, []);
+  }, [campId]);
 
   const loadConfig = async () => {
-    const config = await getDocument<Config>("config", "system");
+    const config = await getDocument<Config>("config", campId);
     setEnabledTypes(config?.enabled_tournaments || []);
     setLoading(false);
   };
@@ -34,7 +34,7 @@ export default function TournamentTypeControl({ readOnly = false }: { readOnly?:
       : [...enabledTypes, type];
 
     setEnabledTypes(newEnabled);
-    await updateDocument("config", "system", { enabled_tournaments: newEnabled });
+    await updateDocument("config", campId, { enabled_tournaments: newEnabled });
   };
 
   if (loading) return <p className="text-slate-500">読み込み中...</p>;
@@ -67,7 +67,7 @@ export default function TournamentTypeControl({ readOnly = false }: { readOnly?:
         <Button
           onClick={async () => {
             setEnabledTypes([]);
-            await updateDocument("config", "system", { enabled_tournaments: [] });
+            await updateDocument("config", campId, { enabled_tournaments: [] });
           }}
           disabled={readOnly}
           variant="ghost"

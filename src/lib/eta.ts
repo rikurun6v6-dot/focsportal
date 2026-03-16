@@ -36,8 +36,10 @@ export async function recordMatchDuration(matchId: string): Promise<void> {
     // 外れ値を除外 (短すぎる/長すぎる試合)
     if (durationMinutes < MIN_DURATION || durationMinutes > MAX_DURATION) return;
 
-    // 設定を取得して更新
-    const configRef = doc(db, 'config', 'system');
+    // 設定を取得して更新（合宿ごとに独立したconfig）
+    const campId = (match as any).campId as string | undefined;
+    if (!campId) return;
+    const configRef = doc(db, 'config', campId);
     const configSnap = await safeGetDoc(configRef);
 
     if (!configSnap.exists()) return;
@@ -111,8 +113,8 @@ export async function searchPlayerByName(name: string): Promise<ETAResult | null
     // 待機試合がなければ null（12分バグの修正: avgDurationを返さない）
     if (!myNextMatch) return null;
 
-    // 3. 設定取得
-    const configDoc = await safeGetDoc(doc(db, 'config', 'system'));
+    // 3. 設定取得（合宿ごとに独立したconfig）
+    const configDoc = await safeGetDoc(doc(db, 'config', campId || 'system'));
     const configData = configDoc.data();
     const avgDuration11 = (configData?.avg_match_duration_11 as number | undefined) || DEFAULT_DURATION_11;
     const avgDuration15 = (configData?.avg_match_duration_15 as number | undefined) || DEFAULT_DURATION_15;
@@ -319,8 +321,8 @@ export async function calculateTournamentETA(campId: string): Promise<{
     const activeFemaleCourts = courtDocs.filter(c => c.is_active && c.preferred_gender === 'female').length || 1;
     const totalActiveCourts = courtDocs.filter(c => c.is_active).length || 1;
 
-    // 平均試合時間を取得
-    const configDoc = await safeGetDoc(doc(db, 'config', 'system'));
+    // 平均試合時間を取得（合宿ごとに独立したconfig）
+    const configDoc = await safeGetDoc(doc(db, 'config', campId));
     const configData = configDoc.data();
     const avgDuration11 = (configData?.avg_match_duration_11 as number | undefined) || DEFAULT_DURATION_11;
     const avgDuration15 = (configData?.avg_match_duration_15 as number | undefined) || DEFAULT_DURATION_15;

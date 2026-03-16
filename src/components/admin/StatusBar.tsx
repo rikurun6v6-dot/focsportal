@@ -28,7 +28,8 @@ export default function StatusBar({ isOnline }: StatusBarProps) {
 
   // 一時中断の監視
   useEffect(() => {
-    const unsubscribe = subscribeToDocument<Config>('config', 'system', (config) => {
+    if (!camp) return;
+    const unsubscribe = subscribeToDocument<Config>('config', camp.id, (config) => {
       if (config?.pause_until) {
         const until = (config.pause_until as Timestamp).toDate?.();
         if (until && until > new Date()) {
@@ -41,7 +42,7 @@ export default function StatusBar({ isOnline }: StatusBarProps) {
       setPauseLabel('');
     });
     return () => unsubscribe();
-  }, []);
+  }, [camp]);
 
   // 中断カウントダウン
   useEffect(() => {

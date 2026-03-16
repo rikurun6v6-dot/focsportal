@@ -216,7 +216,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
         baselineDuration21: currentState.baselineDuration21,
       });
 
-      const configRef = doc(db, 'config', 'system');
+      const configRef = doc(db, 'config', camp.id);
       await updateDoc(configRef, {
         avg_match_duration_11: currentState.baselineDuration11,
         avg_match_duration_15: currentState.baselineDuration15,

@@ -418,7 +418,7 @@ export default function ResultsTab() {
     if (match?.tournament_type) {
       try {
         const configs = await getAllDocuments<{ id: string; enabled_tournaments?: string[] }>('config');
-        const systemConfig = configs.find(c => c.id === 'system');
+        const systemConfig = configs.find(c => c.id === camp?.id);
         const enabled = systemConfig?.enabled_tournaments;
         if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type)) {
           const lockOk = await confirm({

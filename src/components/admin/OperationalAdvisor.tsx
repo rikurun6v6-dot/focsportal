@@ -49,7 +49,7 @@ export default function OperationalAdvisor() {
   const handleApplySuggestion = async () => {
     if (!bottleneckData?.bottleneckCategory) return;
 
-    const success = await applySuggestion(bottleneckData.bottleneckCategory);
+    const success = await applySuggestion(bottleneckData.bottleneckCategory, camp.id);
     if (success) {
       const categoryLabel = getCategoryLabel(bottleneckData.bottleneckCategory);
       toastSuccess(`提案を適用しました。${categoryLabel}を優先的に割り当てます（30分間有効）`);

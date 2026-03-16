@@ -31,7 +31,7 @@ export async function analyzeBottlenecks(campId: string): Promise<BottleneckAnal
     const waitingMatches = matches.filter(m => m.status === 'waiting');
 
     // 設定から平均試合時間を取得
-    const config = await getDocument<Config>('config', 'system');
+    const config = await getDocument<Config>('config', campId);
     const avgDuration15 = config?.avg_match_duration_15 || 12;
     const avgDuration21 = config?.avg_match_duration_21 || 15;
     const avgDuration11 = config?.avg_match_duration_11 || 8;
@@ -172,11 +172,11 @@ function getCategoryLabel(category: TournamentType): string {
  * ボトルネック解消の提案を適用する
  * 対象種目に一時的な優先度ブーストを付与（次回の自動割り当てで最優先される）
  */
-export async function applySuggestion(category: TournamentType | null): Promise<boolean> {
+export async function applySuggestion(category: TournamentType | null, campId: string): Promise<boolean> {
   if (!category) return false;
 
   try {
-    const config = await getDocument<Config>('config', 'system');
+    const config = await getDocument<Config>('config', campId);
     const currentBoost = (config?.temporary_category_boost as Record<string, number> | undefined) || {};
 
     // 対象種目に +200 の優先度ブーストを付与（30分間有効）
@@ -187,7 +187,7 @@ export async function applySuggestion(category: TournamentType | null): Promise<
     };
 
     await import('./firestore-helpers').then(({ updateDocument }) =>
-      updateDocument('config', 'system', { temporary_category_boost: newBoost })
+      updateDocument('config', campId, { temporary_category_boost: newBoost })
     );
 
     console.log(`[Analyzer] 優先度ブーストを適用: ${category} +200`);

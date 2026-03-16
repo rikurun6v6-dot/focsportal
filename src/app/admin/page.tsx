@@ -196,7 +196,7 @@ export default function AdminDashboard() {
     }
     setInitializing(true);
     const courtsSuccess = await initializeCourts(camp.court_count, camp.id);
-    const configSuccess = await initializeConfig();
+    const configSuccess = await initializeConfig(camp.id);
     if (courtsSuccess && configSuccess) toastSuccess("システムを初期化しました");
     else toastError("初期化に失敗しました");
     setInitializing(false);
@@ -204,8 +204,9 @@ export default function AdminDashboard() {
 
 
   useEffect(() => {
+    if (!camp) return;
     const loadConfig = async () => {
-      const config = await getDocument<Config>('config', 'system');
+      const config = await getDocument<Config>('config', camp.id);
       if (config) {
         setAutoDispatchEnabled(config.auto_dispatch_enabled);
         setIsSequentialMode(config.is_sequential_mode || false);
@@ -221,7 +222,7 @@ export default function AdminDashboard() {
       }
     };
     loadConfig();
-  }, []);
+  }, [camp]);
 
   // 試合アナウンスの監視と生成
   useEffect(() => {
@@ -372,7 +373,7 @@ export default function AdminDashboard() {
   const toggleAutoDispatch = async () => {
     try {
       const newValue = !autoDispatchEnabled;
-      await updateDocument('config', 'system', { auto_dispatch_enabled: newValue });
+      await updateDocument('config', camp!.id, { auto_dispatch_enabled: newValue });
       setAutoDispatchEnabled(newValue);
       toastSuccess(newValue ? "Auto-Dispatchを有効にしました" : "Auto-Dispatchを無効にしました");
     } catch (error) {
@@ -404,7 +405,7 @@ export default function AdminDashboard() {
 
   const handleStartPause = async (minutes: number, label: string) => {
     const until = new Date(Date.now() + minutes * 60 * 1000);
-    await updateDocument('config', 'system', {
+    await updateDocument('config', camp!.id, {
       pause_until: Timestamp.fromDate(until),
       pause_label: label,
     });
@@ -414,7 +415,7 @@ export default function AdminDashboard() {
   };
 
   const handleEndPause = async () => {
-    await updateDocument('config', 'system', {
+    await updateDocument('config', camp!.id, {
       pause_until: null,
       pause_label: '',
     });
@@ -427,7 +428,7 @@ export default function AdminDashboard() {
   const toggleSequentialMode = async () => {
     try {
       const newValue = !isSequentialMode;
-      await updateDocument('config', 'system', { is_sequential_mode: newValue });
+      await updateDocument('config', camp!.id, { is_sequential_mode: newValue });
       setIsSequentialMode(newValue);
       toastSuccess(newValue ? "順次進行モードを有効にしました" : "順次進行モードを無効にしました");
     } catch (error) {
@@ -439,7 +440,7 @@ export default function AdminDashboard() {
     try {
       const newMode = { ...finalsWaitMode, [key]: !finalsWaitMode[key] };
       setFinalsWaitMode(newMode);
-      await updateDocument('config', 'system', { finals_wait_mode: newMode });
+      await updateDocument('config', camp!.id, { finals_wait_mode: newMode });
       toastSuccess(newMode[key] ? "決勝戦待機モードを有効化しました" : "決勝戦待機モードを解除しました");
     } catch (error) {
       toastError("エラーが発生しました");
@@ -449,7 +450,7 @@ export default function AdminDashboard() {
     try {
       const minutes = parseInt(value);
       setDefaultRestMinutes(minutes);
-      await updateDocument('config', 'system', { default_rest_minutes: minutes });
+      await updateDocument('config', camp!.id, { default_rest_minutes: minutes });
       toastSuccess(`デフォルト休息時間を ${minutes}分 に設定しました`);
     } catch (error) {
       toastError("エラーが発生しました");
@@ -586,16 +587,16 @@ export default function AdminDashboard() {
     setInitializing(true);
 
     try {
-      await deleteAllPlayers();
+      await deleteAllPlayers(camp.id);
       await deleteAllMatches(camp.id);
-      const teams = await getAllDocuments<Team>('teams');
+      const teams = await getAllDocuments<Team>('teams', [where('campId', '==', camp.id)]);
       for (const team of teams) await deleteDocument('teams', team.id);
-      const battles = await getAllDocuments<TeamBattleData>('team_battles');
+      const battles = await getAllDocuments<TeamBattleData>('team_battles', [where('campId', '==', camp.id)]);
       for (const battle of battles) await deleteDocument('team_battles', battle.id);
-      const configs = await getAllDocuments<TournamentConfig>('tournament_configs');
+      const configs = await getAllDocuments<TournamentConfig>('tournament_configs', [where('campId', '==', camp.id)]);
       for (const config of configs) await deleteDocument('tournament_configs', config.id);
       await initializeCourts(camp.court_count, camp.id);
-      await initializeConfig();
+      await initializeConfig(camp.id);
 
       toastSuccess("Hard Reset完了: すべてのデータを削除しました");
     } catch (error) {
@@ -1065,7 +1066,7 @@ export default function AdminDashboard() {
                     <CardDescription>Auto-Dispatchが割り当てる種目を選択</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <TournamentTypeControl readOnly={isArchived} />
+                    <TournamentTypeControl readOnly={isArchived} campId={camp.id} />
                   </CardContent>
                 </Card>
 
