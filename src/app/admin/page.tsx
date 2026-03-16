@@ -567,7 +567,7 @@ export default function AdminDashboard() {
 
     const firstConfirm = await confirm({
       title: '⚠️ 全データ削除の確認',
-      message: '本当に全データを削除してもよろしいですか?\nこの操作は取り消せません。',
+      message: '以下のデータがすべて削除されます。\n\n・登録済み選手（全員）\n・試合データ（全件）\n・チーム・団体戦データ\n・トーナメント設定\n\n※ 選手データも完全に消えます。この操作は取り消せません。',
       confirmText: '次へ',
       cancelText: 'キャンセル',
       type: 'danger',
@@ -576,8 +576,8 @@ export default function AdminDashboard() {
 
     const secondConfirm = await confirm({
       title: '🚨 最終確認',
-      message: 'すべての選手、試合、チーム、設定が削除されます。\n本当によろしいですか？',
-      confirmText: '削除する',
+      message: '登録済みの選手を含む、すべてのデータが完全に削除されます。\n本当によろしいですか？',
+      confirmText: '全削除する',
       cancelText: 'キャンセル',
       type: 'danger',
     });
