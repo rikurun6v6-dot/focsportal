@@ -188,7 +188,8 @@ export async function updateDocument(collectionName: string, docId: string, upda
   }
   try {
     const docRef = doc(db, collectionName, docId);
-    await updateDoc(docRef, { ...updates, updated_at: Timestamp.now() });
+    // setDoc with merge: true to auto-create document if it doesn't exist
+    await setDoc(docRef, { ...updates, updated_at: Timestamp.now() }, { merge: true });
   } catch (error: any) {
     console.error(`[updateDocument] 更新失敗 ${collectionName}/${docId} — code: ${error?.code ?? 'unknown'}, message: ${error?.message ?? error}`);
     throw error;

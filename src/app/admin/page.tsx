@@ -448,7 +448,8 @@ export default function AdminDashboard() {
   };
   const handleRestMinutesChange = async (value: string) => {
     try {
-      const minutes = parseInt(value);
+      const parsed = parseInt(value);
+      const minutes = isNaN(parsed) ? 10 : parsed;
       setDefaultRestMinutes(minutes);
       await updateDocument('config', camp!.id, { default_rest_minutes: minutes });
       toastSuccess(`デフォルト休息時間を ${minutes}分 に設定しました`);

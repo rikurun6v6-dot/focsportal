@@ -122,15 +122,21 @@ export async function searchPlayerByName(name: string): Promise<ETAResult | null
     const myMatchPoints = await getMatchPoints(myNextMatch);
     const avgDuration = myMatchPoints === 21 ? avgDuration21 : myMatchPoints === 11 ? avgDuration11 : avgDuration15;
 
+    // enabled_tournaments フィルタ（選択されている種目のみ対象）
+    const enabledTypes = configData?.enabled_tournaments as TournamentType[] | undefined;
+    const isEnabledType = (type: string) =>
+      !enabledTypes || enabledTypes.length === 0 || enabledTypes.includes(type as TournamentType);
+
     // 4. 性別別コート数を取得（dispatcher と同じ区分で計算）
     const courtsRef = collection(db, 'courts');
     const courtsSnap = await safeGetDocs(
       campId ? query(courtsRef, where('campId', '==', campId)) : courtsRef
     );
     const courts = courtsSnap.docs.map(d => d.data() as Court);
-    const activeMaleCourts   = courts.filter(c => c.is_active && c.preferred_gender === 'male').length   || 1;
-    const activeFemaleCourts = courts.filter(c => c.is_active && c.preferred_gender === 'female').length || 1;
     const totalActiveCourts  = courts.filter(c => c.is_active).length || 1;
+    // Fall back to totalActiveCourts when no gender-specific courts are configured
+    const activeMaleCourts   = courts.filter(c => c.is_active && c.preferred_gender === 'male').length   || totalActiveCourts;
+    const activeFemaleCourts = courts.filter(c => c.is_active && c.preferred_gender === 'female').length || totalActiveCourts;
 
     const myGender = getMatchGender(myNextMatch);
     const relevantCourts = myGender === 'male' ? activeMaleCourts
@@ -138,7 +144,8 @@ export async function searchPlayerByName(name: string): Promise<ETAResult | null
       : totalActiveCourts;
 
     // 5. ラウンドハードフィルタ（dispatcher の minRoundByGroup ロジックを再現）
-    const allWaiting = allMatches.filter(m => m.status === 'waiting');
+    // enabled_tournaments でフィルタしてからキューを計算する
+    const allWaiting = allMatches.filter(m => m.status === 'waiting' && isEnabledType(m.tournament_type));
     const minRoundByGroup = new Map<string, number>();
     for (const m of allWaiting) {
       const key = `${m.tournament_type}_${m.division}`;
@@ -317,9 +324,10 @@ export async function calculateTournamentETA(campId: string): Promise<{
     const courtsRef = collection(db, 'courts');
     const courtsSnap = await safeGetDocs(query(courtsRef, where('campId', '==', campId)));
     const courtDocs = courtsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Court));
-    const activeMaleCourts = courtDocs.filter(c => c.is_active && c.preferred_gender === 'male').length || 1;
-    const activeFemaleCourts = courtDocs.filter(c => c.is_active && c.preferred_gender === 'female').length || 1;
     const totalActiveCourts = courtDocs.filter(c => c.is_active).length || 1;
+    // Fall back to totalActiveCourts when no gender-specific courts are configured
+    const activeMaleCourts = courtDocs.filter(c => c.is_active && c.preferred_gender === 'male').length || totalActiveCourts;
+    const activeFemaleCourts = courtDocs.filter(c => c.is_active && c.preferred_gender === 'female').length || totalActiveCourts;
 
     // 平均試合時間を取得（合宿ごとに独立したconfig）
     const configDoc = await safeGetDoc(doc(db, 'config', campId));
@@ -392,7 +400,10 @@ export async function calculateTournamentETA(campId: string): Promise<{
     }
 
     // 全体の予想終了時刻は、最も遅く終わる種目 + 中断残り時間
-    const estimatedMinutesRemaining = Math.max(maleMinutesRemaining, femaleMinutesRemaining, mixedMinutesRemaining) + pauseRemainingMinutes;
+    // 120分超えは計算異常の可能性があるため上限を設ける
+    const MAX_ETA_MINUTES = 120;
+    const rawEstimatedMinutes = Math.max(maleMinutesRemaining, femaleMinutesRemaining, mixedMinutesRemaining) + pauseRemainingMinutes;
+    const estimatedMinutesRemaining = Math.min(rawEstimatedMinutes, MAX_ETA_MINUTES);
 
     // 予想終了時刻を計算
     const now = new Date();
