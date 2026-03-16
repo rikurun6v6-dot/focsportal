@@ -300,12 +300,13 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
-  // ✅ ラウンド順序の緩やか維持: 実際に割り当て可能な試合 (validMatches) の中で最小ラウンドを計算
-  // 休息中・players忙しいなどブロックされた試合は除外して計算することで、
-  // 全ての下位ラウンドがブロックされている場合でも上位ラウンドを割り当て可能にする
+  // ラウンド順序の厳守: 両選手が揃っている待機試合を基準にラウンド下限を計算
+  // validMatches（空き・休息チェック後）ではなく filteredWaitingMatches（選手IDあり）を使うことで、
+  // 下位ラウンドの選手が休息中でも上位ラウンドを先出しさせない
   // グループキーに group フィールドを含める: 予選グループA/B/Cが互いにブロックしないようにする
   const minRoundByGroup = new Map<string, number>();
-  for (const match of validMatches) {
+  for (const match of filteredWaitingMatches) {
+    if (!match.player1_id || !match.player2_id) continue; // 選手未確定の枠はスキップ
     const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}_${(match as any).group ?? ''}`;
     const existing = minRoundByGroup.get(groupKey);
     if (existing === undefined || match.round < existing) {
@@ -314,7 +315,8 @@ export async function dispatchToEmptyCourt(
   }
   const roundFilteredMatches = validMatches.filter(match => {
     const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}_${(match as any).group ?? ''}`;
-    return match.round === minRoundByGroup.get(groupKey);
+    const minRound = minRoundByGroup.get(groupKey);
+    return minRound === undefined || match.round === minRound;
   });
 
   // 隣接コートの部門を取得（3面連続で同じ部にならないように）
