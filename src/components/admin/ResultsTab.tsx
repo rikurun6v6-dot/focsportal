@@ -21,7 +21,8 @@ import {
   resetMatchResult
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
-import type { Match, Court, MatchWithPlayers, Team } from '@/types';
+import type { Match, Court, MatchWithPlayers, Team, Player } from '@/types';
+import { buildScoreContext, calcMatchScore, getGroupKey } from '@/lib/matchScoring';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
 import { Clock, Users, Monitor } from 'lucide-react';
@@ -54,6 +55,10 @@ export default function ResultsTab() {
   const [groupProgressMap, setGroupProgressMap] = useState<Record<string, { done: number; total: number }>>({});
   // 団体戦: チーム名マップ (teamId → teamName)
   const [teamsMap, setTeamsMap] = useState<Record<string, string>>({});
+  // 待機試合の優先スコア (matchId → score)
+  const [waitingScores, setWaitingScores] = useState<Record<string, number>>({});
+  // コートが空になった時刻の追跡 (courtId → timestamp ms)
+  const [courtEmptySince, setCourtEmptySince] = useState<Record<string, number>>({});
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -127,7 +132,19 @@ export default function ResultsTab() {
         const waitingWithPlayers = await Promise.all(
           waiting.slice(0, 50).map(m => getMatchWithPlayers(m.id))
         );
-        setWaitingMatches(waitingWithPlayers.filter((m): m is MatchWithPlayers => m !== null));
+        const resolvedWaiting = waitingWithPlayers.filter((m): m is MatchWithPlayers => m !== null);
+        setWaitingMatches(resolvedWaiting);
+
+        // 優先スコアを計算（dispatcher と同一ロジック）
+        try {
+          const allPlayersData = await getAllDocuments<Player>('players');
+          const scoreCtx = buildScoreContext(allMatches, allPlayersData);
+          const scores: Record<string, number> = {};
+          resolvedWaiting.forEach(m => { scores[m.id] = calcMatchScore(m, scoreCtx); });
+          setWaitingScores(scores);
+        } catch {
+          // スコア計算失敗は無視（表示のみの機能）
+        }
 
         // 空コートがあるが試合が休息中の場合の検知
         const now = Date.now();
@@ -165,6 +182,20 @@ export default function ResultsTab() {
       });
       setCourts(sorted);
       setLoading(false);
+
+      // コートが空になった時刻を追跡（性別制限の経過時間表示用）
+      setCourtEmptySince(prev => {
+        const now = Date.now();
+        const updated = { ...prev };
+        sorted.forEach(c => {
+          if (!c.current_match_id) {
+            if (!updated[c.id]) updated[c.id] = now;
+          } else {
+            delete updated[c.id];
+          }
+        });
+        return updated;
+      });
 
       // 試合データを取得
       const matchIds = sorted
@@ -296,6 +327,23 @@ export default function ResultsTab() {
         toastError('再開に失敗しました');
       }
     } catch (error) {
+      toastError('エラーが発生しました');
+    }
+  };
+
+  const handleGenderUnlock = async (courtId: string) => {
+    try {
+      await updateDocument('courts', courtId, { manual_gender_unlock: true });
+      toastSuccess('逆性別の試合を許可しました。次回の自動割り当てで反映されます。');
+    } catch {
+      toastError('エラーが発生しました');
+    }
+  };
+
+  const handleCancelGenderUnlock = async (courtId: string) => {
+    try {
+      await updateDocument('courts', courtId, { manual_gender_unlock: false });
+    } catch {
       toastError('エラーが発生しました');
     }
   };
@@ -1086,6 +1134,47 @@ export default function ResultsTab() {
                       ) : (
                         <span className="text-[10px] text-slate-400 mt-0.5">自由に使用できます</span>
                       )}
+                      {/* 性別制限解除ボタン（preferred_gender が設定されているコートのみ表示） */}
+                      {court.preferred_gender && !court.manually_freed && (() => {
+                        const emptyMins = courtEmptySince[court.id]
+                          ? Math.floor((currentTime - courtEmptySince[court.id]) / 60000)
+                          : 0;
+                        const genderLabel = court.preferred_gender === 'male' ? '男子' : '女子';
+                        const oppositeLabel = court.preferred_gender === 'male' ? '女子' : '男子';
+                        return (
+                          <div className="mt-2 w-full space-y-1">
+                            {emptyMins >= 1 && (
+                              <p className="text-[10px] text-slate-400 text-center">
+                                {genderLabel}専用 · 空き{emptyMins}分
+                              </p>
+                            )}
+                            {court.manual_gender_unlock ? (
+                              <div className="flex flex-col gap-1 w-full">
+                                <span className="text-[10px] text-green-700 font-medium bg-green-50 border border-green-200 rounded px-2 py-0.5 text-center">
+                                  ✓ {oppositeLabel}の試合を許可中
+                                </span>
+                                <Button
+                                  onClick={() => handleCancelGenderUnlock(court.id)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full text-[10px] h-6 text-slate-500"
+                                >
+                                  取り消す
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                onClick={() => handleGenderUnlock(court.id)}
+                                variant="outline"
+                                size="sm"
+                                className="w-full border-violet-300 text-violet-700 hover:bg-violet-50 h-7 text-xs"
+                              >
+                                {oppositeLabel}の試合を許可
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {/* 強制アサイン */}
                       <div className="mt-2 w-full">
                         {showForceAssignFor === court.id ? (
@@ -1143,18 +1232,12 @@ export default function ResultsTab() {
                     const bBlocked = !!(b.available_at && currentTime < b.available_at.toMillis());
                     // 最優先: 待機可能 > 休息中
                     if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
-                    // 優先度1: グループ進行度が少ない順（予選グループ平準化）
-                    const getGroupDone = (m: MatchWithPlayers) => {
-                      if (!m.group) return -1;
-                      const k = `${m.tournament_type}_${m.division}_${m.group}`;
-                      return groupProgressMap[k]?.done ?? 0;
-                    };
-                    const aDone = getGroupDone(a);
-                    const bDone = getGroupDone(b);
-                    if (aDone !== bDone) return aDone - bDone;
-                    // 優先度2: ラウンドが若い順
+                    // スコアが計算済みであれば dispatcher と同一の優先順位で並べる
+                    const aScore = waitingScores[a.id];
+                    const bScore = waitingScores[b.id];
+                    if (aScore !== undefined && bScore !== undefined) return bScore - aScore;
+                    // フォールバック: ラウンド → 作成日時
                     if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
-                    // 優先度3: 待機時間が長い（作成日時が古い）順
                     return (a.created_at?.toMillis() || 0) - (b.created_at?.toMillis() || 0);
                   })
                   .map((match, idx) => {
@@ -1174,6 +1257,14 @@ export default function ResultsTab() {
                         <span className="text-xs text-slate-400 w-6 flex-shrink-0 font-mono text-right">
                           {idx + 1}
                         </span>
+                        {waitingScores[match.id] !== undefined && (
+                          <span
+                            className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded flex-shrink-0 tabular-nums"
+                            title={`優先スコア: ${Math.round(waitingScores[match.id])}`}
+                          >
+                            {Math.round(waitingScores[match.id])}
+                          </span>
+                        )}
                         <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full flex-shrink-0">
                           {getCategoryLabel(match.tournament_type)}
                         </span>

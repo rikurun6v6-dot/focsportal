@@ -2,8 +2,7 @@ import type { Match, Court, Config, Camp, Player } from '@/types';
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
-
-const ROUND_COEFFICIENT = 100;
+import { buildScoreContext, calcMatchScore, getGroupKey } from './matchScoring';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
   const allCourts = await getAllDocuments<Court>('courts');
@@ -121,48 +120,6 @@ export async function dispatchToEmptyCourt(
     if ((m as any).player6_id) busyPlayerIds.add((m as any).player6_id);
   });
 
-  // 1部と2部の進行状況を計算（campIdでフィルタして他合宿の試合を混入させない）
-  const campMatches = court.campId ? allMatches.filter(m => m.campId === court.campId) : allMatches;
-  const division1Matches = campMatches.filter(m => m.division === 1);
-  const division2Matches = campMatches.filter(m => m.division === 2);
-
-  const division1Completed = division1Matches.filter(m => m.status === 'completed').length;
-  const division2Completed = division2Matches.filter(m => m.status === 'completed').length;
-
-  const division1Total = division1Matches.length;
-  const division2Total = division2Matches.length;
-
-  // 進行率を計算（完了試合数 / 総試合数）
-  const division1Progress = division1Total > 0 ? division1Completed / division1Total : 1;
-  const division2Progress = division2Total > 0 ? division2Completed / division2Total : 1;
-
-  // 進行が遅れている方（進行率が低い方）を優先
-  // 同率の場合は2部をデフォルト優先（ただしgap=0のためボーナス0なので実質差なし）
-  const preferredDivision = division1Progress < division2Progress ? 1 : 2;
-  // ギャップに比例したボーナス（弱体化: 最大50点に抑制して平準化より投入優先）
-  // gap 0% → 0, gap 10% → 17, gap 30%+ → 50（上限）
-  const progressGap = Math.abs(division1Progress - division2Progress);
-  const divisionBonusBase = Math.round(Math.min(50, progressGap * 167));
-
-  // 種目・部・フェーズごとの最大ラウンド数を動的計算（固定値 4 を廃止）
-  const maxRoundByTypeDiv = new Map<string, number>();
-  campMatches.forEach(m => {
-    const k = `${m.tournament_type}_${m.division}_${(m as any).phase ?? 'knockout'}`;
-    const cur = maxRoundByTypeDiv.get(k) ?? 0;
-    if (m.round > cur) maxRoundByTypeDiv.set(k, m.round);
-  });
-
-  // グループ進行度マップを計算（予選グループ間の平準化用）
-  // キー: `${tournament_type}_${division}_${group}`, 値: calling+playing+completed の試合数
-  const groupProgressMap = new Map<string, number>();
-  campMatches.forEach(m => {
-    if (!m.group) return;
-    const gKey = `${m.tournament_type}_${m.division}_${m.group}`;
-    if (m.status === 'calling' || m.status === 'playing' || m.status === 'completed') {
-      groupProgressMap.set(gKey, (groupProgressMap.get(gKey) || 0) + 1);
-    }
-  });
-
   // Load config for finals wait mode
   const config = await getDocument<Config>('config', court.campId || 'system');
   const finalsWaitMode = config?.finals_wait_mode || {};
@@ -170,6 +127,12 @@ export async function dispatchToEmptyCourt(
   // 休息時間チェック用の設定を取得
   // Use the defaultRestMinutes parameter passed from admin page
   const allPlayers = await getAllDocuments<Player>('players');
+
+  // 合宿の全試合（スコアコンテキスト構築用）
+  const campMatches = court.campId ? allMatches.filter(m => m.campId === court.campId) : allMatches;
+
+  // 共通スコアコンテキストを構築（matchScoring.ts）
+  const scoreCtx = buildScoreContext(campMatches, allPlayers, config);
 
   // 団体戦用: アクティブな team_battle 試合から「対戦中のチームID」を収集（チーム単位ロック）
   const busyTeamIds = new Set<string>();
@@ -307,14 +270,14 @@ export async function dispatchToEmptyCourt(
   const minRoundByGroup = new Map<string, number>();
   for (const match of filteredWaitingMatches) {
     if (!match.player1_id || !match.player2_id) continue; // 選手未確定の枠はスキップ
-    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}_${(match as any).group ?? ''}`;
+    const groupKey = getGroupKey(match);
     const existing = minRoundByGroup.get(groupKey);
     if (existing === undefined || match.round < existing) {
       minRoundByGroup.set(groupKey, match.round);
     }
   }
   const roundFilteredMatches = validMatches.filter(match => {
-    const groupKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}_${(match as any).group ?? ''}`;
+    const groupKey = getGroupKey(match);
     const minRound = minRoundByGroup.get(groupKey);
     return minRound === undefined || match.round === minRound;
   });
@@ -334,67 +297,19 @@ export async function dispatchToEmptyCourt(
   ) : null;
 
   const candidatesWithScore = roundFilteredMatches.map(match => {
-    // 待機時間: 関与する全選手の最終試合終了時刻の最大値を基準（なければ created_at）
-    // これにより「試合が実際に割り当て可能になった時刻」から計算する
-    const playerIdsForWait = [
-      match.player1_id, match.player2_id, match.player3_id, match.player4_id,
-      (match as any).player5_id, (match as any).player6_id
-    ].filter((id): id is string => !!id);
-    const effectiveAvailableMs = playerIdsForWait.reduce((maxMs, pid) => {
-      const player = allPlayers.find(p => p.id === pid);
-      return player?.last_match_finished_at
-        ? Math.max(maxMs, player.last_match_finished_at.toMillis())
-        : maxMs;
-    }, 0);
-    const waitStartMs = effectiveAvailableMs > 0 ? effectiveAvailableMs : match.created_at.toMillis();
-    const waitTime = Math.max(0, (now - waitStartMs) / (1000 * 60));
+    // 共通スコア関数（matchScoring.ts）でスコアを計算
+    // court-specificな調整（adjacentCourtDivisions）を注入
+    const baseScore = calcMatchScore(match, { ...scoreCtx, adjacentCourtDivisions });
 
-    // 動的最大ラウンド: 固定値 4 ではなく実際の試合データから計算
-    const phaseKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
-    const maxRound = maxRoundByTypeDiv.get(phaseKey) ?? 4;
-    const roundScore = ROUND_COEFFICIENT * (maxRound - match.round + 1);
-
-    // 部のバランスボーナス（進行差に比例。差が大きいほど優先度を上げ、均等進行を促す）
-    let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
-
-    // 隣接コートチェック: 前後2コートが同じ部なら優先度を下げる
-    if (match.division && adjacentCourtDivisions.includes(match.division)) {
-      divisionBonus -= 30; // ペナルティ
-    }
-
-    // 混合ダブルスのコート制限チェック
+    // 混合ダブルスのコート制限ペナルティ（court-specific なので個別適用）
+    let courtPenalty = 0;
     if (mixedCourtRestriction && match.tournament_type === 'mixed_doubles') {
-      // このコートが制限対象外の部の場合、大幅にペナルティ
       if (match.division !== mixedCourtRestriction.allowedDivision) {
-        divisionBonus -= 1000; // 事実上除外
+        courtPenalty = -1000; // 事実上除外
       }
     }
 
-    // AI アドバイザーによる一時的な優先度ブースト
-    let categoryBoost = 0;
-    const temporaryBoost = config?.temporary_category_boost as Record<string, number> | undefined;
-    if (temporaryBoost && match.tournament_type) {
-      const boostValue = temporaryBoost[match.tournament_type];
-      const expiresAt = temporaryBoost[`${match.tournament_type}_expires_at`];
-
-      // 期限切れチェック（30分で期限切れ）
-      if (boostValue && expiresAt && now < expiresAt) {
-        categoryBoost = boostValue;
-      }
-    }
-
-    // 予選グループ進行度ペナルティ（弱体化: -100/試合 に抑制して空きコートへの投入を優先）
-    let groupBalancePenalty = 0;
-    if (match.group) {
-      const gKey = `${match.tournament_type}_${match.division}_${match.group}`;
-      const groupDone = groupProgressMap.get(gKey) || 0;
-      groupBalancePenalty = -100 * groupDone;
-    }
-
-    // ブラケット順序: match_number が小さい（上位）ほど優先（係数2 = 1枠差≒2分待機相当）
-    const matchOrderScore = -(match.match_number ?? 0) * 2;
-
-    const priorityScore = waitTime + roundScore + divisionBonus + categoryBoost + groupBalancePenalty + matchOrderScore;
+    const priorityScore = baseScore + courtPenalty;
 
     const preferredGender = getPreferredGender(match);
     const matchesCourt = preferredGender ? preferredGender === court.preferred_gender : true;
@@ -426,18 +341,16 @@ export async function dispatchToEmptyCourt(
     : Infinity;
 
   // コートに性別制約がある場合は制約を厳守
-  // ソフトフォールバック: 5分以上空き かつ 同性別・混合の割り当て可能試合がゼロ → 逆性別を許容して管理者に通知
+  // 逆性別の割り当ては管理者が manual_gender_unlock=true を設定した場合のみ許可
   let candidate;
   if (court.preferred_gender === 'male' || court.preferred_gender === 'female') {
     candidate = preferred.length > 0 ? preferred[0] : (neutral.length > 0 ? neutral[0] : null);
 
-    if (!candidate && minutesCourtEmpty >= 5) {
+    if (!candidate && court.manual_gender_unlock) {
       const opposite = candidatesWithScore
         .filter(c => !c.isNeutral && !c.matchesCourt)
         .sort((a, b) => b.priorityScore - a.priorityScore);
       if (opposite.length > 0) {
-        const genderLabel = court.preferred_gender === 'male' ? '男子' : '女子';
-        toastInfo(`${court.number}番コートが${Math.floor(minutesCourtEmpty)}分以上空いているため、${genderLabel}専用制約を緩和して割り当てます`);
         candidate = opposite[0];
       }
     }
@@ -528,9 +441,10 @@ export async function dispatchToEmptyCourt(
       court_id: court.id
     });
 
-    await updateDocument('courts', court.id, {
-      current_match_id: candidate.match.id
-    });
+    // manual_gender_unlock は割り当て成功後に自動リセット
+    const courtUpdate: Record<string, unknown> = { current_match_id: candidate.match.id };
+    if (court.manual_gender_unlock) courtUpdate.manual_gender_unlock = false;
+    await updateDocument('courts', court.id, courtUpdate);
 
     // Web Push 通知（fire-and-forget）
     fetch('/api/push/send', {

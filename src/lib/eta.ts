@@ -8,6 +8,7 @@ import {
 import { db } from "./firebase";
 import { safeGetDoc, safeGetDocs } from "./firestore-helpers";
 import type { Match, Player, ETAResult, Config, TournamentType, TournamentConfig, Court } from "@/types";
+import { buildScoreContext, calcMatchScore, getGroupKey } from "./matchScoring";
 
 const DEFAULT_DURATION_11 = 8;
 const DEFAULT_DURATION_15 = 12.5;
@@ -88,81 +89,97 @@ export async function searchPlayerByName(name: string): Promise<ETAResult | null
     const playerId = playerDoc.id;
     const campId = player.campId;
 
-    // 2. 合宿内の未完了試合を全取得
+    // 2. 全試合（完了含む）と全選手を並列取得（スコアコンテキスト構築用）
     const matchesRef = collection(db, 'matches');
-    const matchQuery = campId
-      ? query(matchesRef, where('campId', '==', campId), where('status', '!=', 'completed'))
-      : query(matchesRef, where('status', '!=', 'completed'));
-    const matchSnapshot = await safeGetDocs(matchQuery);
-    const allMatches = matchSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Match));
+    const [allMatchesSnap, allPlayersSnap, configDoc, courtsSnap] = await Promise.all([
+      safeGetDocs(campId ? query(matchesRef, where('campId', '==', campId)) : matchesRef),
+      safeGetDocs(playersRef),
+      safeGetDoc(doc(db, 'config', campId || 'system')),
+      safeGetDocs(
+        campId
+          ? query(collection(db, 'courts'), where('campId', '==', campId))
+          : collection(db, 'courts')
+      ),
+    ]);
 
+    const allCampMatches = allMatchesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Match));
+    const allPlayers = allPlayersSnap.docs.map(d => ({ id: d.id, ...d.data() } as Player));
+    const configData = configDoc.data();
+
+    // 3. 設定取得
+    const avgDuration11 = (configData?.avg_match_duration_11 as number | undefined) || DEFAULT_DURATION_11;
+    const avgDuration15 = (configData?.avg_match_duration_15 as number | undefined) || DEFAULT_DURATION_15;
+    const avgDuration21 = (configData?.avg_match_duration_21 as number | undefined) || DEFAULT_DURATION_21;
+
+    // enabled_tournaments フィルタ
+    const enabledTypes = configData?.enabled_tournaments as TournamentType[] | undefined;
+    const isEnabledType = (type: string) =>
+      !enabledTypes || enabledTypes.length === 0 || enabledTypes.includes(type as TournamentType);
+
+    // 4. コート数（性別フォールバック付き）
+    const courts = courtsSnap.docs.map(d => d.data() as Court);
+    const totalActiveCourts  = courts.filter(c => c.is_active).length || 1;
+    const activeMaleCourts   = courts.filter(c => c.is_active && c.preferred_gender === 'male').length   || totalActiveCourts;
+    const activeFemaleCourts = courts.filter(c => c.is_active && c.preferred_gender === 'female').length || totalActiveCourts;
+
+    // 5. 現在の試合状態を確認
     const isMyPlayer = (m: Match) =>
       m.player1_id === playerId || m.player2_id === playerId ||
       m.player3_id === playerId || m.player4_id === playerId;
 
-    // ★ Fix: 試合中・呼出中を先に確認（これが原因で waiting 扱いになっていたバグを修正）
-    const myActiveMatch = allMatches.find(m =>
+    const myActiveMatch = allCampMatches.find(m =>
       (m.status === 'calling' || m.status === 'playing') && isMyPlayer(m)
     );
     if (myActiveMatch) {
       return { minutes: 0, detail: '現在試合中または呼び出し中です', next_court: myActiveMatch.court_id, matches_before: 0 };
     }
 
-    // ★ Fix: 次の試合は status === 'waiting' のみに限定
-    const myNextMatch = allMatches.find(m => m.status === 'waiting' && isMyPlayer(m));
-    // 待機試合がなければ null（12分バグの修正: avgDurationを返さない）
+    const myNextMatch = allCampMatches.find(m => m.status === 'waiting' && isMyPlayer(m));
     if (!myNextMatch) return null;
 
-    // 3. 設定取得（合宿ごとに独立したconfig）
-    const configDoc = await safeGetDoc(doc(db, 'config', campId || 'system'));
-    const configData = configDoc.data();
-    const avgDuration11 = (configData?.avg_match_duration_11 as number | undefined) || DEFAULT_DURATION_11;
-    const avgDuration15 = (configData?.avg_match_duration_15 as number | undefined) || DEFAULT_DURATION_15;
-    const avgDuration21 = (configData?.avg_match_duration_21 as number | undefined) || DEFAULT_DURATION_21;
+    // 自分の種目が進行制御でオフになっている場合 → 「進行待ち」を返す
+    if (!isEnabledType(myNextMatch.tournament_type)) {
+      return {
+        minutes: -1,
+        detail: '進行待ち（この種目は現在停止中です）',
+        next_court: null,
+        matches_before: -1,
+        paused: true,
+      };
+    }
+
     const myMatchPoints = await getMatchPoints(myNextMatch);
     const avgDuration = myMatchPoints === 21 ? avgDuration21 : myMatchPoints === 11 ? avgDuration11 : avgDuration15;
-
-    // enabled_tournaments フィルタ（選択されている種目のみ対象）
-    const enabledTypes = configData?.enabled_tournaments as TournamentType[] | undefined;
-    const isEnabledType = (type: string) =>
-      !enabledTypes || enabledTypes.length === 0 || enabledTypes.includes(type as TournamentType);
-
-    // 4. 性別別コート数を取得（dispatcher と同じ区分で計算）
-    const courtsRef = collection(db, 'courts');
-    const courtsSnap = await safeGetDocs(
-      campId ? query(courtsRef, where('campId', '==', campId)) : courtsRef
-    );
-    const courts = courtsSnap.docs.map(d => d.data() as Court);
-    const totalActiveCourts  = courts.filter(c => c.is_active).length || 1;
-    // Fall back to totalActiveCourts when no gender-specific courts are configured
-    const activeMaleCourts   = courts.filter(c => c.is_active && c.preferred_gender === 'male').length   || totalActiveCourts;
-    const activeFemaleCourts = courts.filter(c => c.is_active && c.preferred_gender === 'female').length || totalActiveCourts;
 
     const myGender = getMatchGender(myNextMatch);
     const relevantCourts = myGender === 'male' ? activeMaleCourts
       : myGender === 'female' ? activeFemaleCourts
       : totalActiveCourts;
 
-    // 5. ラウンドハードフィルタ（dispatcher の minRoundByGroup ロジックを再現）
-    // enabled_tournaments でフィルタしてからキューを計算する
-    const allWaiting = allMatches.filter(m => m.status === 'waiting' && isEnabledType(m.tournament_type));
+    // 6. スコアコンテキストを共通関数で構築（dispatcherと同一）
+    const config = configData as Config | undefined;
+    const scoreCtx = buildScoreContext(allCampMatches, allPlayers, config);
+
+    // 7. ラウンドハードフィルタ（getGroupKey で dispatcher と完全同一キー）
+    const allWaiting = allCampMatches.filter(m =>
+      m.status === 'waiting' && isEnabledType(m.tournament_type) && m.player1_id && m.player2_id
+    );
     const minRoundByGroup = new Map<string, number>();
     for (const m of allWaiting) {
-      const key = `${m.tournament_type}_${m.division}`;
+      const key = getGroupKey(m);
       const cur = minRoundByGroup.get(key);
       if (cur === undefined || m.round < cur) minRoundByGroup.set(key, m.round);
     }
 
-    const myKey = `${myNextMatch.tournament_type}_${myNextMatch.division}`;
-    const minRoundForMyGroup = minRoundByGroup.get(myKey) ?? myNextMatch.round;
+    const myGroupKey = getGroupKey(myNextMatch);
+    const minRoundForMyGroup = minRoundByGroup.get(myGroupKey) ?? myNextMatch.round;
 
-    // 自分の試合が前ラウンド待ちの場合（例: 2回戦が待機中だが1回戦がまだ残っている）
+    // 自分の試合が前ラウンド待ちの場合
     if (myNextMatch.round > minRoundForMyGroup) {
-      const earlierRemaining = allWaiting.filter(m => {
-        const k = `${m.tournament_type}_${m.division}`;
-        return k === myKey && m.round < myNextMatch.round;
-      }).length;
-      const activeInMyGroup = allMatches.filter(m =>
+      const earlierRemaining = allWaiting.filter(m =>
+        getGroupKey(m) === myGroupKey && m.round < myNextMatch.round
+      ).length;
+      const activeInMyGroup = allCampMatches.filter(m =>
         m.tournament_type === myNextMatch.tournament_type &&
         m.division === myNextMatch.division &&
         (m.status === 'calling' || m.status === 'playing')
@@ -172,70 +189,40 @@ export async function searchPlayerByName(name: string): Promise<ETAResult | null
       return { minutes: estimatedMinutes, detail: `約${estimatedMinutes}分後（前ラウンド待ち）`, next_court: null, matches_before: earlierRemaining };
     }
 
-    // 6. dispatcher の divisionBonus を再現するため完了試合数を取得
-    const completedSnap = await safeGetDocs(
-      campId
-        ? query(matchesRef, where('campId', '==', campId), where('status', '==', 'completed'))
-        : query(matchesRef, where('status', '==', 'completed'))
-    );
-    const completedMatches = completedSnap.docs.map(d => d.data() as Match);
-
-    const allMatchesTotal = [...allMatches, ...completedMatches];
-    const div1Total = allMatchesTotal.filter(m => m.division === 1).length;
-    const div2Total = allMatchesTotal.filter(m => m.division === 2).length;
-    const div1Completed = completedMatches.filter(m => m.division === 1).length;
-    const div2Completed = completedMatches.filter(m => m.division === 2).length;
-    const div1Progress = div1Total > 0 ? div1Completed / div1Total : 1;
-    const div2Progress = div2Total > 0 ? div2Completed / div2Total : 1;
-    const preferredDivision = div1Progress < div2Progress ? 1 : 2;
-    const progressGap = Math.abs(div1Progress - div2Progress);
-    const divisionBonusBase = Math.round(Math.min(600, progressGap * 2000));
-
-    // 7. 同コートを競合する試合でディスパッチャー優先スコアを再現し、自分より前の試合数を算出
-    const ROUND_COEFFICIENT = 100;
-    const now = Date.now();
-
-    // ★ 現在試合中の選手IDを収集（dispatcher と同ロジック）
+    // 8. 「物理的に今コートに入れる」試合のみをカウント（dispatcher の validMatches に相当）
+    const now = scoreCtx.now;
     const busyPlayerIds = new Set<string>();
-    allMatches
+    allCampMatches
       .filter(m => m.status === 'calling' || m.status === 'playing')
       .forEach(m => {
-        if (m.player1_id) busyPlayerIds.add(m.player1_id);
-        if (m.player2_id) busyPlayerIds.add(m.player2_id);
-        if (m.player3_id) busyPlayerIds.add(m.player3_id);
-        if (m.player4_id) busyPlayerIds.add(m.player4_id);
+        [m.player1_id, m.player2_id, m.player3_id, m.player4_id,
+          (m as any).player5_id, (m as any).player6_id].forEach(id => { if (id) busyPlayerIds.add(id); });
       });
 
     const eligibleMatches = allWaiting.filter(m => {
-      const key = `${m.tournament_type}_${m.division}`;
-      if (m.round !== minRoundByGroup.get(key)) return false;
+      // ラウンド制約: 前ラウンドが残っていればロック
+      if (m.round !== minRoundByGroup.get(getGroupKey(m))) return false;
+      // 性別フィルタ（男子選手は男子コートを競合する試合のみカウント）
       const g = getMatchGender(m);
       if (myGender === 'male'   && g === 'female') return false;
       if (myGender === 'female' && g === 'male')   return false;
+      // 休息時間チェック
       if (m.available_at && now < m.available_at.toMillis()) return false;
-      if (m.player1_id && busyPlayerIds.has(m.player1_id)) return false;
-      if (m.player2_id && busyPlayerIds.has(m.player2_id)) return false;
-      if (m.player3_id && m.player3_id !== '' && busyPlayerIds.has(m.player3_id)) return false;
-      if (m.player4_id && m.player4_id !== '' && busyPlayerIds.has(m.player4_id)) return false;
+      // 重複選手チェック（already playing）
+      const playerIds = [m.player1_id, m.player2_id, m.player3_id, m.player4_id,
+        (m as any).player5_id, (m as any).player6_id].filter(Boolean);
+      if (playerIds.some(id => busyPlayerIds.has(id))) return false;
       return true;
     });
 
-    const calcScore = (m: Match) => {
-      const wt = (now - m.created_at.toMillis()) / 60000;
-      const rs = ROUND_COEFFICIENT * (4 - m.round + 1);
-      const db = m.division === preferredDivision ? divisionBonusBase : 0;
-      return wt + rs + db;
-    };
+    // 9. dispatcher と同一の calcMatchScore で優先順位を比較
+    const myScore = calcMatchScore(myNextMatch, scoreCtx);
+    const matchesBefore = eligibleMatches.filter(m =>
+      m.id !== myNextMatch.id && calcMatchScore(m, scoreCtx) > myScore
+    ).length;
 
-    const myPriority = calcScore(myNextMatch);
-
-    const matchesBefore = eligibleMatches.filter(m => {
-      if (m.id === myNextMatch.id) return false;
-      return calcScore(m) > myPriority;
-    }).length;
-
-    // 7. 同性別コートで進行中の試合数（残り約半分と仮定）
-    const activeOnRelevantCourts = allMatches.filter(m => {
+    // 10. 推定分数を計算
+    const activeOnRelevantCourts = allCampMatches.filter(m => {
       if (m.status !== 'calling' && m.status !== 'playing') return false;
       const g = getMatchGender(m);
       if (myGender === 'male'   && g === 'female') return false;
@@ -243,15 +230,12 @@ export async function searchPlayerByName(name: string): Promise<ETAResult | null
       return true;
     }).length;
 
-    const occupiedSlots = Math.min(activeOnRelevantCourts, relevantCourts);
-    const freeSlots     = Math.max(0, relevantCourts - occupiedSlots);
+    const freeSlots = Math.max(0, relevantCourts - Math.min(activeOnRelevantCourts, relevantCourts));
 
     let estimatedMinutes: number;
     if (matchesBefore === 0 && freeSlots > 0) {
-      // コートが空いていて順番が来ている → まもなく
       estimatedMinutes = 1;
     } else if (matchesBefore < relevantCourts) {
-      // 次のサイクル（進行中試合が終わり次第）
       estimatedMinutes = Math.ceil(avgDuration * 0.5);
     } else {
       estimatedMinutes = Math.ceil((matchesBefore / relevantCourts) * avgDuration);

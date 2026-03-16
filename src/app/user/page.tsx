@@ -518,6 +518,8 @@ export default function UserDashboard() {
                     const result = await searchPlayerByName(myPlayer.name);
                     if (result === null) {
                         setMyEta(null);
+                    } else if (result.paused) {
+                        setMyEta('進行待ち（種目が停止中）');
                     } else if (result.matches_before === 0 && result.minutes <= 1) {
                         setMyEta('まもなく呼び出されます');
                     } else if (result.matches_before === 0) {
@@ -550,6 +552,8 @@ export default function UserDashboard() {
                 const result = await searchPlayerByName(myPlayer.name);
                 if (result === null) {
                     setMyEta(null);
+                } else if (result.paused) {
+                    setMyEta('進行待ち（種目が停止中）');
                 } else if (result.matches_before === 0 && result.minutes <= 1) {
                     setMyEta('まもなく呼び出されます');
                 } else if (result.matches_before === 0) {

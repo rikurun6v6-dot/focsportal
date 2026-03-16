@@ -105,6 +105,7 @@ export interface Court {
   campId?: string;
   manually_freed?: boolean; // 👈 管理者が手動でフリーに設定したコート（自動割り当て対象外）
   freed_match_id?: string | null; // 👈 フリーにされた試合のID（復帰用）
+  manual_gender_unlock?: boolean; // 👈 管理者が逆性別試合の割り当てを承認済み（次回割り当て後に自動リセット）
 }
 
 /**
@@ -254,6 +255,8 @@ export interface ETAResult {
   detail: string; // Human-readable explanation
   next_court: string | null;
   matches_before: number;
+  /** true: 種目が enabled_tournaments でオフになっており割り当て待ち */
+  paused?: boolean;
 }
 
 // ===== Helper Types =====
