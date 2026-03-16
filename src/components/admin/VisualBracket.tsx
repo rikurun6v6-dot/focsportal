@@ -11,6 +11,7 @@ import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument } fr
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType, Division } from "@/types";
 import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import PreliminaryGroup from "./PreliminaryGroup";
 import KnockoutTree from "./KnockoutTree";
 import { getUnifiedRoundName, getTournamentTypeName } from "@/lib/tournament-logic";
@@ -43,6 +44,12 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     const [zoom, setZoom] = useState(1.0);
     const [editMode, setEditMode] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<{ matchId: string; position: 1 | 2 } | null>(null);
+    const [editingSlot, setEditingSlot] = useState<{ matchId: string; position: 1 | 2 } | null>(null);
+    const [editMain, setEditMain] = useState('');
+    const [editPartner, setEditPartner] = useState('');
+    const [editThird, setEditThird] = useState('');
+    const [editSaving, setEditSaving] = useState(false);
+    const [editSearch, setEditSearch] = useState('');
     const bracketRef = useRef<HTMLDivElement>(null);
     const bracketContentRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +129,40 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             toastError('入れ替えに失敗しました');
         }
         setSelectedSlot(null);
+    };
+
+    /**
+     * メンバー変更ダイアログを開く
+     */
+    const handleSlotEditOpen = (matchId: string, position: 1 | 2) => {
+        const match = matches.find(m => m.id === matchId);
+        if (!match) return;
+        const isP1 = position === 1;
+        setEditMain(isP1 ? (match.player1_id || '') : (match.player2_id || ''));
+        setEditPartner(isP1 ? (match.player3_id || '') : (match.player4_id || ''));
+        setEditThird(isP1 ? (match.player5_id || '') : (match.player6_id || ''));
+        setEditSearch('');
+        setEditingSlot({ matchId, position });
+    };
+
+    /**
+     * メンバー変更を保存
+     */
+    const handlePlayerSaveEdit = async () => {
+        if (!editingSlot) return;
+        const { matchId, position } = editingSlot;
+        const update = position === 1
+            ? { player1_id: editMain || '', player3_id: editPartner || null, player5_id: editThird || null }
+            : { player2_id: editMain || '', player4_id: editPartner || null, player6_id: editThird || null };
+        setEditSaving(true);
+        try {
+            await updateDocument('matches', matchId, update);
+            toastSuccess('メンバーを変更しました');
+            setEditingSlot(null);
+        } catch {
+            toastError('変更に失敗しました');
+        }
+        setEditSaving(false);
     };
 
     /**
@@ -349,6 +390,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     //   コンテンツ内で「未生成」メッセージを表示する（Task3 fix）
 
     return (
+        <>
         <div className="space-y-4">
             <Card>
                 <CardHeader>
@@ -591,6 +633,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                     editMode={editMode}
                                     selectedSlot={selectedSlot}
                                     onSlotClick={handleSlotClick}
+                                    onSlotEditClick={handleSlotEditOpen}
                                 />
                             )}
                         </div>
@@ -599,5 +642,86 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                 </CardContent>
             </Card>
         </div>
+
+        {/* メンバー変更ダイアログ */}
+
+        <Dialog open={!!editingSlot} onOpenChange={(open) => !open && setEditingSlot(null)}>
+            <DialogContent className="bg-white max-w-sm">
+                <DialogHeader>
+                    <DialogTitle>メンバー変更</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                    {/* 絞り込み */}
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <Input
+                            placeholder="選手名で絞り込み..."
+                            value={editSearch}
+                            onChange={e => setEditSearch(e.target.value)}
+                            className="pl-10"
+                        />
+                    </div>
+                    {/* メインプレイヤー */}
+                    <div>
+                        <label className="text-sm font-medium text-slate-700">メインプレイヤー</label>
+                        <select
+                            value={editMain}
+                            onChange={e => setEditMain(e.target.value)}
+                            className="mt-1 w-full border border-slate-300 rounded-md p-2 text-sm bg-white"
+                        >
+                            <option value="">（なし）</option>
+                            {players
+                                .filter(p => !editSearch || p.name.toLowerCase().includes(editSearch.toLowerCase()))
+                                .map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                        </select>
+                    </div>
+                    {/* パートナー（ダブルスのみ） */}
+                    {!tournamentType.includes('singles') && (
+                        <div>
+                            <label className="text-sm font-medium text-slate-700">ペアパートナー</label>
+                            <select
+                                value={editPartner}
+                                onChange={e => setEditPartner(e.target.value)}
+                                className="mt-1 w-full border border-slate-300 rounded-md p-2 text-sm bg-white"
+                            >
+                                <option value="">（なし）</option>
+                                {players
+                                    .filter(p => !editSearch || p.name.toLowerCase().includes(editSearch.toLowerCase()))
+                                    .map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                            </select>
+                        </div>
+                    )}
+                    {/* 3人目（ダブルスのみ） */}
+                    {!tournamentType.includes('singles') && (
+                        <div>
+                            <label className="text-sm font-medium text-slate-700">3人目（任意）</label>
+                            <select
+                                value={editThird}
+                                onChange={e => setEditThird(e.target.value)}
+                                className="mt-1 w-full border border-slate-300 rounded-md p-2 text-sm bg-white"
+                            >
+                                <option value="">（なし）</option>
+                                {players
+                                    .filter(p => !editSearch || p.name.toLowerCase().includes(editSearch.toLowerCase()))
+                                    .map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                            </select>
+                        </div>
+                    )}
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setEditingSlot(null)}>キャンセル</Button>
+                    <Button onClick={handlePlayerSaveEdit} disabled={editSaving}>
+                        {editSaving ? '保存中...' : '保存'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+        </>
     );
 }

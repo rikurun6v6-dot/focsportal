@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { Trophy, MapPin } from "lucide-react";
+import { Trophy, MapPin, Pencil } from "lucide-react";
 import type { Match, Court } from "@/types";
 import { useState, useEffect, useRef } from "react";
 import { subscribeToCollection } from "@/lib/firestore-helpers";
@@ -29,6 +29,7 @@ interface KnockoutTreeProps {
   editMode?: boolean;
   selectedSlot?: { matchId: string; position: 1 | 2 } | null;
   onSlotClick?: (matchId: string, position: 1 | 2) => void;
+  onSlotEditClick?: (matchId: string, position: 1 | 2) => void;
 }
 
 /**
@@ -286,6 +287,7 @@ export default function KnockoutTree({
   editMode = false,
   selectedSlot = null,
   onSlotClick,
+  onSlotEditClick,
 }: KnockoutTreeProps) {
   const { camp } = useCamp();
   const totalRounds = rounds.length;
@@ -539,6 +541,15 @@ export default function KnockoutTree({
                                       {match.score_p1}
                                     </span>
                                   )}
+                                  {editMode && !isBye && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); onSlotEditClick?.(match.id, 1); }}
+                                      className="ml-1 flex-shrink-0 p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-600"
+                                      title="メンバー変更"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -585,6 +596,15 @@ export default function KnockoutTree({
                                     <span className="ml-2 font-bold text-xl text-blue-600 tabular-nums flex-shrink-0">
                                       {match.score_p2}
                                     </span>
+                                  )}
+                                  {editMode && !isBye && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); onSlotEditClick?.(match.id, 2); }}
+                                      className="ml-1 flex-shrink-0 p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-600"
+                                      title="メンバー変更"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
                                   )}
                                 </div>
                               );
