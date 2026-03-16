@@ -30,16 +30,33 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const assignedMatchIds = new Set<string>();
   // 団体戦マルチコート: このループで既に確保済みのコートIDを追跡
   const claimedCourtIds = new Set<string>();
+  // バッチ内で割り当てた部を追跡（スタート時など全コート空でも部の偏りを防ぐ）
+  const batchAssignedDivisions: number[] = [];
+
+  // 男女別に空きコートへ部優先を割り振る（スタート時の全面同一部を防ぐ）
+  // 先頭=1部優先、末尾=2部優先、中間=どちらも（preference なし）
+  const courtDivisionPreference = new Map<string, 1 | 2>();
+  for (const gender of ['male', 'female', null] as const) {
+    const group = emptyCourts
+      .filter(c => (gender === null ? !c.preferred_gender : c.preferred_gender === gender))
+      .sort((a, b) => a.number - b.number);
+    if (group.length === 0) continue;
+    courtDivisionPreference.set(group[0].id, 1);
+    if (group.length >= 2) courtDivisionPreference.set(group[group.length - 1].id, 2);
+    // 中間コートは preference なし（どちらも受け付ける）
+  }
 
   for (const court of emptyCourts) {
     // 団体戦マルチコートとして既に確保済みのコートはスキップ
     if (claimedCourtIds.has(court.id)) continue;
 
-    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds);
+    const divPref = courtDivisionPreference.get(court.id);
+    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, batchAssignedDivisions, divPref);
     if (assigned) {
       dispatchedCount++;
       assignedMatchIds.add(assigned.id);
       claimedCourtIds.add(court.id);
+      if (assigned.division) batchAssignedDivisions.push(assigned.division);
       const idx = waitingMatches.findIndex(m => m.id === assigned.id);
       if (idx >= 0) waitingMatches.splice(idx, 1);
 
@@ -70,7 +87,9 @@ export async function dispatchToEmptyCourt(
   court: Court,
   waitingMatches: Match[],
   defaultRestMinutes: number = 10,
-  assignedMatchIds: Set<string> = new Set()
+  assignedMatchIds: Set<string> = new Set(),
+  batchAssignedDivisions: number[] = [],
+  divisionPreference?: 1 | 2
 ): Promise<Match | null> {
   const now = Date.now();
   // 同一ループ内で既に割り当て済みの試合を除外（二重割り当て防止の第二防衛線）
@@ -241,30 +260,38 @@ export async function dispatchToEmptyCourt(
       }
     }
 
-    // Finals wait mode check
+    // Finals wait mode check（1部・2部の準決勝以下が両方揃ったら同時解放）
     const key = `${match.tournament_type}_${match.division}`;
     if (finalsWaitMode[key]) {
-      // Get all matches in this tournament (exclude 3rd place)
-      const allMatchesInTournament = allMatches.filter(m =>
+      // 同種目の全部門の試合を取得（3位決定戦除く）
+      const allMatchesInType = allMatches.filter(m =>
         m.campId === match.campId &&
         m.tournament_type === match.tournament_type &&
-        m.division === match.division &&
         m.subtitle !== "3位決定戦"
       );
 
-      if (allMatchesInTournament.length > 0) {
-        const maxRound = Math.max(...allMatchesInTournament.map(m => m.round));
-        const isFinals = match.round === maxRound;
+      if (allMatchesInType.length > 0) {
+        // 各部の最終ラウンド（決勝ラウンド）を取得
+        const maxRoundByDiv = new Map<number, number>();
+        allMatchesInType.forEach(m => {
+          if (!m.division) return;
+          const cur = maxRoundByDiv.get(m.division) ?? 0;
+          if (m.round > cur) maxRoundByDiv.set(m.division, m.round);
+        });
+
+        const myMaxRound = maxRoundByDiv.get(match.division ?? 0) ?? 0;
+        const isFinals = match.round === myMaxRound && myMaxRound > 0;
 
         if (isFinals) {
-          // Check if all other matches are completed
-          const otherMatches = allMatchesInTournament.filter(m => m.id !== match.id);
-          const allOthersCompleted = otherMatches.every(m => m.status === 'completed');
-
-          if (!allOthersCompleted) {
-            return false; // Exclude finals from dispatch until others complete
+          // 全部門の決勝以外（準決勝以下）が完了しているか確認
+          const nonFinalMatches = allMatchesInType.filter(m => {
+            if (!m.division) return false;
+            const divMax = maxRoundByDiv.get(m.division) ?? 0;
+            return m.round < divMax;
+          });
+          if (!nonFinalMatches.every(m => m.status === 'completed')) {
+            return false; // どこかの部の準決勝以下が未完了 → 待機
           }
-          // If all others complete, finals is ready - continue to dispatch
         }
       }
     }
@@ -293,10 +320,12 @@ export async function dispatchToEmptyCourt(
     return minRound === undefined || match.round === minRound;
   });
 
-  // 隣接コートの部門を取得（3面連続で同じ部にならないように）
+  // 隣接コートの部門を取得（既存コート + 今回のバッチ割り当て分を合算）
   const allCourts = await getAllDocuments<Court>('courts');
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
-  const adjacentCourtDivisions = getAdjacentCourtDivisions(court.number, campCourts, allMatches);
+  const existingCourtDivisions = getAdjacentCourtDivisions(court.number, campCourts, allMatches);
+  // バッチ内で既に割り当てた部をマージ（スタート時など全コート空でも偏り防止が効く）
+  const adjacentCourtDivisions = [...existingCourtDivisions, ...batchAssignedDivisions];
 
   // 混合ダブルスのコート制限チェック
   const mixedDoublesActive = waitingMatches.some(m => m.tournament_type === 'mixed_doubles');
@@ -307,10 +336,14 @@ export async function dispatchToEmptyCourt(
     waitingMatches
   ) : null;
 
+  // divisionPreference が指定されている場合、その部を強制的に優先（+150）
+  const scoreCtxForCourt = divisionPreference
+    ? { ...scoreCtx, preferredDivision: divisionPreference, divisionBonusBase: 150, adjacentCourtDivisions }
+    : { ...scoreCtx, adjacentCourtDivisions };
+
   const candidatesWithScore = roundFilteredMatches.map(match => {
     // 共通スコア関数（matchScoring.ts）でスコアを計算
-    // court-specificな調整（adjacentCourtDivisions）を注入
-    const baseScore = calcMatchScore(match, { ...scoreCtx, adjacentCourtDivisions });
+    const baseScore = calcMatchScore(match, scoreCtxForCourt);
 
     // 混合ダブルスのコート制限ペナルティ（court-specific なので個別適用）
     let courtPenalty = 0;
@@ -378,69 +411,44 @@ export async function dispatchToEmptyCourt(
   // Check if this is finals and apply center court priority
   const key = `${candidate.match.tournament_type}_${candidate.match.division}`;
   if (finalsWaitMode[key]) {
-    const allMatchesInTournament = allMatches.filter(m =>
+    const allMatchesInType = allMatches.filter(m =>
       m.campId === candidate.match.campId &&
       m.tournament_type === candidate.match.tournament_type &&
-      m.division === candidate.match.division &&
       m.subtitle !== "3位決定戦"
     );
 
-    if (allMatchesInTournament.length > 0) {
-      const maxRound = Math.max(...allMatchesInTournament.map(m => m.round));
-      const isFinals = candidate.match.round === maxRound;
+    if (allMatchesInType.length > 0) {
+      const maxRoundByDiv = new Map<number, number>();
+      allMatchesInType.forEach(m => {
+        if (!m.division) return;
+        const cur = maxRoundByDiv.get(m.division) ?? 0;
+        if (m.round > cur) maxRoundByDiv.set(m.division, m.round);
+      });
+      const myMaxRound = maxRoundByDiv.get(candidate.match.division ?? 0) ?? 0;
+      const isFinals = candidate.match.round === myMaxRound && myMaxRound > 0;
 
       if (isFinals) {
-        // Get camp court count
         const campDoc = await getDocument<Camp>('camps', court.campId || '');
         const courtCount = campDoc?.court_count || 6;
 
-        // Determine preferred court numbers (center courts)
-        let preferredCourtNumbers: number[] = [];
+        const preferredCourtNumbers = getFinalsPreferredCourts(
+          candidate.match.tournament_type,
+          candidate.match.division ?? 0,
+          courtCount
+        );
 
-        if (courtCount === 6) {
-          // 6面: 1部決勝=3番または4番、2部決勝=その隣
-          if (candidate.match.division === 1) {
-            preferredCourtNumbers = [3, 4];
-          } else if (candidate.match.division === 2) {
-            preferredCourtNumbers = [2, 5]; // 1部の隣
-          }
-        } else if (courtCount === 8) {
-          // 8面: 1部決勝=4番または5番、2部決勝=その隣
-          if (candidate.match.division === 1) {
-            preferredCourtNumbers = [4, 5];
-          } else if (candidate.match.division === 2) {
-            preferredCourtNumbers = [3, 6]; // 1部の隣
-          }
-        } else {
-          // その他のコート数: 中央付近
-          const center = Math.ceil(courtCount / 2);
-          if (candidate.match.division === 1) {
-            preferredCourtNumbers = [center, center + 1];
-          } else if (candidate.match.division === 2) {
-            preferredCourtNumbers = [center - 1, center + 2];
-          }
-        }
-
-        // Check if current court is NOT a preferred court
         if (preferredCourtNumbers.length > 0 && !preferredCourtNumbers.includes(court.number)) {
-          // Get all courts to check if preferred is available
           const allCourts = await getAllDocuments<Court>('courts', []);
           const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
-
           const preferredAvailable = campCourts.some(c =>
             preferredCourtNumbers.includes(c.number) &&
             c.is_active &&
             !c.current_match_id &&
             !c.manually_freed
           );
-
-          if (preferredAvailable) {
-            // Skip this court, wait for preferred court
-            return null;
-          }
+          if (preferredAvailable) return null; // 優先コートが空くまで待機
         }
 
-        // Finals is being assigned - show notification
         toastInfo(`決勝戦がセンターコートで始まります！第${court.number}コート`);
       }
     }
@@ -468,6 +476,51 @@ export async function dispatchToEmptyCourt(
   }
 
   return candidate.match;
+}
+
+/**
+ * 決勝戦の優先コート番号を返す（何面でも対応）
+ *
+ * コートブロック定義（面数に関わらず共通）:
+ *   男子ブロック: 1 〜 half (half = floor(N/2))
+ *   女子ブロック: half+1 〜 N
+ *   混合ダブルス: 1部=前半ブロック、2部=後半ブロック
+ *
+ * 決勝コート:
+ *   1部 → そのブロックのセンター
+ *   2部 → そのブロックの先頭（男子=1番、女子=half+1番）
+ *   混合は1部・2部ともにブロックのセンター
+ */
+function getFinalsPreferredCourts(
+  tournamentType: string,
+  division: number,
+  courtCount: number
+): number[] {
+  const half = Math.floor(courtCount / 2);
+  const maleStart = 1, maleEnd = half;
+  const femaleStart = half + 1, femaleEnd = courtCount;
+  const blockCenter = (start: number, end: number) => Math.ceil((start + end) / 2);
+
+  const isMens = tournamentType === 'mens_singles' || tournamentType === 'mens_doubles';
+  const isWomens = tournamentType === 'womens_singles' || tournamentType === 'womens_doubles';
+  const isMixed = tournamentType === 'mixed_doubles';
+
+  if (isMens) {
+    // 1部→センター、2部→センターの隣（センター-1）
+    const center = blockCenter(maleStart, maleEnd);
+    return division === 1 ? [center] : [center - 1];
+  }
+  if (isWomens) {
+    // 1部→センター、2部→センターの隣（センター-1）
+    const center = blockCenter(femaleStart, femaleEnd);
+    return division === 1 ? [center] : [center - 1];
+  }
+  if (isMixed) {
+    // 混合は1部・2部がそれぞれ別ブロックを使うのでどちらもセンター
+    return division === 1 ? [blockCenter(maleStart, maleEnd)] : [blockCenter(femaleStart, femaleEnd)];
+  }
+  // その他種目: 前半ブロックセンター or 先頭
+  return division === 1 ? [blockCenter(maleStart, maleEnd)] : [maleStart];
 }
 
 function getPreferredGender(match: Match): 'male' | 'female' | null {
