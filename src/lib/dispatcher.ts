@@ -477,23 +477,21 @@ function getPreferredGender(match: Match): 'male' | 'female' | null {
 }
 
 /**
- * 隣接コート（前後各1コート）の部門を取得
+ * 現在使用中の全コートの部門を取得（部門バランス制御用）
+ * 同じ部門のコートが多いほどペナルティが累積し、部の偏りを防ぐ
  */
 function getAdjacentCourtDivisions(
-  courtNumber: number,
+  _courtNumber: number,
   courts: Court[],
   matches: Match[]
 ): number[] {
   const divisions: number[] = [];
-  const adjacentNumbers = [courtNumber - 1, courtNumber + 1];
 
-  for (const num of adjacentNumbers) {
-    const adjacentCourt = courts.find(c => c.number === num);
-    if (adjacentCourt?.current_match_id) {
-      const adjacentMatch = matches.find(m => m.id === adjacentCourt.current_match_id);
-      if (adjacentMatch?.division) {
-        divisions.push(adjacentMatch.division);
-      }
+  for (const c of courts) {
+    if (!c.current_match_id) continue;
+    const m = matches.find(match => match.id === c.current_match_id);
+    if (m?.division) {
+      divisions.push(m.division);
     }
   }
 
