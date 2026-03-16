@@ -535,6 +535,19 @@ export default function ResultsTab() {
   };
 
   const handleStartOnReservedCourt = async (matchId: string) => {
+    // 進行制御チェック（enabled_tournamentsに含まれない種目は完全ブロック）
+    const match = breakingMatches.find(m => m.id === matchId);
+    if (match?.tournament_type) {
+      try {
+        const campConfig = await getDocument<Config>('config', camp?.id || '');
+        const enabled = campConfig?.enabled_tournaments;
+        if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type as any)) {
+          toastError(`「${match.tournament_type}」は進行制御でロック中です。操作タブで種目を有効にしてから開始してください。`);
+          return;
+        }
+      } catch { /* config取得失敗時はスルー */ }
+    }
+
     const confirmed = await confirm({
       title: '▶️ 試合開始',
       message: `この試合を予約コートで開始しますか？`,

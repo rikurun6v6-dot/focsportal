@@ -722,96 +722,79 @@ export default function AdvancedAnalytics({ campId }: Props) {
 
       {/* アルゴリズム重み調整スライダー */}
       <Card className="border-t-4 border-t-indigo-500">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
-            アルゴリズム重み調整
-            {weightSaving && (
-              <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded animate-pulse font-medium ml-auto">保存中...</span>
-            )}
-          </CardTitle>
-          <p className="text-[11px] text-slate-400">スライダーを動かすと即座にFirestoreへ反映され、次の自動割り当てに適用されます。</p>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {/* ラウンド優先度 */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-slate-700">ラウンド優先度 <code className="text-[10px] bg-slate-100 px-1 rounded">round_weight</code></span>
-              <span className="text-xs font-bold text-indigo-600">{roundWeight} <span className="text-[10px] text-slate-400 font-normal">（約{roundWeight}分待ち相当）</span></span>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+              アルゴリズム重み調整
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {weightSaving && (
+                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded animate-pulse font-medium">保存中...</span>
+              )}
+              <button
+                onClick={() => {
+                  setRoundWeight(100); setGroupPenalty(100); setDivisionBonusMax(50); setWaitFactor(1.0);
+                  saveWeights(100, 100, 50, 1.0);
+                }}
+                className="text-[11px] text-slate-400 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded px-2 py-0.5 transition-colors"
+              >
+                全て初期値に戻す
+              </button>
             </div>
-            <input
-              type="range" min={0} max={300} step={5} value={roundWeight}
-              onChange={e => {
-                const v = Number(e.target.value);
-                setRoundWeight(v);
-                saveWeights(v, groupPenalty, divisionBonusMax, waitFactor);
-              }}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              高いほど下位ラウンドが全て終わるまで上位ラウンドを抑制。100 = 100分待ちに相当する優先度。
-            </p>
           </div>
+          <p className="text-[11px] text-slate-400 mt-1">スライダーを動かすと500ms後にFirestoreへ自動保存されます。</p>
+        </CardHeader>
+        <CardContent className="space-y-5 pt-3">
+
+          {/* ラウンド優先度 */}
+          <WeightSlider
+            label="ラウンド優先度"
+            keyName="round_weight"
+            value={roundWeight}
+            min={0} max={300} step={5} defaultVal={100}
+            unit={`約${roundWeight}分待ち相当`}
+            description="高いほど下位ラウンドが全て終わるまで上位ラウンドを抑制。100 = 100分待ちに相当する優先度。"
+            onChange={v => { setRoundWeight(v); saveWeights(v, groupPenalty, divisionBonusMax, waitFactor); }}
+            onReset={() => { setRoundWeight(100); saveWeights(100, groupPenalty, divisionBonusMax, waitFactor); }}
+          />
 
           {/* グループ平準化ペナルティ */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-slate-700">グループ平準化ペナルティ <code className="text-[10px] bg-slate-100 px-1 rounded">group_penalty</code></span>
-              <span className="text-xs font-bold text-indigo-600">{groupPenalty} <span className="text-[10px] text-slate-400 font-normal">（1試合先行ごとに約{groupPenalty}分のブレーキ）</span></span>
-            </div>
-            <input
-              type="range" min={0} max={200} step={5} value={groupPenalty}
-              onChange={e => {
-                const v = Number(e.target.value);
-                setGroupPenalty(v);
-                saveWeights(roundWeight, v, divisionBonusMax, waitFactor);
-              }}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              高いほど各予選ブロックの進行が横並びになります。0にするとグループ平準化なし。
-            </p>
-          </div>
+          <WeightSlider
+            label="グループ平準化ペナルティ"
+            keyName="group_penalty"
+            value={groupPenalty}
+            min={0} max={200} step={5} defaultVal={100}
+            unit={`1試合先行ごとに約${groupPenalty}分のブレーキ`}
+            description="高いほど各予選ブロックの進行が横並びになります。0にするとグループ平準化なし。"
+            onChange={v => { setGroupPenalty(v); saveWeights(roundWeight, v, divisionBonusMax, waitFactor); }}
+            onReset={() => { setGroupPenalty(100); saveWeights(roundWeight, 100, divisionBonusMax, waitFactor); }}
+          />
 
           {/* 部門バランスボーナス */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-slate-700">部門バランスボーナス <code className="text-[10px] bg-slate-100 px-1 rounded">division_bonus_max</code></span>
-              <span className="text-xs font-bold text-indigo-600">{divisionBonusMax} <span className="text-[10px] text-slate-400 font-normal">（最大{divisionBonusMax}点の救済）</span></span>
-            </div>
-            <input
-              type="range" min={0} max={100} step={5} value={divisionBonusMax}
-              onChange={e => {
-                const v = Number(e.target.value);
-                setDivisionBonusMax(v);
-                saveWeights(roundWeight, groupPenalty, v, waitFactor);
-              }}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              進行が遅れている「部」への救済措置の強さ。0にするとバランス調整なし。
-            </p>
-          </div>
+          <WeightSlider
+            label="部門バランスボーナス"
+            keyName="division_bonus_max"
+            value={divisionBonusMax}
+            min={0} max={100} step={5} defaultVal={50}
+            unit={`最大${divisionBonusMax}点の救済`}
+            description="進行が遅れている「部」への救済措置の強さ。0にするとバランス調整なし。"
+            onChange={v => { setDivisionBonusMax(v); saveWeights(roundWeight, groupPenalty, v, waitFactor); }}
+            onReset={() => { setDivisionBonusMax(50); saveWeights(roundWeight, groupPenalty, 50, waitFactor); }}
+          />
 
           {/* 待機時間係数 */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-slate-700">待機時間係数 <code className="text-[10px] bg-slate-100 px-1 rounded">wait_factor</code></span>
-              <span className="text-xs font-bold text-indigo-600">{waitFactor.toFixed(1)} <span className="text-[10px] text-slate-400 font-normal">（1分待機 = {waitFactor.toFixed(1)}点）</span></span>
-            </div>
-            <input
-              type="range" min={0.1} max={2.0} step={0.1} value={waitFactor}
-              onChange={e => {
-                const v = parseFloat(e.target.value);
-                setWaitFactor(v);
-                saveWeights(roundWeight, groupPenalty, divisionBonusMax, v);
-              }}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              待機時間の重みを調整。2.0にすると「1分待った」ことの価値が2倍になります。
-            </p>
-          </div>
+          <WeightSlider
+            label="待機時間係数"
+            keyName="wait_factor"
+            value={waitFactor}
+            min={0.1} max={2.0} step={0.1} defaultVal={1.0}
+            unit={`1分待機 = ${waitFactor.toFixed(1)}点`}
+            description="待機時間の重みを調整。2.0にすると「1分待った」ことの価値が2倍になります。"
+            isFloat
+            onChange={v => { setWaitFactor(v); saveWeights(roundWeight, groupPenalty, divisionBonusMax, v); }}
+            onReset={() => { setWaitFactor(1.0); saveWeights(roundWeight, groupPenalty, divisionBonusMax, 1.0); }}
+          />
 
           <div className="pt-2 border-t border-slate-100">
             <p className="text-[11px] text-slate-500 font-mono">
@@ -834,6 +817,84 @@ export default function AdvancedAnalytics({ campId }: Props) {
           </p>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ── WeightSlider サブコンポーネント ────────────────────────────────────────
+interface WeightSliderProps {
+  label: string;
+  keyName: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  defaultVal: number;
+  unit: string;
+  description: string;
+  isFloat?: boolean;
+  onChange: (v: number) => void;
+  onReset: () => void;
+}
+
+function WeightSlider({ label, keyName, value, min, max, step, defaultVal, unit, description, isFloat, onChange, onReset }: WeightSliderProps) {
+  const pct = ((value - min) / (max - min)) * 100;
+  const isDefault = Math.abs(value - defaultVal) < 0.001;
+  const displayVal = isFloat ? value.toFixed(1) : String(value);
+
+  return (
+    <div className="space-y-1.5">
+      {/* ラベル行 */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+          {label}
+          <code className="text-[10px] bg-slate-100 px-1 rounded text-slate-500">{keyName}</code>
+        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs font-bold text-indigo-600 tabular-nums">{displayVal}</span>
+          <button
+            onClick={onReset}
+            disabled={isDefault}
+            className="text-[10px] border rounded px-1.5 py-0.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600"
+          >
+            初期値({isFloat ? defaultVal.toFixed(1) : defaultVal})
+          </button>
+        </div>
+      </div>
+
+      {/* スライダー + グラデーションバー */}
+      <div className="relative h-5 flex items-center">
+        {/* 背景トラック */}
+        <div className="absolute inset-x-0 h-2 rounded-full bg-slate-200 pointer-events-none" />
+        {/* 塗りつぶし部分 */}
+        <div
+          className="absolute left-0 h-2 rounded-full bg-indigo-500 pointer-events-none transition-all duration-75"
+          style={{ width: `${pct}%` }}
+        />
+        {/* スライダー本体（透明にしてトラックの上に重ねる） */}
+        <input
+          type="range"
+          min={min} max={max} step={step} value={value}
+          onChange={e => onChange(isFloat ? parseFloat(e.target.value) : Number(e.target.value))}
+          className="relative w-full h-2 appearance-none bg-transparent cursor-pointer"
+          style={{ WebkitAppearance: 'none' }}
+        />
+      </div>
+
+      {/* 目盛り（最小・デフォルト・最大） */}
+      <div className="flex justify-between text-[10px] text-slate-300 px-0.5">
+        <span>{isFloat ? min.toFixed(1) : min}</span>
+        <span className="text-slate-400">初期値 {isFloat ? defaultVal.toFixed(1) : defaultVal}</span>
+        <span>{isFloat ? max.toFixed(1) : max}</span>
+      </div>
+
+      {/* 待機時間換算バッジ + 説明 */}
+      <div className="flex items-start gap-2">
+        <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 rounded px-1.5 py-0.5 whitespace-nowrap shrink-0">
+          {unit}
+        </span>
+        <p className="text-[10px] text-slate-400 leading-snug">{description}</p>
+      </div>
     </div>
   );
 }
