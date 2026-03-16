@@ -161,7 +161,9 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                             <Users className="w-5 h-5" />
                                             1部（{division1Matches.length}試合）
                                         </h3>
-                                        {division1Matches.map((match, idx) => (
+                                        {division1Matches.map((match, idx) => {
+                                            const matchIndex = matches.indexOf(match);
+                                            return (
                                             <Card key={match.id} className="border-2 border-sky-200 bg-sky-50/30">
                                                 <CardContent className="p-4 space-y-4">
                                                     <div className="flex items-center gap-2 text-sm font-bold text-sky-700">
@@ -177,7 +179,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                     type="number"
                                                     placeholder="シード"
                                                     value={match.seed_p1 || ''}
-                                                    onChange={(e) => handleSeedChange(idx, 'seed_p1', e.target.value)}
+                                                    onChange={(e) => handleSeedChange(matchIndex, 'seed_p1', e.target.value)}
                                                     disabled={readOnly}
                                                     className="w-20 h-8 text-sm bg-white"
                                                 />
@@ -187,7 +189,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                 {match.player5_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
-                                                <Select value={match.player1_id} onValueChange={(v) => handlePlayerChange(idx, 'player1_id', v)} disabled={readOnly}>
+                                                <Select value={match.player1_id} onValueChange={(v) => handlePlayerChange(matchIndex, 'player1_id', v)} disabled={readOnly}>
                                                     <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                         <SelectValue placeholder="選手1" />
                                                     </SelectTrigger>
@@ -198,7 +200,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                     </SelectContent>
                                                 </Select>
                                                 {isDoubles && (
-                                                    <Select value={match.player3_id || ''} onValueChange={(v) => handlePlayerChange(idx, 'player3_id', v)} disabled={readOnly}>
+                                                    <Select value={match.player3_id || ''} onValueChange={(v) => handlePlayerChange(matchIndex, 'player3_id', v)} disabled={readOnly}>
                                                         <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                             <SelectValue placeholder="選手2" />
                                                         </SelectTrigger>
@@ -210,7 +212,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                     </Select>
                                                 )}
                                                 {isDoubles && (
-                                                    <Select value={match.player5_id || '__none__'} onValueChange={(v) => handlePlayerChange(idx, 'player5_id', v === '__none__' ? '' : v)} disabled={readOnly}>
+                                                    <Select value={match.player5_id || '__none__'} onValueChange={(v) => handlePlayerChange(matchIndex, 'player5_id', v === '__none__' ? '' : v)} disabled={readOnly}>
                                                         <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
                                                             <SelectValue placeholder="3人目（任意）" />
                                                         </SelectTrigger>
@@ -236,7 +238,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                     type="number"
                                                     placeholder="シード"
                                                     value={match.seed_p2 || ''}
-                                                    onChange={(e) => handleSeedChange(idx, 'seed_p2', e.target.value)}
+                                                    onChange={(e) => handleSeedChange(matchIndex, 'seed_p2', e.target.value)}
                                                     disabled={readOnly}
                                                     className="w-20 h-8 text-sm bg-white"
                                                 />
@@ -246,7 +248,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                 {match.player6_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
-                                                <Select value={match.player2_id} onValueChange={(v) => handlePlayerChange(idx, 'player2_id', v)} disabled={readOnly}>
+                                                <Select value={match.player2_id} onValueChange={(v) => handlePlayerChange(matchIndex, 'player2_id', v)} disabled={readOnly}>
                                                     <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                         <SelectValue placeholder="選手1" />
                                                     </SelectTrigger>
@@ -257,7 +259,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                     </SelectContent>
                                                 </Select>
                                                 {isDoubles && (
-                                                    <Select value={match.player4_id || ''} onValueChange={(v) => handlePlayerChange(idx, 'player4_id', v)} disabled={readOnly}>
+                                                    <Select value={match.player4_id || ''} onValueChange={(v) => handlePlayerChange(matchIndex, 'player4_id', v)} disabled={readOnly}>
                                                         <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
                                                             <SelectValue placeholder="選手2" />
                                                         </SelectTrigger>
@@ -269,7 +271,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                                     </Select>
                                                 )}
                                                 {isDoubles && (
-                                                    <Select value={match.player6_id || '__none__'} onValueChange={(v) => handlePlayerChange(idx, 'player6_id', v === '__none__' ? '' : v)} disabled={readOnly}>
+                                                    <Select value={match.player6_id || '__none__'} onValueChange={(v) => handlePlayerChange(matchIndex, 'player6_id', v === '__none__' ? '' : v)} disabled={readOnly}>
                                                         <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
                                                             <SelectValue placeholder="3人目（任意）" />
                                                         </SelectTrigger>
@@ -285,7 +287,8 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                         </div>
                                     </CardContent>
                                 </Card>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 );
                             })()}
