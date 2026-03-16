@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loading } from '@/components/ui/loading';
 import { collection, query, where, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Match, Player, TournamentConfig } from '@/types';
+import type { Match, Player, TournamentConfig, TournamentType } from '@/types';
 import { Calendar, Trophy, Clock, MapPin } from 'lucide-react';
 
 interface MyMatchesViewProps {
@@ -32,6 +32,7 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
   const [tournamentConfigs, setTournamentConfigs] = useState<TournamentConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [notifiedMatches, setNotifiedMatches] = useState<Set<string>>(new Set());
+  const [enabledTypes, setEnabledTypes] = useState<TournamentType[]>([]);
 
   useEffect(() => {
     const matchesQ = query(
@@ -64,10 +65,18 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
       setTournamentConfigs(configs);
     });
 
+    // 進行制御（enabled_tournaments）をリアルタイム監視
+    const configRef = doc(db, 'config', campId);
+    const unsubscribeSystemConfig = onSnapshot(configRef, (snap) => {
+      const data = snap.data();
+      setEnabledTypes((data?.enabled_tournaments as TournamentType[]) || []);
+    });
+
     return () => {
       unsubscribeMatches();
       unsubscribePlayers();
       unsubscribeConfigs();
+      unsubscribeSystemConfig();
     };
   }, [playerId, campId]);
 
@@ -161,7 +170,12 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
 
   // Task 6: 進行順位に基づいて表示する待機試合をフィルタ
   const visibleWaiting = useMemo(() => {
-    if (tournamentConfigs.length === 0) return waiting;
+    // enabled_tournamentsでフィルタ（停止中の種目は非表示）
+    const baseWaiting = enabledTypes.length > 0
+      ? waiting.filter(m => enabledTypes.includes(m.tournament_type as TournamentType))
+      : waiting;
+
+    if (tournamentConfigs.length === 0) return baseWaiting;
 
     // 現在進行中の種目を取得
     const activeTournamentTypes = new Set(active.map(m => `${m.tournament_type}_${m.division || 0}`));
@@ -176,7 +190,7 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
 
     // 進行中の種目がある場合、その種目のみ表示
     if (activeTournamentTypes.size > 0) {
-      return waiting.filter(m => {
+      return baseWaiting.filter(m => {
         const key = `${m.tournament_type}_${m.division || 0}`;
         return activeTournamentTypes.has(key);
       });
@@ -184,18 +198,18 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
 
     // 進行中の種目がない場合、最も優先度が高い種目のみ表示
     let minPriority = 999;
-    waiting.forEach(m => {
+    baseWaiting.forEach(m => {
       const key = `${m.tournament_type}_${m.division || 0}`;
       const priority = priorityMap.get(key) || 999;
       if (priority < minPriority) minPriority = priority;
     });
 
-    return waiting.filter(m => {
+    return baseWaiting.filter(m => {
       const key = `${m.tournament_type}_${m.division || 0}`;
       const priority = priorityMap.get(key) || 999;
       return priority === minPriority;
     });
-  }, [waiting, active, tournamentConfigs]);
+  }, [waiting, active, tournamentConfigs, enabledTypes]);
 
   function tournamentTypeToEventType(eventType: string): string {
     return eventType; // MD, WD, XD, MS, WS, TEAM

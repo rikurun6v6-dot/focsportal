@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { collection, query, where } from "firebase/firestore";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { collection, query, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Lock, RefreshCw, TrendingUp, BarChart2, AlertTriangle, CheckCircle2, Sparkles, Bot } from "lucide-react";
+import { Lock, RefreshCw, TrendingUp, BarChart2, AlertTriangle, CheckCircle2, Sparkles, Bot, SlidersHorizontal } from "lucide-react";
 import type { AIDiagnosePayload } from "@/app/api/ai-diagnose/route";
 import type { Match, Court, Player } from "@/types";
 
@@ -80,6 +80,14 @@ export default function AdvancedAnalytics({ campId }: Props) {
   const [aiAnalysis, setAiAnalysis] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiTriggeredKey, setAiTriggeredKey] = useState<string>(""); // 同じ状態で重複実行しない
+
+  // ── アルゴリズム重み ────────────────────────────────────────────
+  const [roundWeight, setRoundWeight] = useState(100);
+  const [groupPenalty, setGroupPenalty] = useState(100);
+  const [divisionBonusMax, setDivisionBonusMax] = useState(50);
+  const [waitFactor, setWaitFactor] = useState(1.0);
+  const [weightSaving, setWeightSaving] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && sessionStorage.getItem("adv_analytics_unlocked") === "1") {
@@ -354,6 +362,44 @@ export default function AdvancedAnalytics({ campId }: Props) {
   useEffect(() => {
     if (isUnlocked) fetchAndMaybeDiagnose();
   }, [isUnlocked, fetchAndMaybeDiagnose]);
+
+  // 重み設定をFirestoreからロード
+  useEffect(() => {
+    if (!isUnlocked || !campId) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "config", campId));
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.round_weight != null) setRoundWeight(d.round_weight);
+          if (d.group_penalty != null) setGroupPenalty(d.group_penalty);
+          if (d.division_bonus_max != null) setDivisionBonusMax(d.division_bonus_max);
+          if (d.wait_factor != null) setWaitFactor(d.wait_factor);
+        }
+      } catch { /* ロード失敗は無視 */ }
+    })();
+  }, [isUnlocked, campId]);
+
+  // デバウンスしてFirestoreに保存（スライダー操作から500ms後）
+  const saveWeights = useCallback((rw: number, gp: number, dbm: number, wf: number) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      if (!campId) return;
+      setWeightSaving(true);
+      try {
+        await updateDoc(doc(db, "config", campId), {
+          round_weight: rw,
+          group_penalty: gp,
+          division_bonus_max: dbm,
+          wait_factor: wf,
+        });
+      } catch (e) {
+        console.error("重み保存エラー", e);
+      } finally {
+        setWeightSaving(false);
+      }
+    }, 500);
+  }, [campId]);
 
   const getPlayerName = (id: string | null | undefined) => {
     if (!id) return "-";
@@ -674,12 +720,113 @@ export default function AdvancedAnalytics({ campId }: Props) {
         </CardContent>
       </Card>
 
+      {/* アルゴリズム重み調整スライダー */}
+      <Card className="border-t-4 border-t-indigo-500">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+            アルゴリズム重み調整
+            {weightSaving && (
+              <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded animate-pulse font-medium ml-auto">保存中...</span>
+            )}
+          </CardTitle>
+          <p className="text-[11px] text-slate-400">スライダーを動かすと即座にFirestoreへ反映され、次の自動割り当てに適用されます。</p>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* ラウンド優先度 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-slate-700">ラウンド優先度 <code className="text-[10px] bg-slate-100 px-1 rounded">round_weight</code></span>
+              <span className="text-xs font-bold text-indigo-600">{roundWeight} <span className="text-[10px] text-slate-400 font-normal">（約{roundWeight}分待ち相当）</span></span>
+            </div>
+            <input
+              type="range" min={0} max={300} step={5} value={roundWeight}
+              onChange={e => {
+                const v = Number(e.target.value);
+                setRoundWeight(v);
+                saveWeights(v, groupPenalty, divisionBonusMax, waitFactor);
+              }}
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              高いほど下位ラウンドが全て終わるまで上位ラウンドを抑制。100 = 100分待ちに相当する優先度。
+            </p>
+          </div>
+
+          {/* グループ平準化ペナルティ */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-slate-700">グループ平準化ペナルティ <code className="text-[10px] bg-slate-100 px-1 rounded">group_penalty</code></span>
+              <span className="text-xs font-bold text-indigo-600">{groupPenalty} <span className="text-[10px] text-slate-400 font-normal">（1試合先行ごとに約{groupPenalty}分のブレーキ）</span></span>
+            </div>
+            <input
+              type="range" min={0} max={200} step={5} value={groupPenalty}
+              onChange={e => {
+                const v = Number(e.target.value);
+                setGroupPenalty(v);
+                saveWeights(roundWeight, v, divisionBonusMax, waitFactor);
+              }}
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              高いほど各予選ブロックの進行が横並びになります。0にするとグループ平準化なし。
+            </p>
+          </div>
+
+          {/* 部門バランスボーナス */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-slate-700">部門バランスボーナス <code className="text-[10px] bg-slate-100 px-1 rounded">division_bonus_max</code></span>
+              <span className="text-xs font-bold text-indigo-600">{divisionBonusMax} <span className="text-[10px] text-slate-400 font-normal">（最大{divisionBonusMax}点の救済）</span></span>
+            </div>
+            <input
+              type="range" min={0} max={100} step={5} value={divisionBonusMax}
+              onChange={e => {
+                const v = Number(e.target.value);
+                setDivisionBonusMax(v);
+                saveWeights(roundWeight, groupPenalty, v, waitFactor);
+              }}
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              進行が遅れている「部」への救済措置の強さ。0にするとバランス調整なし。
+            </p>
+          </div>
+
+          {/* 待機時間係数 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-slate-700">待機時間係数 <code className="text-[10px] bg-slate-100 px-1 rounded">wait_factor</code></span>
+              <span className="text-xs font-bold text-indigo-600">{waitFactor.toFixed(1)} <span className="text-[10px] text-slate-400 font-normal">（1分待機 = {waitFactor.toFixed(1)}点）</span></span>
+            </div>
+            <input
+              type="range" min={0.1} max={2.0} step={0.1} value={waitFactor}
+              onChange={e => {
+                const v = parseFloat(e.target.value);
+                setWaitFactor(v);
+                saveWeights(roundWeight, groupPenalty, divisionBonusMax, v);
+              }}
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              待機時間の重みを調整。2.0にすると「1分待った」ことの価値が2倍になります。
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-[11px] text-slate-500 font-mono">
+              スコア = 待機時間×{waitFactor.toFixed(1)} + {roundWeight}×(maxR−R+1) + 部ボーナス(最大{divisionBonusMax}) − {groupPenalty}×消化済試合数
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* スコア計算式 */}
       <Card className="border border-slate-200 bg-slate-50">
         <CardContent className="pt-4 pb-3">
           <p className="text-[11px] font-medium text-slate-600 mb-1">スコア計算式（高いほど優先）</p>
           <p className="text-[11px] text-slate-500 font-mono leading-relaxed">
-            合計 = 待機時間(分) + ラウンドスコア(100×(4-R+1)) + 部ボーナス(gap×2000, 上限600)
+            合計 = 待機時間(分)×wait_factor + round_weight×(maxR-R+1) + 部ボーナス(上限division_bonus_max) − group_penalty×消化済試合数
           </p>
           <p className="text-[11px] text-slate-400 mt-1">
             ※ ブロック条件（優先順位）: ①選手未確定（前ラウンド結果待ち） → ②同種目・同部の前ラウンドが待機中 → ③選手が他試合中 → ④休憩中（available_at）<br/>

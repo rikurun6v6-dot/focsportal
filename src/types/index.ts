@@ -192,6 +192,10 @@ export interface Config {
   temporary_category_boost?: Record<string, number>; // AIアドバイザーによる一時的な優先度ブースト
   pause_until?: Timestamp | null; // 一時中断の終了時刻
   pause_label?: string; // 一時中断の理由ラベル
+  round_weight?: number; // ラウンド優先度係数（デフォルト100）
+  group_penalty?: number; // グループ平準化ペナルティ（デフォルト100）
+  division_bonus_max?: number; // 部門バランスボーナス上限（デフォルト50）
+  wait_factor?: number; // 待機時間係数（デフォルト1.0）
 }
 
 /**

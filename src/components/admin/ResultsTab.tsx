@@ -15,13 +15,14 @@ import {
   unfreeCourtManually,
   moveMatchToCourt,
   getAllDocuments,
+  getDocument,
   setMatchBreak,
   cancelMatchBreak,
   startMatchOnReservedCourt,
   resetMatchResult
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
-import type { Match, Court, MatchWithPlayers, Team, Player } from '@/types';
+import type { Match, Court, MatchWithPlayers, Team, Player, Config } from '@/types';
 import { buildScoreContext, calcMatchScore, getGroupKey } from '@/lib/matchScoring';
 import { diagnoseWaitingMatches, type MatchDiagnostic } from '@/lib/dispatcher';
 import { getRoundName } from '@/lib/formatters';
@@ -128,11 +129,14 @@ export default function ResultsTab() {
 
         setBreakingMatches(breakingWithPlayers.filter((m): m is MatchWithPlayers => m !== null));
 
-        // 待機中の試合（強制アサイン用）
+        // 待機中の試合（強制アサイン用）- enabled_tournamentsでフィルタ
+        const campConfig = await getDocument<Config>('config', camp.id).catch(() => undefined);
+        const enabledTypes = campConfig?.enabled_tournaments;
         const waiting = allMatches.filter(m =>
           m.campId === camp.id &&
           m.status === 'waiting' &&
-          m.player1_id && m.player2_id
+          m.player1_id && m.player2_id &&
+          (!enabledTypes || enabledTypes.length === 0 || enabledTypes.includes(m.tournament_type as any))
         );
         const waitingWithPlayers = await Promise.all(
           waiting.slice(0, 50).map(m => getMatchWithPlayers(m.id))
@@ -474,22 +478,16 @@ export default function ResultsTab() {
   };
 
   const handleForceAssign = async (matchId: string, courtId: string) => {
-    // 種目ロック確認（enabled_tournamentsに含まれない種目は警告）
+    // 種目ロック確認（enabled_tournamentsに含まれない種目は完全ブロック）
     const match = waitingMatches.find(m => m.id === matchId);
     if (match?.tournament_type) {
       try {
-        const configs = await getAllDocuments<{ id: string; enabled_tournaments?: string[] }>('config');
-        const systemConfig = configs.find(c => c.id === camp?.id);
-        const enabled = systemConfig?.enabled_tournaments;
-        if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type)) {
-          const lockOk = await confirm({
-            title: '⚠️ 種目ロック中',
-            message: `「${match.tournament_type}」は現在ロックされています。それでも強制アサインしますか？`,
-            confirmText: '強制実行',
-            cancelText: 'キャンセル',
-            type: 'info',
-          });
-          if (!lockOk) { setShowForceAssignFor(null); return; }
+        const campConfig = await getDocument<Config>('config', camp?.id || '');
+        const enabled = campConfig?.enabled_tournaments;
+        if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type as any)) {
+          toastError(`「${match.tournament_type}」は進行制御でロック中です。操作タブで種目を有効にしてから割り当ててください。`);
+          setShowForceAssignFor(null);
+          return;
         }
       } catch { /* config取得失敗時はスルー */ }
     }

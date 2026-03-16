@@ -6,7 +6,7 @@
 
 import type { Match, Player, Config } from '@/types';
 
-/** ラウンド係数（ラウンドが若いほど優先） */
+/** ラウンド係数（ラウンドが若いほど優先）デフォルト値 */
 export const ROUND_COEFFICIENT = 100;
 
 /** スコア計算に必要なコンテキスト */
@@ -25,6 +25,12 @@ export interface ScoreContext {
    * 含まれる部門にペナルティ -30 を適用
    */
   adjacentCourtDivisions?: number[];
+  /** ラウンド優先度係数（config.round_weight、デフォルト100） */
+  roundWeight: number;
+  /** グループ平準化ペナルティ（config.group_penalty、デフォルト100） */
+  groupPenalty: number;
+  /** 待機時間係数（config.wait_factor、デフォルト1.0） */
+  waitFactor: number;
 }
 
 /**
@@ -49,8 +55,9 @@ export function buildScoreContext(
 
   const preferredDivision: 1 | 2 = div1Progress < div2Progress ? 1 : 2;
   const progressGap = Math.abs(div1Progress - div2Progress);
-  // ギャップに比例したボーナス（最大50点）
-  const divisionBonusBase = Math.round(Math.min(50, progressGap * 167));
+  const divisionBonusMax = config?.division_bonus_max ?? 50;
+  // ギャップに比例したボーナス（最大 division_bonus_max 点）
+  const divisionBonusBase = Math.round(divisionBonusMax * Math.min(1, progressGap * (1 / 0.3)));
 
   // 種目・部・フェーズごとの動的maxRound
   const maxRoundByTypeDiv = new Map<string, number>();
@@ -71,6 +78,9 @@ export function buildScoreContext(
   });
 
   const temporaryBoost = config?.temporary_category_boost as Record<string, number> | undefined;
+  const roundWeight = config?.round_weight ?? ROUND_COEFFICIENT;
+  const groupPenalty = config?.group_penalty ?? 100;
+  const waitFactor = config?.wait_factor ?? 1.0;
 
   return {
     now: _now,
@@ -80,6 +90,9 @@ export function buildScoreContext(
     maxRoundByTypeDiv,
     groupProgressMap,
     temporaryBoost,
+    roundWeight,
+    groupPenalty,
+    waitFactor,
   };
 }
 
@@ -92,6 +105,7 @@ export function calcMatchScore(match: Match, ctx: ScoreContext): number {
   const {
     now, allPlayers, preferredDivision, divisionBonusBase,
     maxRoundByTypeDiv, groupProgressMap, temporaryBoost, adjacentCourtDivisions,
+    roundWeight, groupPenalty, waitFactor,
   } = ctx;
 
   // 待機時間: 選手の last_match_finished_at の最大値、なければ created_at
@@ -105,12 +119,13 @@ export function calcMatchScore(match: Match, ctx: ScoreContext): number {
       ? Math.max(maxMs, player.last_match_finished_at.toMillis()) : maxMs;
   }, 0);
   const waitStartMs = effectiveAvailableMs > 0 ? effectiveAvailableMs : match.created_at.toMillis();
-  const waitTime = Math.max(0, (now - waitStartMs) / 60000);
+  const rawWaitTime = Math.max(0, (now - waitStartMs) / 60000);
+  const waitTime = rawWaitTime * (waitFactor ?? 1.0);
 
-  // ラウンドスコア（動的maxRound）
+  // ラウンドスコア（動的maxRound・動的係数）
   const phaseKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
   const maxRound = maxRoundByTypeDiv.get(phaseKey) ?? 4;
-  const roundScore = ROUND_COEFFICIENT * (maxRound - match.round + 1);
+  const roundScore = (roundWeight ?? ROUND_COEFFICIENT) * (maxRound - match.round + 1);
 
   // 部のバランスボーナス
   let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
@@ -129,12 +144,12 @@ export function calcMatchScore(match: Match, ctx: ScoreContext): number {
     }
   }
 
-  // 予選グループ進行度ペナルティ（進んでいるグループを後回し）
+  // 予選グループ進行度ペナルティ（進んでいるグループを後回し・動的係数）
   let groupBalancePenalty = 0;
   if ((match as any).group) {
     const gKey = `${match.tournament_type}_${match.division}_${(match as any).group}`;
     const groupDone = groupProgressMap.get(gKey) || 0;
-    groupBalancePenalty = -100 * groupDone;
+    groupBalancePenalty = -(groupPenalty ?? 100) * groupDone;
   }
 
   // ブラケット順序（match_number が小さい方が優先、係数2 ≒ 2分待機相当）

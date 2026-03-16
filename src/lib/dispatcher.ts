@@ -14,7 +14,14 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
 
   const allMatches = await getAllDocuments<Match>('matches');
   const matches = campId ? allMatches.filter(m => m.campId === campId) : allMatches;
-  const waitingMatches = matches.filter(m => m.status === 'waiting');
+  const allWaitingMatches = matches.filter(m => m.status === 'waiting');
+
+  // ── 進行制御: 最上流で enabled_tournaments フィルタを適用（絶対ブロック） ──
+  const topConfig = await getDocument<Config>('config', campId || 'system');
+  const topEnabledTypes = topConfig?.enabled_tournaments;
+  const waitingMatches = (topEnabledTypes && topEnabledTypes.length > 0)
+    ? allWaitingMatches.filter(m => topEnabledTypes.includes(m.tournament_type as TournamentType))
+    : allWaitingMatches;
 
   if (waitingMatches.length === 0) return 0;
 
@@ -71,6 +78,19 @@ export async function dispatchToEmptyCourt(
     waitingMatches = waitingMatches.filter(m => !assignedMatchIds.has(m.id));
   }
 
+  // ── 進行制御フィルタを最初に適用（予約パス含む全パスで有効） ──
+  // config を先に読み込み、enabled_tournaments に含まれない種目を完全排除する
+  const config = await getDocument<Config>('config', court.campId || 'system');
+  const enabledTypesEarly = config?.enabled_tournaments;
+  if (enabledTypesEarly && enabledTypesEarly.length > 0) {
+    waitingMatches = waitingMatches.filter(m =>
+      enabledTypesEarly.includes(m.tournament_type as TournamentType)
+    );
+  }
+  if (waitingMatches.length === 0) return null;
+
+  const finalsWaitMode = config?.finals_wait_mode || {};
+
   // ✅ 予約優先: このコートに予約されている試合があるかチェック
   const reservedMatch = waitingMatches.find(m =>
     m.reserved_court_id === court.id &&
@@ -79,7 +99,7 @@ export async function dispatchToEmptyCourt(
   );
 
   if (reservedMatch) {
-    // 予約試合を最優先でアサイン
+    // 予約試合を最優先でアサイン（enabled_tournaments フィルタ済みの waitingMatches から取得）
     try {
       await updateDocument('matches', reservedMatch.id, {
         status: 'calling',
@@ -119,10 +139,6 @@ export async function dispatchToEmptyCourt(
     if ((m as any).player5_id) busyPlayerIds.add((m as any).player5_id);
     if ((m as any).player6_id) busyPlayerIds.add((m as any).player6_id);
   });
-
-  // Load config for finals wait mode
-  const config = await getDocument<Config>('config', court.campId || 'system');
-  const finalsWaitMode = config?.finals_wait_mode || {};
 
   // 休息時間チェック用の設定を取得
   // Use the defaultRestMinutes parameter passed from admin page
@@ -171,13 +187,8 @@ export async function dispatchToEmptyCourt(
 
   const canUseForShortMatch = timeUntilReservation > AVERAGE_MATCH_DURATION;
 
-  // 種目フィルタの厳格化: enabled_tournamentsが指定されている場合、完全一致のみ許可
-  const enabledTypes = config?.enabled_tournaments;
-  const filteredWaitingMatches = (enabledTypes && enabledTypes.length > 0)
-    ? waitingMatches.filter(m => enabledTypes.includes(m.tournament_type as any))
-    : waitingMatches;
-
-  const validMatches = filteredWaitingMatches.filter(match => {
+  // waitingMatches は冒頭の enabled_tournaments フィルタ適用済み
+  const validMatches = waitingMatches.filter(match => {
     if (!match.player1_id || !match.player2_id) return false;
 
     if (match.tournament_type === 'team_battle') {
@@ -264,11 +275,11 @@ export async function dispatchToEmptyCourt(
   if (validMatches.length === 0) return null;
 
   // ラウンド順序の厳守: 両選手が揃っている待機試合を基準にラウンド下限を計算
-  // validMatches（空き・休息チェック後）ではなく filteredWaitingMatches（選手IDあり）を使うことで、
+  // validMatches（空き・休息チェック後）ではなく waitingMatches（選手IDあり・enabled済）を使うことで、
   // 下位ラウンドの選手が休息中でも上位ラウンドを先出しさせない
   // グループキーに group フィールドを含める: 予選グループA/B/Cが互いにブロックしないようにする
   const minRoundByGroup = new Map<string, number>();
-  for (const match of filteredWaitingMatches) {
+  for (const match of waitingMatches) {
     if (!match.player1_id || !match.player2_id) continue; // 選手未確定の枠はスキップ
     const groupKey = getGroupKey(match);
     const existing = minRoundByGroup.get(groupKey);
