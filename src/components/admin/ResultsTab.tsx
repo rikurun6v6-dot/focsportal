@@ -23,9 +23,10 @@ import {
 import { recordMatchDuration } from '@/lib/eta';
 import type { Match, Court, MatchWithPlayers, Team, Player } from '@/types';
 import { buildScoreContext, calcMatchScore, getGroupKey } from '@/lib/matchScoring';
+import { diagnoseWaitingMatches, type MatchDiagnostic } from '@/lib/dispatcher';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
-import { Clock, Users, Monitor } from 'lucide-react';
+import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
 
@@ -59,6 +60,10 @@ export default function ResultsTab() {
   const [waitingScores, setWaitingScores] = useState<Record<string, number>>({});
   // コートが空になった時刻の追跡 (courtId → timestamp ms)
   const [courtEmptySince, setCourtEmptySince] = useState<Record<string, number>>({});
+  // アサイン診断結果
+  const [diagnostics, setDiagnostics] = useState<MatchDiagnostic[]>([]);
+  // 診断カードの展開状態 (matchId → boolean)
+  const [expandedDiagnostic, setExpandedDiagnostic] = useState<Record<string, boolean>>({});
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -144,6 +149,14 @@ export default function ResultsTab() {
           setWaitingScores(scores);
         } catch {
           // スコア計算失敗は無視（表示のみの機能）
+        }
+
+        // アサイン診断（空きコートがある場合のみ）
+        try {
+          const diag = await diagnoseWaitingMatches(camp.id, 10);
+          setDiagnostics(diag);
+        } catch {
+          // 表示専用、エラーは無視
         }
 
         // 空コートがあるが試合が休息中の場合の検知
@@ -1300,6 +1313,98 @@ export default function ResultsTab() {
                     );
                   })}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* アサイン診断 */}
+        {diagnostics.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              アサイン診断（スキップされた試合）
+              <span className="text-sm font-normal text-slate-500">{diagnostics.length}件</span>
+            </h3>
+            <div className="space-y-2">
+              {diagnostics.map((d) => {
+                const match = d.match as any as MatchWithPlayers;
+                const isExpanded = !!expandedDiagnostic[d.match.id];
+                // 理由ごとの色
+                const reasonColor: Record<string, string> = {
+                  disabled: 'bg-slate-100 text-slate-600 border-slate-300',
+                  busy:     'bg-rose-50 text-rose-700 border-rose-300',
+                  resting:  'bg-orange-50 text-orange-700 border-orange-300',
+                  round_locked: 'bg-blue-50 text-blue-700 border-blue-300',
+                  gender_mismatch: 'bg-violet-50 text-violet-700 border-violet-300',
+                };
+                const reasonIcon: Record<string, string> = {
+                  disabled: '⏸',
+                  busy: '🔴',
+                  resting: '⏰',
+                  round_locked: '🔒',
+                  gender_mismatch: '♂♀',
+                };
+                return (
+                  <div key={d.match.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                    {/* ヘッダー行（タップで展開） */}
+                    <button
+                      className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                      onClick={() => setExpandedDiagnostic(prev => ({ ...prev, [d.match.id]: !isExpanded }))}
+                    >
+                      {/* カテゴリ・ラウンド */}
+                      <span className="text-[10px] font-bold text-white bg-sky-500 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        {getCategoryLabel(d.match.tournament_type)}
+                      </span>
+                      {d.match.division && (
+                        <span className="text-[10px] text-purple-600 flex-shrink-0">{d.match.division}部</span>
+                      )}
+                      {d.match.round && (
+                        <span className="text-[10px] text-slate-500 flex-shrink-0">{d.match.round}回戦</span>
+                      )}
+                      {/* 選手名 */}
+                      <span className="flex-1 text-sm text-slate-700 truncate min-w-0">
+                        {[match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ') || '?'}
+                        <span className="text-slate-400 mx-1.5 text-xs">vs</span>
+                        {[match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ') || '?'}
+                      </span>
+                      {/* スコア */}
+                      {d.score !== undefined && (
+                        <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded flex-shrink-0 tabular-nums">
+                          {Math.round(d.score)}
+                        </span>
+                      )}
+                      {/* 理由バッジ（先頭1件） */}
+                      {d.reasons[0] && (
+                        <span className={`text-[10px] border px-1.5 py-0.5 rounded-full flex-shrink-0 font-medium ${reasonColor[d.reasons[0].reason] ?? 'bg-slate-100 text-slate-600'}`}>
+                          {reasonIcon[d.reasons[0].reason]} {d.reasons[0].label}
+                          {d.reasons.length > 1 && <span className="ml-1 opacity-70">+{d.reasons.length - 1}</span>}
+                        </span>
+                      )}
+                      {isExpanded
+                        ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      }
+                    </button>
+
+                    {/* 展開パネル */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-100 px-4 py-3 bg-slate-50 space-y-2">
+                        {d.reasons.map((r, i) => (
+                          <div key={i} className={`flex items-start gap-2 rounded-md border px-3 py-2 ${reasonColor[r.reason] ?? 'bg-slate-100 border-slate-300'}`}>
+                            <span className="text-base leading-tight flex-shrink-0">{reasonIcon[r.reason]}</span>
+                            <div>
+                              <p className="text-sm font-semibold leading-tight">{r.label}</p>
+                              {r.detail && (
+                                <p className="text-xs mt-0.5 opacity-80">{r.detail}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

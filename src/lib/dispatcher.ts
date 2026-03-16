@@ -1,4 +1,4 @@
-import type { Match, Court, Config, Camp, Player } from '@/types';
+import type { Match, Court, Config, Camp, Player, TournamentType } from '@/types';
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
@@ -487,6 +487,215 @@ function getAdjacentCourtDivisions(
   }
 
   return divisions;
+}
+
+// ===== アサイン診断 =====
+
+export type SkipReason = 'disabled' | 'busy' | 'resting' | 'round_locked' | 'gender_mismatch';
+
+export interface SkipReasonDetail {
+  reason: SkipReason;
+  /** 管理者向け日本語説明 */
+  label: string;
+  /** 追加詳細（例: 休息残り時間、ブロックしている選手名） */
+  detail?: string;
+}
+
+export interface MatchDiagnostic {
+  match: Match;
+  reasons: SkipReasonDetail[];
+  score?: number;
+}
+
+/**
+ * 待機中の試合がアサインされない理由を診断して返す。
+ * 空きコートが1面以上あるにも関わらずアサインされなかった試合に対して、
+ * 各除外理由を列挙する。
+ */
+export async function diagnoseWaitingMatches(
+  campId?: string,
+  defaultRestMinutes: number = 10
+): Promise<MatchDiagnostic[]> {
+  const now = Date.now();
+
+  // ── データ取得 ──────────────────────────────────────────────
+  const [allCourts, allMatches, allPlayers, config] = await Promise.all([
+    getAllDocuments<Court>('courts'),
+    getAllDocuments<Match>('matches'),
+    getAllDocuments<Player>('players'),
+    getDocument<Config>('config', campId || 'system'),
+  ]);
+
+  const campCourts = campId ? allCourts.filter(c => c.campId === campId) : allCourts;
+  const campMatches = campId ? allMatches.filter(m => m.campId === campId) : allMatches;
+
+  // 空きコート（自動割り当て対象）
+  const emptyCourts = campCourts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
+  if (emptyCourts.length === 0) return []; // 空きコートなし → 診断不要
+
+  const waitingMatches = campMatches.filter(
+    m => m.status === 'waiting' && m.player1_id && m.player2_id
+  );
+  if (waitingMatches.length === 0) return [];
+
+  // ── 前提データ計算 ──────────────────────────────────────────
+  const activeMatches = allMatches.filter(m => m.status === 'calling' || m.status === 'playing');
+
+  const busyPlayerIds = new Set<string>();
+  activeMatches.forEach(m => {
+    [m.player1_id, m.player2_id, m.player3_id, m.player4_id,
+      (m as any).player5_id, (m as any).player6_id].filter(Boolean).forEach(id => busyPlayerIds.add(id));
+  });
+
+  const busyTeamIds = new Set<string>();
+  activeMatches.filter(m => m.tournament_type === 'team_battle').forEach(m => {
+    const rep1 = allPlayers.find(p => p.id === m.player1_id);
+    const rep2 = allPlayers.find(p => p.id === m.player2_id);
+    if (rep1?.team_id) busyTeamIds.add(rep1.team_id);
+    if (rep2?.team_id) busyTeamIds.add(rep2.team_id);
+  });
+
+  const activeTeamBattleGroupKeys = new Set<string>();
+  const seenActiveIds = new Set<string>();
+  activeMatches
+    .filter(m => m.tournament_type === 'team_battle' && m.group && !seenActiveIds.has(m.id))
+    .forEach(m => {
+      seenActiveIds.add(m.id);
+      activeTeamBattleGroupKeys.add(`${m.campId ?? ''}_${m.division ?? ''}_${m.group}`);
+    });
+
+  const enabledTypes = config?.enabled_tournaments;
+
+  // minRoundByGroup（filteredWaitingMatches ベース）
+  const filteredWaiting = (enabledTypes && enabledTypes.length > 0)
+    ? waitingMatches.filter(m => enabledTypes.includes(m.tournament_type as TournamentType))
+    : waitingMatches;
+
+  const minRoundByGroup = new Map<string, number>();
+  for (const m of filteredWaiting) {
+    const gk = getGroupKey(m);
+    const existing = minRoundByGroup.get(gk);
+    if (existing === undefined || m.round < existing) minRoundByGroup.set(gk, m.round);
+  }
+
+  // スコアコンテキスト
+  const scoreCtx = buildScoreContext(campMatches, allPlayers, config ?? undefined);
+
+  // 空きコートの性別セット（gender_mismatch 判定用）
+  const emptyCourtGenders = new Set(emptyCourts.map(c => c.preferred_gender).filter(Boolean));
+  const hasUngenderedCourt = emptyCourts.some(c => !c.preferred_gender);
+  const hasGenderUnlockedCourt = emptyCourts.some(c => c.manual_gender_unlock);
+
+  // ── 各試合の診断 ─────────────────────────────────────────────
+  const diagnostics: MatchDiagnostic[] = [];
+
+  for (const match of waitingMatches) {
+    const reasons: SkipReasonDetail[] = [];
+
+    // (1) disabled
+    if (enabledTypes && enabledTypes.length > 0 && !enabledTypes.includes(match.tournament_type as TournamentType)) {
+      reasons.push({ reason: 'disabled', label: '種目が停止中' });
+    }
+
+    // (2) busy
+    if (match.tournament_type === 'team_battle') {
+      const rep1 = allPlayers.find(p => p.id === match.player1_id);
+      const rep2 = allPlayers.find(p => p.id === match.player2_id);
+      const busyNames: string[] = [];
+      if (rep1?.team_id && busyTeamIds.has(rep1.team_id)) busyNames.push(rep1.name);
+      if (rep2?.team_id && busyTeamIds.has(rep2.team_id)) busyNames.push(rep2.name);
+      if (busyNames.length > 0) {
+        reasons.push({ reason: 'busy', label: '選手が試合中', detail: busyNames.join('、') });
+      }
+      if (match.group) {
+        const gKey = `${match.campId ?? ''}_${match.division ?? ''}_${match.group}`;
+        if (activeTeamBattleGroupKeys.has(gKey)) {
+          reasons.push({ reason: 'busy', label: '同グループの対戦が進行中', detail: `G${match.group}` });
+        }
+      }
+    } else {
+      const playerIds = [
+        match.player1_id, match.player2_id, match.player3_id, match.player4_id,
+        (match as any).player5_id, (match as any).player6_id
+      ].filter(Boolean) as string[];
+      const busyPlayerNames = playerIds
+        .filter(id => busyPlayerIds.has(id))
+        .map(id => allPlayers.find(p => p.id === id)?.name ?? id);
+      if (busyPlayerNames.length > 0) {
+        reasons.push({ reason: 'busy', label: '選手が試合中', detail: busyPlayerNames.join('、') });
+      }
+    }
+
+    // (3) resting — available_at
+    if (match.available_at && now < match.available_at.toMillis()) {
+      const remainMins = Math.ceil((match.available_at.toMillis() - now) / 60000);
+      reasons.push({ reason: 'resting', label: `休憩中（あと${remainMins}分）` });
+    } else {
+      // available_at が過ぎている（または null）場合は個人休息チェック
+      const manuallyReleased = !match.available_at;
+      if (!manuallyReleased) {
+        const playerIds = [
+          match.player1_id, match.player2_id, match.player3_id, match.player4_id,
+          (match as any).player5_id, (match as any).player6_id
+        ].filter(Boolean) as string[];
+        for (const playerId of playerIds) {
+          const player = allPlayers.find(p => p.id === playerId);
+          if (player?.last_match_finished_at) {
+            const lastFinished = player.last_match_finished_at.toMillis();
+            const elapsed = (now - lastFinished) / 60000;
+            if (elapsed < defaultRestMinutes) {
+              const remainMins = Math.ceil(defaultRestMinutes - elapsed);
+              reasons.push({
+                reason: 'resting',
+                label: `選手休憩中（あと${remainMins}分）`,
+                detail: player.name,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // (4) round_locked — disabled な種目は除外済みなのでここでは filteredWaiting に含まれる試合のみ対象
+    if (!reasons.some(r => r.reason === 'disabled')) {
+      const gk = getGroupKey(match);
+      const minRound = minRoundByGroup.get(gk);
+      if (minRound !== undefined && match.round > minRound) {
+        reasons.push({
+          reason: 'round_locked',
+          label: `下位ラウンド待ち（${minRound}回戦が先）`,
+        });
+      }
+    }
+
+    // (5) gender_mismatch — 利用可能な空きコートが性別的に合わない
+    const matchGender = getPreferredGender(match); // null = neutral
+    if (matchGender && !hasUngenderedCourt) {
+      const hasMatchingCourt = emptyCourtGenders.has(matchGender);
+      const canUseUnlocked = hasGenderUnlockedCourt;
+      if (!hasMatchingCourt && !canUseUnlocked) {
+        const oppLabel = matchGender === 'male' ? '男子' : '女子';
+        const courtLabels = emptyCourts.map(c => `${c.number}番`).join('・');
+        reasons.push({
+          reason: 'gender_mismatch',
+          label: `${oppLabel}専用コートなし`,
+          detail: `空き: ${courtLabels}`,
+        });
+      }
+    }
+
+    // 少なくとも1つ理由がある場合のみ診断リストへ
+    if (reasons.length > 0) {
+      let score: number | undefined;
+      try { score = calcMatchScore(match, scoreCtx); } catch { /* ignore */ }
+      diagnostics.push({ match, reasons, score });
+    }
+  }
+
+  // スコア降順でソート（本来割り当てられるべき試合を上に）
+  diagnostics.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+  return diagnostics;
 }
 
 /**
