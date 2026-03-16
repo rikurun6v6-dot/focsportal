@@ -217,12 +217,18 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     };
 
     /**
-     * 試合がBye（片方が空）かどうかを判定
+     * 試合がBye（不戦勝）かどうかを判定
+     * 【重要】1回戦のみBYEになりうる。2回戦以降はBYE伝播で片方のみ埋まっていても実戦扱い。
      */
     const isByeMatch = (match: Match): boolean => {
+        // BYEになりうるのは1回戦のみ
+        if (match.round !== 1) return false;
         const hasPlayer1 = !!match.player1_id;
         const hasPlayer2 = !!match.player2_id;
-        return hasPlayer1 !== hasPlayer2; // 片方だけが存在する場合はBye
+        // 両方の選手が揃っている場合はBYEではない
+        if (hasPlayer1 && hasPlayer2) return false;
+        // is_walkover=true（生成時マーク）または片方のみ存在 = BYE
+        return !!(match.is_walkover) || (hasPlayer1 !== hasPlayer2);
     };
 
     /**

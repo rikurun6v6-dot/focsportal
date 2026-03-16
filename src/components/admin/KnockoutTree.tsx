@@ -212,13 +212,12 @@ function calculateConnectionLines(
 function isMatchBye(match: Match, round: number): boolean {
   // Round 1 のみ Bye 判定を行う
   if (round === 1) {
-    // is_walkover=true は生成時に明示的にBYEとしてマークされた上位シード枠
-    if (match.is_walkover) return true;
-    // 片方だけ選手が存在する = グループ順位管理後のシード枠（XOR判定）
-    // 両方空 = 予選結果待ちのプレースホルダー（BYEではない）
     const hasP1 = !!match.player1_id;
     const hasP2 = !!match.player2_id;
-    return hasP1 !== hasP2;
+    // 両方の選手が揃っている場合は実戦（is_walkoverが設定されていても）
+    if (hasP1 && hasP2) return false;
+    // is_walkover=true（生成時にマークされたBYE枠）または片方のみ存在（XOR）= シード
+    return !!(match.is_walkover) || (hasP1 !== hasP2);
   }
   // Round 2 以降は常に実戦として扱う
   return false;
