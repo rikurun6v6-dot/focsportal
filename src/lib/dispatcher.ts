@@ -2,7 +2,7 @@ import type { Match, Court, Config, Camp, Player, TournamentType } from '@/types
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
-import { buildScoreContext, calcMatchScore, getGroupKey } from './matchScoring';
+import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase } from './matchScoring';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
   const allCourts = await getAllDocuments<Court>('courts');
@@ -176,7 +176,7 @@ export async function dispatchToEmptyCourt(
   // 共通スコアコンテキストを構築（matchScoring.ts）
   // sequential awaitによりFirestore読み取りは常に最新値を反映するため、
   // Fairness Bonusだけでグループラウンドロビンが自然に実現できる
-  const scoreCtx = buildScoreContext(campMatches, allPlayers, config);
+  const scoreCtx = buildScoreContext(campMatches, allPlayers, config, undefined, defaultRestMinutes);
 
   // 団体戦用: アクティブな team_battle 試合から「対戦中のチームID」を収集（チーム単位ロック）
   const busyTeamIds = new Set<string>();
@@ -559,7 +559,7 @@ function getAdjacentCourtDivisions(
 
 // ===== アサイン診断 =====
 
-export type SkipReason = 'disabled' | 'busy' | 'resting' | 'round_locked' | 'gender_mismatch';
+export type SkipReason = 'disabled' | 'busy' | 'resting' | 'round_locked' | 'gender_mismatch' | 'scoring_note';
 
 export interface SkipReasonDetail {
   reason: SkipReason;
@@ -573,6 +573,8 @@ export interface MatchDiagnostic {
   match: Match;
   reasons: SkipReasonDetail[];
   score?: number;
+  /** スコアフェーズ（Phase A/B/C） */
+  scorePhase?: ScorePhase;
 }
 
 /**
@@ -647,8 +649,8 @@ export async function diagnoseWaitingMatches(
     if (existing === undefined || m.round < existing) minRoundByGroup.set(gk, m.round);
   }
 
-  // スコアコンテキスト
-  const scoreCtx = buildScoreContext(campMatches, allPlayers, config ?? undefined);
+  // スコアコンテキスト（defaultRestMinutes を渡して連戦判定閾値を設定）
+  const scoreCtx = buildScoreContext(campMatches, allPlayers, config ?? undefined, undefined, defaultRestMinutes);
 
   // 空きコートの性別セット（gender_mismatch 判定用）
   const emptyCourtGenders = new Set(emptyCourts.map(c => c.preferred_gender).filter(Boolean));
@@ -753,11 +755,41 @@ export async function diagnoseWaitingMatches(
       }
     }
 
+    // フェーズ判定とスコア計算
+    let score: number | undefined;
+    let scorePhase: ScorePhase | undefined;
+    try {
+      scorePhase = detectPhase(match, scoreCtx);
+      score = calcMatchScore(match, scoreCtx);
+    } catch { /* ignore */ }
+
+    // スコアフェーズに応じた診断ノートを追加
+    if (scorePhase === 'preliminary_first') {
+      reasons.push({
+        reason: 'scoring_note',
+        label: '✅ 第1巡目：リスト順優先',
+        detail: `match_number ${match.match_number ?? '-'} の順にアサイン予定`,
+      });
+    } else if (scorePhase === 'preliminary_mid') {
+      // 連戦回避ペナルティが適用されているか判定
+      if (hasRecentPlayer(match, allPlayers, scoreCtx.now, scoreCtx.recentMatchMinutes)) {
+        reasons.push({
+          reason: 'scoring_note',
+          label: '⚠️ 連戦回避ペナルティ適用中（-200点）',
+          detail: `直近${scoreCtx.recentMatchMinutes}分以内に試合を終えた選手あり`,
+        });
+      }
+    } else if (scorePhase === 'knockout') {
+      reasons.push({
+        reason: 'scoring_note',
+        label: '✅ 決勝T：下位ラウンド優先',
+        detail: `round ${match.round} / score ${score ?? '-'}`,
+      });
+    }
+
     // 少なくとも1つ理由がある場合のみ診断リストへ
     if (reasons.length > 0) {
-      let score: number | undefined;
-      try { score = calcMatchScore(match, scoreCtx); } catch { /* ignore */ }
-      diagnostics.push({ match, reasons, score });
+      diagnostics.push({ match, reasons, score, scorePhase });
     }
   }
 

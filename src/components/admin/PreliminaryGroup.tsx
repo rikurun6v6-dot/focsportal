@@ -1,23 +1,37 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { Users, Trophy } from "lucide-react";
+import { Users, Trophy, ArrowLeftRight } from "lucide-react";
 import type { Match } from "@/types";
 
 interface PreliminaryGroupProps {
   groups: string[];
   groupMatches: { [group: string]: Match[] };
   getPlayerName: (playerId?: string) => string;
+  /** trueのとき、行ヘッダ・列ヘッダのペア名をタップすると入れ替えモードになる */
+  editMode?: boolean;
+  /** 現在選択中のペアキー（"p1-p3-p5" 形式） */
+  selectedPairKey?: string | null;
+  /** ペア名タップ時のコールバック */
+  onPairTap?: (pairKey: string, group: string) => void;
 }
 
 export default function PreliminaryGroup({
   groups,
   groupMatches,
   getPlayerName,
+  editMode = false,
+  selectedPairKey = null,
+  onPairTap,
 }: PreliminaryGroupProps) {
   return (
     <div>
       <h2 className="text-lg font-bold text-violet-700 mb-4 flex items-center gap-2">
         <Trophy className="w-5 h-5" />
         予選リーグ
+        {editMode && (
+          <span className="text-xs font-medium text-sky-600 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+            <ArrowLeftRight className="w-3 h-3" />ペア名タップで入れ替え
+          </span>
+        )}
       </h2>
       <div className="overflow-x-auto pb-4">
         <div className="flex gap-3 min-w-max p-4">
@@ -28,6 +42,17 @@ export default function PreliminaryGroup({
               </h3>
               <div className="flex flex-col gap-3">
                 {(groupMatches[group] || []).map(match => {
+                  // ペアキーを生成
+                  const pairKeyA = [match.player1_id, match.player3_id, match.player5_id].filter(Boolean).join("-");
+                  const pairKeyB = [match.player2_id, match.player4_id, match.player6_id].filter(Boolean).join("-");
+
+                  const makePairCls = (pairKey: string) => {
+                    if (!editMode) return "bg-slate-50";
+                    if (pairKey === selectedPairKey) return "bg-sky-100 ring-2 ring-sky-400 cursor-pointer";
+                    if (selectedPairKey) return "bg-indigo-50 hover:bg-indigo-100 cursor-pointer";
+                    return "bg-slate-50 hover:bg-slate-100 cursor-pointer";
+                  };
+
                   return (
                     <Card
                       key={match.id}
@@ -42,10 +67,11 @@ export default function PreliminaryGroup({
                       <CardContent className="p-3 space-y-2 bg-white">
                         {/* ペア1 */}
                         <div
-                          className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
+                          onClick={() => editMode && pairKeyA && onPairTap?.(pairKeyA, group)}
+                          className={`flex items-start gap-1.5 p-2 rounded-md transition-colors select-none ${makePairCls(pairKeyA)} ${
                             match.winner_id && (match.winner_id === match.player1_id || match.winner_id === match.player3_id)
-                              ? "bg-amber-50"
-                              : "bg-slate-50"
+                              ? "!bg-amber-50"
+                              : ""
                           }`}
                         >
                           <Users className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -70,10 +96,11 @@ export default function PreliminaryGroup({
 
                         {/* ペア2 */}
                         <div
-                          className={`flex items-start gap-1.5 p-2 rounded-md transition-colors ${
+                          onClick={() => editMode && pairKeyB && onPairTap?.(pairKeyB, group)}
+                          className={`flex items-start gap-1.5 p-2 rounded-md transition-colors select-none ${makePairCls(pairKeyB)} ${
                             match.winner_id && (match.winner_id === match.player2_id || match.winner_id === match.player4_id)
-                              ? "bg-amber-50"
-                              : "bg-slate-50"
+                              ? "!bg-amber-50"
+                              : ""
                           }`}
                         >
                           <Users className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -125,15 +152,15 @@ export default function PreliminaryGroup({
       <div className="mt-6">
         <h3 className="text-md font-bold text-violet-700 mb-3">勝敗表</h3>
         <div className="overflow-x-auto">
-          <div className="flex gap-6">
+          <div className="flex gap-6 flex-wrap">
             {groups.map(group => {
               const matches = groupMatches[group] || [];
               const pairIds = new Set<string>();
               matches.forEach(m => {
                 const key1 = [m.player1_id, m.player3_id, m.player5_id].filter(Boolean).join("-");
                 const key2 = [m.player2_id, m.player4_id, m.player6_id].filter(Boolean).join("-");
-                pairIds.add(key1);
-                pairIds.add(key2);
+                if (key1) pairIds.add(key1);
+                if (key2) pairIds.add(key2);
               });
               const pairs = Array.from(pairIds);
 
@@ -146,20 +173,57 @@ export default function PreliminaryGroup({
                   <table className="border border-slate-200 shadow-sm rounded-lg overflow-hidden bg-white">
                     <thead>
                       <tr>
-                        <th className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700"></th>
-                        {pairs.map((pairId, idx) => (
-                          <th key={idx} className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700">
-                            {pairLabel(pairId)}
-                          </th>
-                        ))}
+                        <th className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700 min-w-[80px]"></th>
+                        {pairs.map((pairId, idx) => {
+                          const isSel = pairId === selectedPairKey;
+                          const isTarget = editMode && selectedPairKey && !isSel;
+                          return (
+                            <th
+                              key={idx}
+                              onClick={() => editMode && onPairTap?.(pairId, group)}
+                              className={[
+                                "border border-slate-200 p-2 text-xs font-semibold transition-colors min-w-[80px]",
+                                editMode
+                                  ? isSel
+                                    ? "bg-sky-100 text-sky-800 ring-2 ring-sky-400 cursor-pointer"
+                                    : isTarget
+                                    ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                                    : "bg-violet-50 text-violet-700 hover:bg-violet-100 cursor-pointer"
+                                  : "bg-violet-50 text-violet-700",
+                              ].join(" ")}
+                            >
+                              {isSel && editMode && (
+                                <span className="block text-[9px] text-sky-600 mb-0.5">▶ 選択中</span>
+                              )}
+                              {pairLabel(pairId)}
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
                       {pairs.map((pairId1, rowIdx) => {
                         const [p1, p3, p5] = pairId1.split("-");
+                        const isSel = pairId1 === selectedPairKey;
+                        const isTarget = editMode && selectedPairKey && !isSel;
                         return (
                           <tr key={rowIdx}>
-                            <td className="border border-slate-200 p-2 text-xs font-semibold bg-violet-50 text-violet-700">
+                            <td
+                              onClick={() => editMode && onPairTap?.(pairId1, group)}
+                              className={[
+                                "border border-slate-200 p-2 text-xs font-semibold transition-colors",
+                                editMode
+                                  ? isSel
+                                    ? "bg-sky-100 text-sky-800 ring-2 ring-sky-400 cursor-pointer"
+                                    : isTarget
+                                    ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                                    : "bg-violet-50 text-violet-700 hover:bg-violet-100 cursor-pointer"
+                                  : "bg-violet-50 text-violet-700",
+                              ].join(" ")}
+                            >
+                              {isSel && editMode && (
+                                <span className="block text-[9px] text-sky-600 mb-0.5">▶ 選択中</span>
+                              )}
                               {pairLabel(pairId1)}
                             </td>
                             {pairs.map((pairId2, colIdx) => {

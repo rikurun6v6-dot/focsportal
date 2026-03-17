@@ -8,9 +8,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument } from "@/lib/firestore-helpers";
+import { db } from "@/lib/firebase";
+import { writeBatch, doc } from "firebase/firestore";
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType, Division } from "@/types";
-import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut } from "lucide-react";
+import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut, ArrowLeftRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import PreliminaryGroup from "./PreliminaryGroup";
 import KnockoutTree from "./KnockoutTree";
@@ -50,6 +52,9 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     const [editThird, setEditThird] = useState('');
     const [editSaving, setEditSaving] = useState(false);
     const [editSearch, setEditSearch] = useState('');
+    // 予選リーグ編集モード
+    const [prelimEditMode, setPrelimEditMode] = useState(false);
+    const [selectedPrelimPair, setSelectedPrelimPair] = useState<{ pairKey: string; group: string } | null>(null);
     const bracketRef = useRef<HTMLDivElement>(null);
     const bracketContentRef = useRef<HTMLDivElement>(null);
 
@@ -129,6 +134,67 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             toastError('入れ替えに失敗しました');
         }
         setSelectedSlot(null);
+    };
+
+    /**
+     * 予選リーグ: ペア名タップ時の選択・入れ替え処理
+     */
+    const handlePrelimPairTap = async (pairKey: string, group: string) => {
+        if (!camp) return;
+        if (!selectedPrelimPair) {
+            setSelectedPrelimPair({ pairKey, group });
+            return;
+        }
+        if (selectedPrelimPair.pairKey === pairKey) {
+            setSelectedPrelimPair(null);
+            return;
+        }
+
+        // ロックチェック: 完了・試合中の試合があるグループは編集不可
+        const isGroupLocked = (g: string) =>
+            preliminaryMatches.some(m => m.group === g && (m.status === 'completed' || m.status === 'playing'));
+        if (isGroupLocked(selectedPrelimPair.group) || isGroupLocked(group)) {
+            const locked = isGroupLocked(selectedPrelimPair.group) ? selectedPrelimPair.group : group;
+            toastError(`グループ ${locked} に完了・試合中の試合があるため変更できません`);
+            setSelectedPrelimPair(null);
+            return;
+        }
+
+        const pairAKey = selectedPrelimPair.pairKey;
+        setSelectedPrelimPair(null);
+
+        const sideKey = (p1?: string, p3?: string, p5?: string) =>
+            [p1, p3, p5].filter(Boolean).join('-');
+
+        const [a1, a3 = '', a5 = ''] = pairAKey.split('-');
+        const [b1, b3 = '', b5 = ''] = pairKey.split('-');
+
+        const waitingMatches = preliminaryMatches.filter(m => m.status === 'waiting');
+        const batch = writeBatch(db);
+        let count = 0;
+
+        for (const m of waitingMatches) {
+            const aOnA = sideKey(m.player1_id, m.player3_id, m.player5_id) === pairAKey;
+            const aOnB = sideKey(m.player2_id, m.player4_id, m.player6_id) === pairAKey;
+            const bOnA = sideKey(m.player1_id, m.player3_id, m.player5_id) === pairKey;
+            const bOnB = sideKey(m.player2_id, m.player4_id, m.player6_id) === pairKey;
+            if (!aOnA && !aOnB && !bOnA && !bOnB) continue;
+
+            const upd: Record<string, string | null> = {};
+            if (aOnA) { upd.player1_id = b1; upd.player3_id = b3 || null; upd.player5_id = b5 || null; }
+            if (aOnB) { upd.player2_id = b1; upd.player4_id = b3 || null; upd.player6_id = b5 || null; }
+            if (bOnA) { upd.player1_id = a1; upd.player3_id = a3 || null; upd.player5_id = a5 || null; }
+            if (bOnB) { upd.player2_id = a1; upd.player4_id = a3 || null; upd.player6_id = a5 || null; }
+            batch.update(doc(db, 'matches', m.id), upd);
+            count++;
+        }
+
+        try {
+            await batch.commit();
+            toastSuccess(`ペアを入れ替えました（${count}試合更新）`);
+        } catch {
+            toastError('入れ替えに失敗しました');
+        }
     };
 
     /**
@@ -407,14 +473,37 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                             トーナメント表
                         </CardTitle>
                         {!readOnly && (
-                            <Button
-                                onClick={() => { setEditMode(e => !e); setSelectedSlot(null); }}
-                                variant={editMode ? "default" : "outline"}
-                                size="sm"
-                                className={`flex-shrink-0 ${editMode ? "bg-blue-500 text-white" : "border-blue-200 text-blue-700 hover:bg-blue-50"}`}
-                            >
-                                {editMode ? <><Check className="w-4 h-4 mr-1" />編集完了</> : <><Pencil className="w-4 h-4 mr-1" />ペア入替</>}
-                            </Button>
+                            <div className="flex gap-2 flex-shrink-0">
+                                {/* 予選リーグ編集ボタン（予選が存在する場合のみ） */}
+                                {hasPreliminary && (
+                                    <Button
+                                        onClick={() => {
+                                            setPrelimEditMode(e => !e);
+                                            setSelectedPrelimPair(null);
+                                            setEditMode(false);
+                                            setSelectedSlot(null);
+                                        }}
+                                        variant={prelimEditMode ? "default" : "outline"}
+                                        size="sm"
+                                        className={`${prelimEditMode ? "bg-violet-500 text-white" : "border-violet-200 text-violet-700 hover:bg-violet-50"}`}
+                                    >
+                                        {prelimEditMode
+                                            ? <><Check className="w-4 h-4 mr-1" />予選編集完了</>
+                                            : <><ArrowLeftRight className="w-4 h-4 mr-1" />予選ペア入替</>}
+                                    </Button>
+                                )}
+                                {/* 決勝トーナメント編集ボタン */}
+                                {hasKnockout && (
+                                    <Button
+                                        onClick={() => { setEditMode(e => !e); setSelectedSlot(null); setPrelimEditMode(false); setSelectedPrelimPair(null); }}
+                                        variant={editMode ? "default" : "outline"}
+                                        size="sm"
+                                        className={`${editMode ? "bg-blue-500 text-white" : "border-blue-200 text-blue-700 hover:bg-blue-50"}`}
+                                    >
+                                        {editMode ? <><Check className="w-4 h-4 mr-1" />編集完了</> : <><Pencil className="w-4 h-4 mr-1" />ペア入替</>}
+                                    </Button>
+                                )}
+                            </div>
                         )}
                     </div>
                     {/* 2行目: ズームコントロール + 保存ボタン */}
@@ -619,11 +708,33 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                         <div className="space-y-8" ref={bracketContentRef} style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: `${Math.round(100 / zoom)}%` }}>
                             {/* 予選リーグ */}
                             {hasPreliminary && (
-                                <PreliminaryGroup
-                                    groups={groups}
-                                    groupMatches={groupMatches}
-                                    getPlayerName={getPlayerName}
-                                />
+                                <>
+                                    {/* 選択中ペア インジケーター */}
+                                    {prelimEditMode && selectedPrelimPair && (
+                                        <div className="flex items-center gap-2 text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 mx-4">
+                                            <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+                                            <span>
+                                                <strong>選択中:</strong> グループ{selectedPrelimPair.group} —{' '}
+                                                {selectedPrelimPair.pairKey.split('-').map(id => getPlayerName(id)).join(' / ')}
+                                            </span>
+                                            <button
+                                                onClick={() => setSelectedPrelimPair(null)}
+                                                className="ml-auto p-0.5 hover:bg-sky-200 rounded"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                            <span className="text-slate-500 shrink-0">→ 入れ替えるペアをタップ</span>
+                                        </div>
+                                    )}
+                                    <PreliminaryGroup
+                                        groups={groups}
+                                        groupMatches={groupMatches}
+                                        getPlayerName={getPlayerName}
+                                        editMode={prelimEditMode && !readOnly}
+                                        selectedPairKey={selectedPrelimPair?.pairKey ?? null}
+                                        onPairTap={handlePrelimPairTap}
+                                    />
+                                </>
                             )}
 
                             {/* 決勝トーナメント */}

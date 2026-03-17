@@ -1,13 +1,16 @@
 /**
  * matchScoring.ts
  * dispatcher.ts と eta.ts で共通する「試合優先スコア計算」ロジック。
- * 両ファイルはこのモジュールをインポートして使用することで、定数・計算式の乖離をゼロにする。
+ * フェーズ（予選第1巡目 / 予選中盤 / 決勝T）を自動判定し、最適な優先順位を返す。
  */
 
 import type { Match, Player, Config } from '@/types';
 
 /** ラウンド係数（ラウンドが若いほど優先）デフォルト値 */
 export const ROUND_COEFFICIENT = 100;
+
+/** スコア計算フェーズ */
+export type ScorePhase = 'preliminary_first' | 'preliminary_mid' | 'knockout';
 
 /** スコア計算に必要なコンテキスト */
 export interface ScoreContext {
@@ -35,6 +38,11 @@ export interface ScoreContext {
   groupPenalty: number;
   /** 待機時間係数（config.wait_factor、デフォルト1.0） */
   waitFactor: number;
+  /**
+   * 連戦判定の閾値（分）: この時間以内に試合を終えた選手がいる場合、Phase B で -200点。
+   * デフォルト = defaultRestMinutes * 2。
+   */
+  recentMatchMinutes: number;
 }
 
 /**
@@ -45,7 +53,8 @@ export function buildScoreContext(
   campMatches: Match[],
   allPlayers: Player[],
   config?: Config | null,
-  now?: number
+  now?: number,
+  defaultRestMinutes?: number,
 ): ScoreContext {
   const _now = now ?? Date.now();
 
@@ -112,6 +121,8 @@ export function buildScoreContext(
   const roundWeight = config?.round_weight ?? ROUND_COEFFICIENT;
   const groupPenalty = config?.group_penalty ?? 100;
   const waitFactor = config?.wait_factor ?? 1.0;
+  // 連戦判定: defaultRestMinutes の2倍以内に試合を終えた選手を「連戦」扱い
+  const recentMatchMinutes = (defaultRestMinutes ?? 10) * 2;
 
   return {
     now: _now,
@@ -126,77 +137,177 @@ export function buildScoreContext(
     roundWeight,
     groupPenalty,
     waitFactor,
+    recentMatchMinutes,
   };
 }
 
-/**
- * 試合の優先スコアを計算する。
- * dispatcher.ts の candidatesWithScore 計算と完全に同一のロジック。
- * 高いスコアほど先に割り当てられる。
- */
-export function calcMatchScore(match: Match, ctx: ScoreContext): number {
-  const {
-    now, allPlayers, preferredDivision, divisionBonusBase,
-    maxRoundByTypeDiv, groupProgressMap, groupTotalMatchesMap, groupAvgProgressByTypeDiv,
-    temporaryBoost, adjacentCourtDivisions,
-    roundWeight, groupPenalty, waitFactor,
-  } = ctx;
+// ── ヘルパー ─────────────────────────────────────────────────────────────────
 
-  // 待機時間: 選手の last_match_finished_at の最大値、なければ created_at
-  const playerIds = [
+/** 試合の選手IDを配列で返す（null/undefined を除外） */
+export function getMatchPlayerIds(match: Match): string[] {
+  return [
     match.player1_id, match.player2_id, match.player3_id, match.player4_id,
     (match as any).player5_id, (match as any).player6_id,
   ].filter((id): id is string => !!id);
-  const effectiveAvailableMs = playerIds.reduce((maxMs, pid) => {
+}
+
+/**
+ * いずれかの選手が `recentMinutes` 以内に試合を終えているか判定する。
+ * Phase B の連戦回避 (-200点) 判定に使用。
+ */
+export function hasRecentPlayer(
+  match: Match,
+  allPlayers: Player[],
+  now: number,
+  recentMinutes: number,
+): boolean {
+  return getMatchPlayerIds(match).some(pid => {
+    const player = allPlayers.find(p => p.id === pid);
+    if (!player?.last_match_finished_at) return false;
+    const elapsed = (now - player.last_match_finished_at.toMillis()) / 60000;
+    return elapsed < recentMinutes;
+  });
+}
+
+/**
+ * 試合のスコアフェーズを判定する。
+ *
+ * - preliminary_first: 予選グループ第1巡目（round===1 かつグループ消化0）
+ * - preliminary_mid:   予選グループ中盤以降
+ * - knockout:          決勝トーナメント（またはグループなし種目）
+ */
+export function detectPhase(match: Match, ctx: ScoreContext): ScorePhase {
+  const group = (match as any).group as string | undefined;
+  const phase = (match as any).phase as string | undefined;
+
+  // グループなし・knockout フェーズ → 決勝T
+  if (!group && phase !== 'preliminary') return 'knockout';
+
+  // 予選グループ第1巡目: round === 1 かつそのグループの消化数が 0
+  if (match.round === 1 && group) {
+    const gKey = `${match.tournament_type}_${match.division}_${group}`;
+    const groupDone = ctx.groupProgressMap.get(gKey) ?? 0;
+    if (groupDone === 0) return 'preliminary_first';
+  }
+
+  return 'preliminary_mid';
+}
+
+// ── フェーズ別スコア計算 ──────────────────────────────────────────────────────
+
+/** Phase B: 予選中盤スコア */
+function calcPreliminaryMidScore(match: Match, ctx: ScoreContext): number {
+  const {
+    now, allPlayers, preferredDivision, divisionBonusBase,
+    groupProgressMap, groupAvgProgressByTypeDiv, groupPenalty,
+    adjacentCourtDivisions, waitFactor, temporaryBoost, recentMatchMinutes,
+  } = ctx;
+
+  // 1. 待機時間: 1分 = 1点
+  const effectiveAvailableMs = getMatchPlayerIds(match).reduce((maxMs, pid) => {
     const player = allPlayers.find(p => p.id === pid);
     return player?.last_match_finished_at
       ? Math.max(maxMs, player.last_match_finished_at.toMillis()) : maxMs;
   }, 0);
   const waitStartMs = effectiveAvailableMs > 0 ? effectiveAvailableMs : match.created_at.toMillis();
-  const rawWaitTime = Math.max(0, (now - waitStartMs) / 60000);
-  const waitTime = rawWaitTime * (waitFactor ?? 1.0);
+  const waitTime = Math.max(0, (now - waitStartMs) / 60000) * (waitFactor ?? 1.0);
 
-  // ラウンドスコア（動的maxRound・動的係数）
-  const phaseKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
-  const maxRound = maxRoundByTypeDiv.get(phaseKey) ?? 4;
-  const roundScore = (roundWeight ?? ROUND_COEFFICIENT) * (maxRound - match.round + 1);
-
-  // 部のバランスボーナス
+  // 2. 部門バランス: 最大 divisionBonusBase 点
   let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
-  // 隣接コートに同じ部の試合がある場合ペナルティ（court-specific、ETA時は省略）
   if (adjacentCourtDivisions && match.division && adjacentCourtDivisions.includes(match.division)) {
     divisionBonus -= 30;
   }
 
-  // AIアドバイザーによる一時的なブースト
+  // 3. グループ平準化: 消化数が多いグループに -groupPenalty 点/試合
+  let groupScore = 0;
+  const group = (match as any).group as string | undefined;
+  if (group) {
+    const gKey = `${match.tournament_type}_${match.division}_${group}`;
+    const tdKey = `${match.tournament_type}_${match.division}`;
+    const groupDone = groupProgressMap.get(gKey) ?? 0;
+    const avgProgress = groupAvgProgressByTypeDiv.get(tdKey) ?? 0;
+    groupScore = (avgProgress - groupDone) * (groupPenalty ?? 100);
+  }
+
+  // 4. 連戦回避: 直前まで試合をしていた選手がいれば -200点
+  const consecutivePenalty = hasRecentPlayer(match, allPlayers, now, recentMatchMinutes) ? -200 : 0;
+
+  // AIブースト
   let categoryBoost = 0;
   if (temporaryBoost && match.tournament_type) {
     const boostValue = temporaryBoost[match.tournament_type] as number | undefined;
     const expiresAt = temporaryBoost[`${match.tournament_type}_expires_at`] as number | undefined;
-    if (boostValue && expiresAt && now < expiresAt) {
-      categoryBoost = boostValue;
-    }
+    if (boostValue && expiresAt && now < expiresAt) categoryBoost = boostValue;
   }
 
-  // グループスコア: ボトルネック優先(Volume Bonus) + 進行平準化(Fairness Bonus)
-  let groupScore = 0;
-  if ((match as any).group) {
-    const gKey = `${match.tournament_type}_${match.division}_${(match as any).group}`;
-    const tdKey = `${match.tournament_type}_${match.division}`;
-    const groupDone = groupProgressMap.get(gKey) || 0;
-    const totalMatches = groupTotalMatchesMap.get(gKey) || 0;
-    const avgProgress = groupAvgProgressByTypeDiv.get(tdKey) || 0;
-    // 試合数が多いグループを底上げ（序盤から着手させる）
-    const volumeBonus = totalMatches * 5;
-    // 消化が平均より遅れているグループを強力に引き上げ
-    const fairnessBonus = (avgProgress - groupDone) * (groupPenalty ?? 100);
-    groupScore = volumeBonus + fairnessBonus;
+  return waitTime + divisionBonus + groupScore + consecutivePenalty + categoryBoost;
+}
+
+/** Phase C: 決勝トーナメントスコア */
+function calcKnockoutScore(match: Match, ctx: ScoreContext): number {
+  const {
+    now, allPlayers, preferredDivision, divisionBonusBase,
+    maxRoundByTypeDiv, adjacentCourtDivisions, roundWeight,
+    temporaryBoost, waitFactor,
+  } = ctx;
+
+  // ラウンドスコア: (MAX_ROUND - round + 1) * roundWeight — 水平進行（下位ラウンド優先）
+  const phaseKey = `${match.tournament_type}_${match.division}_${(match as any).phase ?? 'knockout'}`;
+  const maxRound = maxRoundByTypeDiv.get(phaseKey) ?? 4;
+  const roundScore = (roundWeight ?? ROUND_COEFFICIENT) * (maxRound - match.round + 1);
+
+  // 待機時間
+  const effectiveAvailableMs = getMatchPlayerIds(match).reduce((maxMs, pid) => {
+    const player = allPlayers.find(p => p.id === pid);
+    return player?.last_match_finished_at
+      ? Math.max(maxMs, player.last_match_finished_at.toMillis()) : maxMs;
+  }, 0);
+  const waitStartMs = effectiveAvailableMs > 0 ? effectiveAvailableMs : match.created_at.toMillis();
+  const waitTime = Math.max(0, (now - waitStartMs) / 60000) * (waitFactor ?? 1.0);
+
+  // 部門バランス
+  let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
+  if (adjacentCourtDivisions && match.division && adjacentCourtDivisions.includes(match.division)) {
+    divisionBonus -= 30;
   }
 
-  // ブラケット順序（match_number が小さい方が優先、係数2 ≒ 2分待機相当）
-  const matchOrderScore = -(match.match_number ?? 0) * 2;
+  // AIブースト
+  let categoryBoost = 0;
+  if (temporaryBoost && match.tournament_type) {
+    const boostValue = temporaryBoost[match.tournament_type] as number | undefined;
+    const expiresAt = temporaryBoost[`${match.tournament_type}_expires_at`] as number | undefined;
+    if (boostValue && expiresAt && now < expiresAt) categoryBoost = boostValue;
+  }
 
-  return waitTime + roundScore + divisionBonus + categoryBoost + groupScore + matchOrderScore;
+  // 同一ラウンド内の順序タイブレーカー（match_number が小さい方が優先）
+  const matchOrderTiebreak = -(match.match_number ?? 0);
+
+  return roundScore + waitTime + divisionBonus + categoryBoost + matchOrderTiebreak;
+}
+
+/**
+ * 試合の優先スコアを計算する。
+ * フェーズに応じて自動的に計算式を切り替える。
+ * 高いスコアほど先に割り当てられる。
+ *
+ * Phase A (予選第1巡目):  (1000 - match_number) * 10  — リスト順絶対優先
+ * Phase B (予選中盤以降): waitTime + divisionBonus + groupScore - consecutivePenalty
+ * Phase C (決勝T):        (MAX_ROUND - round + 1) * 100  — 水平進行
+ */
+export function calcMatchScore(match: Match, ctx: ScoreContext): number {
+  const phase = detectPhase(match, ctx);
+
+  if (phase === 'preliminary_first') {
+    // Phase A: リスト順を絶対優先（match_number が小さいほど高スコア）
+    return (1000 - (match.match_number ?? 0)) * 10;
+  }
+
+  if (phase === 'preliminary_mid') {
+    return calcPreliminaryMidScore(match, ctx);
+  }
+
+  // Phase C: knockout
+  return calcKnockoutScore(match, ctx);
 }
 
 /**
