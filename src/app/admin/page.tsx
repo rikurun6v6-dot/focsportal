@@ -23,12 +23,13 @@ import VisualBracket from "@/components/admin/VisualBracket";
 import PairSeedManager from "@/components/admin/PairSeedManager";
 import GroupRankingManager from "@/components/admin/GroupRankingManager";
 import VisualSeedingEditor from "@/components/admin/VisualSeedingEditor";
+import PreliminaryGroupEditor from "@/components/admin/PreliminaryGroupEditor";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division } from "@/types";
-import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle } from "lucide-react";
+import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
 import MessageManager from "@/components/admin/MessageManager";
@@ -722,6 +723,7 @@ export default function AdminDashboard() {
               { value: "results-list", label: "結果一覧", icon: BarChart3 },
               { value: "bracket", label: "トーナメント表", icon: Trophy },
               { value: "pairseed", label: "ペア・シード", icon: Settings },
+              { value: "groupedit", label: "予選配置編集", icon: ArrowLeftRight },
               { value: "messages", label: "メッセージ", icon: MessageCircle },
               { value: "team_battle", label: "団体戦", icon: Users },
               { value: "safety", label: "安全", icon: ShieldAlert },
@@ -1186,6 +1188,10 @@ export default function AdminDashboard() {
               <TabsContent value="pairseed" className="space-y-6">
                 <VisualSeedingEditor readOnly={isArchived} />
                 <PairSeedManager readOnly={isArchived} />
+              </TabsContent>
+
+              <TabsContent value="groupedit" className="space-y-6">
+                <PreliminaryGroupEditor readOnly={isArchived} />
               </TabsContent>
 
               <TabsContent value="messages" className="space-y-6">
