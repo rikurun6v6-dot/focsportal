@@ -32,11 +32,13 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const claimedCourtIds = new Set<string>();
   // バッチ内で割り当てた部を追跡（スタート時など全コート空でも部の偏りを防ぐ）
   const batchAssignedDivisions: number[] = [];
-  // バッチ内のグループ進行度を追跡（Firestore再読み遅延に依存しないグループ平準化）
-  const batchGroupProgress = new Map<string, number>();
 
-  // 男女別に空きコートへ部優先を交互割り当て（スタート時の全面同一部を防ぐ）
-  // 偶数インデックス(0,2,4,...)=1部優先、奇数インデックス(1,3,5,...)=2部優先
+  // 全体の待機試合数で「試合数の多い部」を判定（中間コートに割り当てる dominant division）
+  const div1Total = waitingMatches.filter(m => m.division === 1).length;
+  const div2Total = waitingMatches.filter(m => m.division === 2).length;
+  const dominant: 1 | 2 = div2Total > div1Total ? 2 : 1;
+
+  // コートに部優先を割り当て: 先頭=1部、末尾=2部、中間=試合数の多い部（1,x,2）
   const courtDivisionPreference = new Map<string, 1 | 2>();
   for (const gender of ['male', 'female', null] as const) {
     const group = emptyCourts
@@ -44,7 +46,9 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
       .sort((a, b) => a.number - b.number);
     if (group.length === 0) continue;
     for (let i = 0; i < group.length; i++) {
-      courtDivisionPreference.set(group[i].id, i % 2 === 0 ? 1 : 2);
+      if (i === 0)                     courtDivisionPreference.set(group[i].id, 1);
+      else if (i === group.length - 1) courtDivisionPreference.set(group[i].id, 2);
+      else                             courtDivisionPreference.set(group[i].id, dominant);
     }
   }
 
@@ -53,18 +57,12 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
     if (claimedCourtIds.has(court.id)) continue;
 
     const divPref = courtDivisionPreference.get(court.id);
-    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, batchAssignedDivisions, divPref, batchGroupProgress);
+    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, batchAssignedDivisions, divPref);
     if (assigned) {
       dispatchedCount++;
       assignedMatchIds.add(assigned.id);
       claimedCourtIds.add(court.id);
       if (assigned.division) batchAssignedDivisions.push(assigned.division);
-      // バッチ内グループ進行度を更新
-      const assignedGroup = (assigned as any).group;
-      if (assignedGroup && assigned.tournament_type && assigned.division) {
-        const gKey = `${assigned.tournament_type}_${assigned.division}_${assignedGroup}`;
-        batchGroupProgress.set(gKey, (batchGroupProgress.get(gKey) || 0) + 1);
-      }
       const idx = waitingMatches.findIndex(m => m.id === assigned.id);
       if (idx >= 0) waitingMatches.splice(idx, 1);
 
@@ -97,8 +95,7 @@ export async function dispatchToEmptyCourt(
   defaultRestMinutes: number = 10,
   assignedMatchIds: Set<string> = new Set(),
   batchAssignedDivisions: number[] = [],
-  divisionPreference?: 1 | 2,
-  batchGroupProgress: Map<string, number> = new Map()
+  divisionPreference?: 1 | 2
 ): Promise<Match | null> {
   const now = Date.now();
   // 同一ループ内で既に割り当て済みの試合を除外（二重割り当て防止の第二防衛線）
@@ -177,16 +174,9 @@ export async function dispatchToEmptyCourt(
   const campMatches = court.campId ? allMatches.filter(m => m.campId === court.campId) : allMatches;
 
   // 共通スコアコンテキストを構築（matchScoring.ts）
-  let scoreCtx = buildScoreContext(campMatches, allPlayers, config);
-
-  // バッチ内のグループ進行度をオーバーレイ（Firestore再読み遅延を補完）
-  if (batchGroupProgress.size > 0) {
-    const mergedGroupProgressMap = new Map(scoreCtx.groupProgressMap);
-    batchGroupProgress.forEach((count, key) => {
-      mergedGroupProgressMap.set(key, (mergedGroupProgressMap.get(key) || 0) + count);
-    });
-    scoreCtx = { ...scoreCtx, groupProgressMap: mergedGroupProgressMap };
-  }
+  // sequential awaitによりFirestore読み取りは常に最新値を反映するため、
+  // Fairness Bonusだけでグループラウンドロビンが自然に実現できる
+  const scoreCtx = buildScoreContext(campMatches, allPlayers, config);
 
   // 団体戦用: アクティブな team_battle 試合から「対戦中のチームID」を収集（チーム単位ロック）
   const busyTeamIds = new Set<string>();
@@ -258,27 +248,6 @@ export async function dispatchToEmptyCourt(
     if (nextReservedMatch && !canUseForShortMatch && match.id !== nextReservedMatch.id) {
       return false;
     }
-    // 休息時間チェック（player5/6も含む）
-    // ただし available_at が null（管理者が手動クリア済み）の場合はプレイヤーレベルの休息チェックをスキップ
-    // これにより「休憩解除操作 → 即座に自動割当」が機能する
-    const manuallyReleased = !match.available_at;
-    if (!manuallyReleased) {
-      const playerIds = [
-        match.player1_id, match.player2_id, match.player3_id, match.player4_id,
-        (match as any).player5_id, (match as any).player6_id
-      ].filter(id => id);
-      for (const playerId of playerIds) {
-        const player = allPlayers.find(p => p.id === playerId);
-        if (player?.last_match_finished_at) {
-          const lastFinished = player.last_match_finished_at.toMillis();
-          const timeSinceLastMatch = (now - lastFinished) / (1000 * 60); // 分単位
-          if (timeSinceLastMatch < defaultRestMinutes) {
-            return false; // 休息時間が不足している選手がいる
-          }
-        }
-      }
-    }
-
     // Finals wait mode check（1部・2部の準決勝以下が両方揃ったら同時解放）
     const key = `${match.tournament_type}_${match.division}`;
     if (finalsWaitMode[key]) {
@@ -320,6 +289,24 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
+  // 選手休息チェック: 全員が休息完了しているカードを優先、なければ休息中選手がいるカードも使う
+  // （予選リーグなど連続試合が避けられない場合のフォールバック）
+  const isPlayerResting = (match: Match): boolean => {
+    const playerIds = [
+      match.player1_id, match.player2_id, match.player3_id, match.player4_id,
+      (match as any).player5_id, (match as any).player6_id
+    ].filter(Boolean);
+    return playerIds.some(pid => {
+      const player = allPlayers.find(p => p.id === pid);
+      if (!player?.last_match_finished_at) return false;
+      const elapsed = (now - player.last_match_finished_at.toMillis()) / 60000;
+      return elapsed < defaultRestMinutes;
+    });
+  };
+  const restedMatches = validMatches.filter(m => !isPlayerResting(m));
+  // 全員休息済みのカードがあればそれだけ使う。なければ全validMatchesで（連続試合フォールバック）
+  const restFilteredMatches = restedMatches.length > 0 ? restedMatches : validMatches;
+
   // ラウンド順序の厳守: 両選手が揃っている待機試合を基準にラウンド下限を計算
   // validMatches（空き・休息チェック後）ではなく waitingMatches（選手IDあり・enabled済）を使うことで、
   // 下位ラウンドの選手が休息中でも上位ラウンドを先出しさせない
@@ -333,7 +320,7 @@ export async function dispatchToEmptyCourt(
       minRoundByGroup.set(groupKey, match.round);
     }
   }
-  const roundFilteredMatches = validMatches.filter(match => {
+  const roundFilteredMatches = restFilteredMatches.filter(match => {
     const groupKey = getGroupKey(match);
     const minRound = minRoundByGroup.get(groupKey);
     return minRound === undefined || match.round === minRound;
@@ -620,7 +607,8 @@ export async function diagnoseWaitingMatches(
   if (waitingMatches.length === 0) return [];
 
   // ── 前提データ計算 ──────────────────────────────────────────
-  const activeMatches = allMatches.filter(m => m.status === 'calling' || m.status === 'playing');
+  // activeMatches は同合宿のみ（他合宿の選手を誤ってbusyにしない）
+  const activeMatches = campMatches.filter(m => m.status === 'calling' || m.status === 'playing');
 
   const busyPlayerIds = new Set<string>();
   activeMatches.forEach(m => {

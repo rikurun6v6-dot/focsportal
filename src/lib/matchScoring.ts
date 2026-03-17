@@ -19,6 +19,10 @@ export interface ScoreContext {
   maxRoundByTypeDiv: Map<string, number>;
   /** キー: `${tournament_type}_${division}_${group}` → 消化済み試合数 */
   groupProgressMap: Map<string, number>;
+  /** キー: `${tournament_type}_${division}_${group}` → グループの総試合数 */
+  groupTotalMatchesMap: Map<string, number>;
+  /** キー: `${tournament_type}_${division}` → 全グループの平均消化数 */
+  groupAvgProgressByTypeDiv: Map<string, number>;
   temporaryBoost?: Record<string, number>;
   /**
    * 隣接コートの部門リスト（court-specific。ETA計算時は省略可）
@@ -27,7 +31,7 @@ export interface ScoreContext {
   adjacentCourtDivisions?: number[];
   /** ラウンド優先度係数（config.round_weight、デフォルト100） */
   roundWeight: number;
-  /** グループ平準化ペナルティ（config.group_penalty、デフォルト100） */
+  /** グループ平準化係数（config.group_penalty、デフォルト100） */
   groupPenalty: number;
   /** 待機時間係数（config.wait_factor、デフォルト1.0） */
   waitFactor: number;
@@ -67,14 +71,41 @@ export function buildScoreContext(
     if (m.round > cur) maxRoundByTypeDiv.set(k, m.round);
   });
 
-  // 予選グループ進行度マップ（消化済み試合数）
+  // 予選グループ進行度マップ（消化済み試合数）と総試合数マップ
   const groupProgressMap = new Map<string, number>();
+  const groupTotalMatchesMap = new Map<string, number>();
+  // type_div → グループラベルの集合（平均計算用）
+  const typeDivGroupsMap = new Map<string, Set<string>>();
+
   campMatches.forEach(m => {
-    if (!(m as any).group) return;
-    const gKey = `${m.tournament_type}_${m.division}_${(m as any).group}`;
+    const grp = (m as any).group;
+    if (!grp) return;
+    const gKey = `${m.tournament_type}_${m.division}_${grp}`;
+    const tdKey = `${m.tournament_type}_${m.division}`;
+
+    // 総試合数
+    groupTotalMatchesMap.set(gKey, (groupTotalMatchesMap.get(gKey) || 0) + 1);
+
+    // type_div → グループ集合
+    if (!typeDivGroupsMap.has(tdKey)) typeDivGroupsMap.set(tdKey, new Set());
+    typeDivGroupsMap.get(tdKey)!.add(grp);
+
+    // 消化済み試合数（calling/playing/completed）
     if (m.status === 'calling' || m.status === 'playing' || m.status === 'completed') {
       groupProgressMap.set(gKey, (groupProgressMap.get(gKey) || 0) + 1);
     }
+  });
+
+  // type_divごとの全グループ平均消化数
+  const groupAvgProgressByTypeDiv = new Map<string, number>();
+  typeDivGroupsMap.forEach((groups, tdKey) => {
+    if (groups.size === 0) return;
+    let totalDone = 0;
+    groups.forEach(grp => {
+      const gKey = `${tdKey}_${grp}`;
+      totalDone += groupProgressMap.get(gKey) || 0;
+    });
+    groupAvgProgressByTypeDiv.set(tdKey, totalDone / groups.size);
   });
 
   const temporaryBoost = config?.temporary_category_boost as Record<string, number> | undefined;
@@ -89,6 +120,8 @@ export function buildScoreContext(
     divisionBonusBase,
     maxRoundByTypeDiv,
     groupProgressMap,
+    groupTotalMatchesMap,
+    groupAvgProgressByTypeDiv,
     temporaryBoost,
     roundWeight,
     groupPenalty,
@@ -104,7 +137,8 @@ export function buildScoreContext(
 export function calcMatchScore(match: Match, ctx: ScoreContext): number {
   const {
     now, allPlayers, preferredDivision, divisionBonusBase,
-    maxRoundByTypeDiv, groupProgressMap, temporaryBoost, adjacentCourtDivisions,
+    maxRoundByTypeDiv, groupProgressMap, groupTotalMatchesMap, groupAvgProgressByTypeDiv,
+    temporaryBoost, adjacentCourtDivisions,
     roundWeight, groupPenalty, waitFactor,
   } = ctx;
 
@@ -144,18 +178,25 @@ export function calcMatchScore(match: Match, ctx: ScoreContext): number {
     }
   }
 
-  // 予選グループ進行度ペナルティ（進んでいるグループを後回し・動的係数）
-  let groupBalancePenalty = 0;
+  // グループスコア: ボトルネック優先(Volume Bonus) + 進行平準化(Fairness Bonus)
+  let groupScore = 0;
   if ((match as any).group) {
     const gKey = `${match.tournament_type}_${match.division}_${(match as any).group}`;
+    const tdKey = `${match.tournament_type}_${match.division}`;
     const groupDone = groupProgressMap.get(gKey) || 0;
-    groupBalancePenalty = -(groupPenalty ?? 100) * groupDone;
+    const totalMatches = groupTotalMatchesMap.get(gKey) || 0;
+    const avgProgress = groupAvgProgressByTypeDiv.get(tdKey) || 0;
+    // 試合数が多いグループを底上げ（序盤から着手させる）
+    const volumeBonus = totalMatches * 5;
+    // 消化が平均より遅れているグループを強力に引き上げ
+    const fairnessBonus = (avgProgress - groupDone) * (groupPenalty ?? 100);
+    groupScore = volumeBonus + fairnessBonus;
   }
 
   // ブラケット順序（match_number が小さい方が優先、係数2 ≒ 2分待機相当）
   const matchOrderScore = -(match.match_number ?? 0) * 2;
 
-  return waitTime + roundScore + divisionBonus + categoryBoost + groupBalancePenalty + matchOrderScore;
+  return waitTime + roundScore + divisionBonus + categoryBoost + groupScore + matchOrderScore;
 }
 
 /**
