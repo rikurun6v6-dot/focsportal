@@ -32,18 +32,20 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const claimedCourtIds = new Set<string>();
   // バッチ内で割り当てた部を追跡（スタート時など全コート空でも部の偏りを防ぐ）
   const batchAssignedDivisions: number[] = [];
+  // バッチ内のグループ進行度を追跡（Firestore再読み遅延に依存しないグループ平準化）
+  const batchGroupProgress = new Map<string, number>();
 
-  // 男女別に空きコートへ部優先を割り振る（スタート時の全面同一部を防ぐ）
-  // 先頭=1部優先、末尾=2部優先、中間=どちらも（preference なし）
+  // 男女別に空きコートへ部優先を交互割り当て（スタート時の全面同一部を防ぐ）
+  // 偶数インデックス(0,2,4,...)=1部優先、奇数インデックス(1,3,5,...)=2部優先
   const courtDivisionPreference = new Map<string, 1 | 2>();
   for (const gender of ['male', 'female', null] as const) {
     const group = emptyCourts
       .filter(c => (gender === null ? !c.preferred_gender : c.preferred_gender === gender))
       .sort((a, b) => a.number - b.number);
     if (group.length === 0) continue;
-    courtDivisionPreference.set(group[0].id, 1);
-    if (group.length >= 2) courtDivisionPreference.set(group[group.length - 1].id, 2);
-    // 中間コートは preference なし（どちらも受け付ける）
+    for (let i = 0; i < group.length; i++) {
+      courtDivisionPreference.set(group[i].id, i % 2 === 0 ? 1 : 2);
+    }
   }
 
   for (const court of emptyCourts) {
@@ -51,12 +53,18 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
     if (claimedCourtIds.has(court.id)) continue;
 
     const divPref = courtDivisionPreference.get(court.id);
-    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, batchAssignedDivisions, divPref);
+    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, batchAssignedDivisions, divPref, batchGroupProgress);
     if (assigned) {
       dispatchedCount++;
       assignedMatchIds.add(assigned.id);
       claimedCourtIds.add(court.id);
       if (assigned.division) batchAssignedDivisions.push(assigned.division);
+      // バッチ内グループ進行度を更新
+      const assignedGroup = (assigned as any).group;
+      if (assignedGroup && assigned.tournament_type && assigned.division) {
+        const gKey = `${assigned.tournament_type}_${assigned.division}_${assignedGroup}`;
+        batchGroupProgress.set(gKey, (batchGroupProgress.get(gKey) || 0) + 1);
+      }
       const idx = waitingMatches.findIndex(m => m.id === assigned.id);
       if (idx >= 0) waitingMatches.splice(idx, 1);
 
@@ -89,7 +97,8 @@ export async function dispatchToEmptyCourt(
   defaultRestMinutes: number = 10,
   assignedMatchIds: Set<string> = new Set(),
   batchAssignedDivisions: number[] = [],
-  divisionPreference?: 1 | 2
+  divisionPreference?: 1 | 2,
+  batchGroupProgress: Map<string, number> = new Map()
 ): Promise<Match | null> {
   const now = Date.now();
   // 同一ループ内で既に割り当て済みの試合を除外（二重割り当て防止の第二防衛線）
@@ -147,7 +156,8 @@ export async function dispatchToEmptyCourt(
 
   const allMatches = await getAllDocuments<Match>('matches');
   const activeMatches = allMatches.filter(m =>
-    m.status === 'calling' || m.status === 'playing'
+    (court.campId ? m.campId === court.campId : true) &&
+    (m.status === 'calling' || m.status === 'playing')
   );
   const busyPlayerIds = new Set<string>();
   activeMatches.forEach(m => {
@@ -167,7 +177,16 @@ export async function dispatchToEmptyCourt(
   const campMatches = court.campId ? allMatches.filter(m => m.campId === court.campId) : allMatches;
 
   // 共通スコアコンテキストを構築（matchScoring.ts）
-  const scoreCtx = buildScoreContext(campMatches, allPlayers, config);
+  let scoreCtx = buildScoreContext(campMatches, allPlayers, config);
+
+  // バッチ内のグループ進行度をオーバーレイ（Firestore再読み遅延を補完）
+  if (batchGroupProgress.size > 0) {
+    const mergedGroupProgressMap = new Map(scoreCtx.groupProgressMap);
+    batchGroupProgress.forEach((count, key) => {
+      mergedGroupProgressMap.set(key, (mergedGroupProgressMap.get(key) || 0) + count);
+    });
+    scoreCtx = { ...scoreCtx, groupProgressMap: mergedGroupProgressMap };
+  }
 
   // 団体戦用: アクティブな team_battle 試合から「対戦中のチームID」を収集（チーム単位ロック）
   const busyTeamIds = new Set<string>();
