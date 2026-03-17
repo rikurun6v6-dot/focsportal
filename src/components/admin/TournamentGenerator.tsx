@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, Trophy, AlertTriangle, Users, Sparkles, Check, Settings2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { collection, query, where, writeBatch, doc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, query, where, writeBatch, doc, serverTimestamp, Timestamp, updateDoc, setDoc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
 import { generateRandomPairs, generateMixedPairs, generateSinglesMatches } from "@/lib/tournament-generator";
@@ -217,11 +217,11 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
       });
 
       const configRef = doc(db, 'config', camp.id);
-      await updateDoc(configRef, {
+      await setDoc(configRef, {
         avg_match_duration_11: currentState.baselineDuration11,
         avg_match_duration_15: currentState.baselineDuration15,
         avg_match_duration_21: currentState.baselineDuration21,
-      });
+      }, { merge: true });
 
       // 0.5. 破壊的クリーンアップ（現在の合宿・部の試合を「物理的に全削除」）
       console.log('[トーナメント生成] 破壊的クリーンアップ開始:', {
