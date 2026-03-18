@@ -12,6 +12,8 @@ interface PreliminaryGroupProps {
   selectedPairKey?: string | null;
   /** ペア名タップ時のコールバック */
   onPairTap?: (pairKey: string, group: string) => void;
+  /** 完了済み試合タップ時のコールバック（結果編集用） */
+  onMatchTap?: (match: Match) => void;
 }
 
 export default function PreliminaryGroup({
@@ -21,6 +23,7 @@ export default function PreliminaryGroup({
   editMode = false,
   selectedPairKey = null,
   onPairTap,
+  onMatchTap,
 }: PreliminaryGroupProps) {
   return (
     <div>
@@ -56,9 +59,10 @@ export default function PreliminaryGroup({
                   return (
                     <Card
                       key={match.id}
+                      onClick={() => !editMode && match.status === "completed" && onMatchTap?.(match)}
                       className={`bg-white border shadow-sm transition-all ${
                         match.status === "completed"
-                          ? "border-emerald-300"
+                          ? `border-emerald-300${!editMode && onMatchTap ? " cursor-pointer hover:border-emerald-500 hover:shadow-md" : ""}`
                           : match.status === "playing"
                           ? "border-blue-400"
                           : "border-slate-200"

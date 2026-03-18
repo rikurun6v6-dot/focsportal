@@ -30,6 +30,8 @@ interface KnockoutTreeProps {
   selectedSlot?: { matchId: string; position: 1 | 2 } | null;
   onSlotClick?: (matchId: string, position: 1 | 2) => void;
   onSlotEditClick?: (matchId: string, position: 1 | 2) => void;
+  /** 完了済み試合タップ時のコールバック（結果編集用） */
+  onMatchTap?: (match: Match) => void;
 }
 
 /**
@@ -287,6 +289,7 @@ export default function KnockoutTree({
   selectedSlot = null,
   onSlotClick,
   onSlotEditClick,
+  onMatchTap,
 }: KnockoutTreeProps) {
   const { camp } = useCamp();
   const totalRounds = rounds.length;
@@ -445,11 +448,12 @@ export default function KnockoutTree({
                       <div key={match.id} style={{ position: 'absolute', top: `${cardTop}px`, width: '100%', minWidth: '220px', flexShrink: 0 }}>
                       <Card
                         key={match.id}
+                        onClick={() => !editMode && !isBye && match.status === 'completed' && onMatchTap?.(match)}
                         className={`rounded-lg shadow-md transition-all ${
                           isBye
                             ? 'bg-slate-100/50 border-2 border-dashed border-slate-300'
                             : match.status === 'completed'
-                            ? 'bg-white border-2 border-emerald-500'
+                            ? `bg-white border-2 border-emerald-500${!editMode && onMatchTap ? ' cursor-pointer hover:border-emerald-400 hover:shadow-lg' : ''}`
                             : match.status === 'playing'
                             ? 'bg-white border-2 border-blue-500 ring-2 ring-blue-200'
                             : 'bg-white border-2 border-slate-200'

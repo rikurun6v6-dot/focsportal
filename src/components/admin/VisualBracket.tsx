@@ -7,12 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument } from "@/lib/firestore-helpers";
+import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, cancelMatchResultSafe, editMatchResultSafe } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
 import { writeBatch, doc } from "firebase/firestore";
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType, Division } from "@/types";
-import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut, ArrowLeftRight } from "lucide-react";
+import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut, ArrowLeftRight, RotateCcw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import PreliminaryGroup from "./PreliminaryGroup";
 import KnockoutTree from "./KnockoutTree";
@@ -55,6 +55,12 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     // 予選リーグ編集モード
     const [prelimEditMode, setPrelimEditMode] = useState(false);
     const [selectedPrelimPair, setSelectedPrelimPair] = useState<{ pairKey: string; group: string } | null>(null);
+    // 結果編集モーダル
+    const [resultEditMatch, setResultEditMatch] = useState<Match | null>(null);
+    const [resultEditScoreP1, setResultEditScoreP1] = useState(0);
+    const [resultEditScoreP2, setResultEditScoreP2] = useState(0);
+    const [resultEditSaving, setResultEditSaving] = useState(false);
+    const [resultCancelling, setResultCancelling] = useState(false);
     const bracketRef = useRef<HTMLDivElement>(null);
     const bracketContentRef = useRef<HTMLDivElement>(null);
 
@@ -194,6 +200,55 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             toastSuccess(`ペアを入れ替えました（${count}試合更新）`);
         } catch {
             toastError('入れ替えに失敗しました');
+        }
+    };
+
+    /**
+     * 完了済み試合タップ → 結果編集モーダルを開く
+     */
+    const handleMatchTap = (match: Match) => {
+        if (readOnly) return;
+        setResultEditMatch(match);
+        setResultEditScoreP1(match.score_p1 ?? 0);
+        setResultEditScoreP2(match.score_p2 ?? 0);
+    };
+
+    /**
+     * 結果編集を保存
+     */
+    const handleResultEditSave = async () => {
+        if (!resultEditMatch) return;
+        const p1 = resultEditScoreP1;
+        const p2 = resultEditScoreP2;
+        if (p1 === p2) {
+            toastError('スコアが同点です。勝者を判定できません');
+            return;
+        }
+        const winnerId = p1 > p2 ? resultEditMatch.player1_id : resultEditMatch.player2_id;
+        setResultEditSaving(true);
+        const result = await editMatchResultSafe(resultEditMatch.id, p1, p2, winnerId);
+        setResultEditSaving(false);
+        if (result.success) {
+            toastSuccess('結果を更新しました');
+            setResultEditMatch(null);
+        } else {
+            toastError(result.error || '更新に失敗しました');
+        }
+    };
+
+    /**
+     * 結果を取り消して待機状態に戻す
+     */
+    const handleResultCancel = async () => {
+        if (!resultEditMatch) return;
+        setResultCancelling(true);
+        const result = await cancelMatchResultSafe(resultEditMatch.id);
+        setResultCancelling(false);
+        if (result.success) {
+            toastSuccess('結果を取り消しました。試合は待機状態に戻りました');
+            setResultEditMatch(null);
+        } else {
+            toastError(result.error || '取り消しに失敗しました');
         }
     };
 
@@ -733,6 +788,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                         editMode={prelimEditMode && !readOnly}
                                         selectedPairKey={selectedPrelimPair?.pairKey ?? null}
                                         onPairTap={handlePrelimPairTap}
+                                        onMatchTap={!readOnly ? handleMatchTap : undefined}
                                     />
                                 </>
                             )}
@@ -751,6 +807,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                     selectedSlot={selectedSlot}
                                     onSlotClick={handleSlotClick}
                                     onSlotEditClick={handleSlotEditOpen}
+                                    onMatchTap={!readOnly ? handleMatchTap : undefined}
                                 />
                             )}
                         </div>
@@ -759,6 +816,103 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                 </CardContent>
             </Card>
         </div>
+
+        {/* 結果編集ダイアログ */}
+        <Dialog open={!!resultEditMatch} onOpenChange={(open) => !open && setResultEditMatch(null)}>
+            <DialogContent className="bg-white max-w-sm">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Pencil className="w-4 h-4 text-blue-600" />
+                        試合結果の編集
+                    </DialogTitle>
+                </DialogHeader>
+                {resultEditMatch && (
+                    <div className="space-y-4">
+                        {/* 試合情報 */}
+                        <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                            <p className="font-semibold text-slate-800">
+                                {getPlayerName(resultEditMatch.player1_id)}
+                                {resultEditMatch.player3_id && ` / ${getPlayerName(resultEditMatch.player3_id)}`}
+                            </p>
+                            <p className="text-slate-400 text-center">VS</p>
+                            <p className="font-semibold text-slate-800">
+                                {getPlayerName(resultEditMatch.player2_id)}
+                                {resultEditMatch.player4_id && ` / ${getPlayerName(resultEditMatch.player4_id)}`}
+                            </p>
+                        </div>
+
+                        {/* スコア入力 */}
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 text-center">
+                                <p className="text-xs text-slate-500 mb-1 truncate">
+                                    {getPlayerName(resultEditMatch.player1_id)}
+                                    {resultEditMatch.player3_id && ` / ${getPlayerName(resultEditMatch.player3_id)}`}
+                                </p>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={resultEditScoreP1}
+                                    onChange={e => setResultEditScoreP1(Number(e.target.value))}
+                                    className="w-full text-center text-2xl font-bold border-2 border-slate-200 rounded-lg p-2 focus:border-blue-400 outline-none"
+                                />
+                            </div>
+                            <span className="text-slate-400 font-bold text-xl">-</span>
+                            <div className="flex-1 text-center">
+                                <p className="text-xs text-slate-500 mb-1 truncate">
+                                    {getPlayerName(resultEditMatch.player2_id)}
+                                    {resultEditMatch.player4_id && ` / ${getPlayerName(resultEditMatch.player4_id)}`}
+                                </p>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={resultEditScoreP2}
+                                    onChange={e => setResultEditScoreP2(Number(e.target.value))}
+                                    className="w-full text-center text-2xl font-bold border-2 border-slate-200 rounded-lg p-2 focus:border-blue-400 outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        {/* 勝者プレビュー */}
+                        {resultEditScoreP1 !== resultEditScoreP2 && (
+                            <div className="text-center text-xs bg-amber-50 border border-amber-200 rounded-lg py-2 px-3">
+                                <span className="text-amber-700 font-bold">
+                                    勝者: {resultEditScoreP1 > resultEditScoreP2
+                                        ? getPlayerName(resultEditMatch.player1_id) + (resultEditMatch.player3_id ? ` / ${getPlayerName(resultEditMatch.player3_id)}` : '')
+                                        : getPlayerName(resultEditMatch.player2_id) + (resultEditMatch.player4_id ? ` / ${getPlayerName(resultEditMatch.player4_id)}` : '')}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* 取り消しボタン */}
+                        <div className="border-t border-slate-100 pt-3">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleResultCancel}
+                                disabled={resultCancelling || resultEditSaving}
+                                className="w-full border-red-300 text-red-600 hover:bg-red-50 text-xs"
+                            >
+                                {resultCancelling
+                                    ? '取り消し中...'
+                                    : <><RotateCcw className="w-3 h-3 mr-1" />この試合の結果を消去して待機中に戻す</>}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setResultEditMatch(null)} disabled={resultEditSaving || resultCancelling}>
+                        キャンセル
+                    </Button>
+                    <Button
+                        onClick={handleResultEditSave}
+                        disabled={resultEditSaving || resultCancelling || resultEditScoreP1 === resultEditScoreP2}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                        {resultEditSaving ? '保存中...' : '保存'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
 
         {/* メンバー変更ダイアログ */}
 

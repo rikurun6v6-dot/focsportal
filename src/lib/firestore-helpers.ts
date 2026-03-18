@@ -515,6 +515,144 @@ export async function cancelMatchResult(matchId: string): Promise<boolean> {
   }
 }
 
+/**
+ * 次の試合を取得するヘルパー（next_match_id / next_match_number 両対応）
+ */
+async function findNextMatch(currentMatch: Match): Promise<Match | null> {
+  if (currentMatch.next_match_id) {
+    return await getDocument<Match>(COLLECTIONS.matches, currentMatch.next_match_id);
+  }
+  if (currentMatch.next_match_number != null && currentMatch.campId) {
+    const constraints: QueryConstraint[] = [
+      where('campId', '==', currentMatch.campId),
+      where('tournament_type', '==', currentMatch.tournament_type),
+      where('match_number', '==', currentMatch.next_match_number),
+    ];
+    if (currentMatch.division != null) {
+      constraints.push(where('division', '==', currentMatch.division));
+    }
+    const docs = await getAllDocuments<Match>('matches', constraints);
+    return docs[0] || null;
+  }
+  return null;
+}
+
+/**
+ * 試合結果を安全に取り消す（VisualBracket用）
+ * - 次の試合が calling/playing なら取り消し禁止
+ * - next_match_number パス（グループステージ方式）にも対応
+ */
+export async function cancelMatchResultSafe(
+  matchId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!matchId) return { success: false, error: '試合IDが不正です' };
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return { success: false, error: '試合が見つかりません' };
+
+    const nextMatch = await findNextMatch(currentMatch);
+
+    if (nextMatch && (nextMatch.status === 'calling' || nextMatch.status === 'playing')) {
+      return { success: false, error: '次の試合が開始されているため、結果を取り消せません' };
+    }
+
+    // 次の試合から進出プレイヤーを削除
+    if (nextMatch) {
+      const position = currentMatch.next_match_position ??
+        ((currentMatch.match_number ?? 0) % 2 === 1 ? 1 : 2);
+      const clearUpdate: Record<string, unknown> = { updated_at: Timestamp.now() };
+      if (position === 1) {
+        clearUpdate.player1_id = '';
+        clearUpdate.player3_id = null;
+        clearUpdate.player5_id = null;
+      } else {
+        clearUpdate.player2_id = '';
+        clearUpdate.player4_id = null;
+        clearUpdate.player6_id = null;
+      }
+      await updateDoc(doc(db, COLLECTIONS.matches, nextMatch.id), clearUpdate);
+    }
+
+    // 試合を待機状態に戻す
+    await updateDoc(doc(db, COLLECTIONS.matches, matchId), {
+      score_p1: 0,
+      score_p2: 0,
+      winner_id: null,
+      status: 'waiting',
+      end_time: null,
+      court_id: null,
+      updated_at: Timestamp.now(),
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error cancelling match result:', error);
+    return { success: false, error: 'システムエラーが発生しました' };
+  }
+}
+
+/**
+ * 試合結果を安全に編集する（VisualBracket用）
+ * - 次の試合が calling/playing なら編集禁止
+ * - next_match_number パス（グループステージ方式）にも対応
+ */
+export async function editMatchResultSafe(
+  matchId: string,
+  scoreP1: number,
+  scoreP2: number,
+  winnerId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!matchId || !winnerId) return { success: false, error: '入力値が不正です' };
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return { success: false, error: '試合が見つかりません' };
+
+    const nextMatch = await findNextMatch(currentMatch);
+
+    if (nextMatch && (nextMatch.status === 'calling' || nextMatch.status === 'playing')) {
+      return { success: false, error: '次の試合が開始されているため、結果を編集できません' };
+    }
+
+    // 試合結果を更新
+    await updateDoc(doc(db, COLLECTIONS.matches, matchId), {
+      score_p1: scoreP1,
+      score_p2: scoreP2,
+      winner_id: winnerId,
+      status: 'completed',
+      end_time: Timestamp.now(),
+      updated_at: Timestamp.now(),
+    });
+
+    // 次の試合の進出選手を更新
+    if (nextMatch) {
+      const isWinner1 = winnerId === currentMatch.player1_id;
+      const position = currentMatch.next_match_position ??
+        ((currentMatch.match_number ?? 0) % 2 === 1 ? 1 : 2);
+
+      const winnerMainId = isWinner1 ? currentMatch.player1_id : currentMatch.player2_id;
+      const winnerPartnerId = isWinner1 ? currentMatch.player3_id : currentMatch.player4_id;
+      const winnerThirdId = isWinner1 ? currentMatch.player5_id : currentMatch.player6_id;
+
+      const nextUpdate: Record<string, unknown> = { updated_at: Timestamp.now() };
+      if (position === 1) {
+        nextUpdate.player1_id = winnerMainId;
+        nextUpdate.player3_id = winnerPartnerId || null;
+        nextUpdate.player5_id = winnerThirdId || null;
+      } else {
+        nextUpdate.player2_id = winnerMainId;
+        nextUpdate.player4_id = winnerPartnerId || null;
+        nextUpdate.player6_id = winnerThirdId || null;
+      }
+      await updateDoc(doc(db, COLLECTIONS.matches, nextMatch.id), nextUpdate);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error editing match result:', error);
+    return { success: false, error: 'システムエラーが発生しました' };
+  }
+}
+
 export async function updateMatchResult(
   matchId: string,
   scoreP1: number,
