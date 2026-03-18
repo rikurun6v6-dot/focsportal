@@ -68,7 +68,57 @@ interface MatchData {
 }
 
 /**
- * 予選グループの試合データを生成（総当たり戦）
+ * サークルメソッドで1グループの全ラウンドの対戦カードを生成
+ * @returns roundMatchesByRound[roundIndex] = [{pair1, pair2}, ...]  (BYEを除く実試合のみ)
+ */
+function buildCircleMethodRounds(
+  groupPairs: ([Player, Player] | [Player, Player, Player])[]
+): { pair1: [Player, Player] | [Player, Player, Player]; pair2: [Player, Player] | [Player, Player, Player] }[][] {
+  const n = groupPairs.length;
+  if (n < 2) return [];
+
+  // 奇数の場合、BYE（null）を追加して偶数にする
+  type PairOrBye = [Player, Player] | [Player, Player, Player] | null;
+  const list: PairOrBye[] = [...groupPairs];
+  if (n % 2 === 1) list.push(null);
+  const size = list.length; // 偶数
+  const totalRounds = size - 1;
+
+  // 先頭要素（list[0]）を固定し、残りを時計回りに回転させる
+  const rotating: PairOrBye[] = list.slice(1);
+  const roundsMatches: ReturnType<typeof buildCircleMethodRounds> = [];
+
+  for (let r = 0; r < totalRounds; r++) {
+    const currentList: PairOrBye[] = [list[0], ...rotating];
+    const roundMatches: { pair1: [Player, Player] | [Player, Player, Player]; pair2: [Player, Player] | [Player, Player, Player] }[] = [];
+
+    for (let k = 0; k < size / 2; k++) {
+      const p1 = currentList[k];
+      const p2 = currentList[size - 1 - k];
+      // どちらかがBYEの場合はスキップ（実試合なし）
+      if (p1 === null || p2 === null) continue;
+      roundMatches.push({
+        pair1: p1 as [Player, Player] | [Player, Player, Player],
+        pair2: p2 as [Player, Player] | [Player, Player, Player],
+      });
+    }
+
+    roundsMatches.push(roundMatches);
+
+    // 時計回り回転: 最後の要素を先頭に移動
+    rotating.unshift(rotating.pop()!);
+  }
+
+  return roundsMatches;
+}
+
+/**
+ * 予選グループの試合データを生成（サークルメソッド総当たり戦）
+ *
+ * match_number の割り当て順:
+ *   第1ラウンドの全グループ試合 → 第2ラウンドの全グループ試合 → …
+ *   各ラウンド内ではグループをインターリーブ（A→B→A→B…）して
+ *   同ペアの連戦確率を最小化する。
  */
 function generateGroupStageMatches(
   pairs: ([Player, Player] | [Player, Player, Player])[],
@@ -82,35 +132,41 @@ function generateGroupStageMatches(
   const groupLabels: TeamGroup[] = ['A', 'B', 'C', 'D'];
 
   // ペアをグループに振り分け（余りを先頭グループに均等配分: 10÷3 → 4,3,3）
-  const groups: { [key in TeamGroup]?: ([Player, Player] | [Player, Player, Player])[] } = {};
+  const groups: { label: TeamGroup; pairs: ([Player, Player] | [Player, Player, Player])[] }[] = [];
   const base = Math.floor(pairs.length / groupCount);
   const remainder = pairs.length % groupCount;
   let startIdx = 0;
   for (let i = 0; i < groupCount; i++) {
     const count = base + (i < remainder ? 1 : 0);
-    groups[groupLabels[i]] = pairs.slice(startIdx, startIdx + count);
+    groups.push({ label: groupLabels[i], pairs: pairs.slice(startIdx, startIdx + count) });
     startIdx += count;
   }
 
-  // 各グループで総当たり戦の試合を生成
+  // 各グループにサークルメソッドを適用してラウンド別試合リストを作成
+  const roundsByGroup = groups.map(g => buildCircleMethodRounds(g.pairs));
+
+  // match_number の割り当て: R1全試合 → R2全試合 → …
+  // 各ラウンド内はグループをインターリーブ: (R1-A試合1, R1-B試合1, R1-A試合2, R1-B試合2, …)
   let matchNumber = 1;
-  Object.entries(groups).forEach(([groupLabel, groupPairs]) => {
-    if (!groupPairs) return;
+  const maxRounds = Math.max(...roundsByGroup.map(rg => rg.length), 0);
 
-    // 総当たり戦: 各ペアが他のすべてのペアと対戦
-    for (let i = 0; i < groupPairs.length; i++) {
-      for (let j = i + 1; j < groupPairs.length; j++) {
-        const pair1 = groupPairs[i];
-        const pair2 = groupPairs[j];
+  for (let r = 0; r < maxRounds; r++) {
+    const maxMatchesInRound = Math.max(...roundsByGroup.map(rg => (rg[r] ?? []).length), 0);
 
+    for (let slot = 0; slot < maxMatchesInRound; slot++) {
+      for (let g = 0; g < groups.length; g++) {
+        const roundMatches = roundsByGroup[g][r] ?? [];
+        if (slot >= roundMatches.length) continue;
+
+        const { pair1, pair2 } = roundMatches[slot];
         matches.push({
           campId,
           tournament_type: tournamentType,
           division,
-          round: 1, // 予選は全てround 1
+          round: r + 1, // 予選内ラウンド番号（dispatcher の round フィルタに使用）
           match_number: matchNumber++,
           phase: 'preliminary' as const,
-          group: groupLabel as TeamGroup,
+          group: groups[g].label,
           status: 'waiting',
           court_id: null,
           player1_id: pair1[0].id,
@@ -128,7 +184,7 @@ function generateGroupStageMatches(
         });
       }
     }
-  });
+  }
 
   return matches;
 }
