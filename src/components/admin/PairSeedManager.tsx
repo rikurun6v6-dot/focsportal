@@ -62,6 +62,9 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                     console.warn('[PairSeedManager] match.id が空のためスキップ:', match);
                     continue;
                 }
+                const hasP1 = !!match.player1_id;
+                const hasP2 = !!match.player2_id;
+
                 const payload: Record<string, unknown> = {
                     player1_id: match.player1_id,
                     player2_id: match.player2_id,
@@ -72,13 +75,41 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                     seed_p1: match.seed_p1 ?? null,
                     seed_p2: match.seed_p2 ?? null,
                 };
+
+                // BYEスロットに両選手が揃った場合 → 実戦に変換（walkoverフラグ解除）
+                if (match.is_walkover && hasP1 && hasP2) {
+                    payload.is_walkover = false;
+                    payload.walkover_winner = null;
+                    payload.status = 'waiting';
+                    payload.winner_id = null;
+                    payload.end_time = null;
+                    payload.court_id = null;
+
+                    // 生成時にBYE伝播で埋まっていた次試合のプレイヤー枠をクリア
+                    const nextPos = match.next_match_position ?? 1;
+                    let nextMatch: Match | undefined;
+                    if (match.next_match_id) {
+                        nextMatch = allMatches.find(m => m.id === match.next_match_id);
+                    } else if (match.next_match_number != null) {
+                        nextMatch = allMatches.find(m =>
+                            m.match_number === match.next_match_number &&
+                            m.division === match.division
+                        );
+                    }
+                    if (nextMatch && nextMatch.status !== 'completed') {
+                        const clearUpdate: Record<string, unknown> =
+                            nextPos === 1
+                                ? { player1_id: '', player3_id: null, player5_id: null }
+                                : { player2_id: '', player4_id: null, player6_id: null };
+                        await updateDocument('matches', nextMatch.id, clearUpdate);
+                    }
+                }
+
                 console.log(`[PairSeedManager] 保存: matches/${match.id}`, payload);
                 await updateDocument('matches', match.id, payload);
                 savedCount++;
 
                 // BYE試合（片方のみ選手がいる）の場合、次ラウンドに変更を伝播
-                const hasP1 = !!match.player1_id;
-                const hasP2 = !!match.player2_id;
                 if ((hasP1 !== hasP2) && (match.next_match_id || match.next_match_number != null)) {
                     const updatedMatch = { ...match, ...payload } as Match;
                     await propagateByePlayerChange(updatedMatch, allMatches);

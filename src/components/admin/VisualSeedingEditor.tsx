@@ -245,16 +245,46 @@ export default function VisualSeedingEditor({ readOnly = false }: { readOnly?: b
     try {
       const allMatches = await getMatchesByTournament(tournamentType, camp.id);
       for (const m of matches) {
-        const payload = {
+        const hasP1 = !!m.player1_id;
+        const hasP2 = !!m.player2_id;
+
+        const payload: Record<string, unknown> = {
           player1_id: m.player1_id ?? '',
           player2_id: m.player2_id ?? '',
           player3_id: m.player3_id ?? null,
           player4_id: m.player4_id ?? null,
         };
+
+        // BYEスロットに両選手が揃った場合 → 実戦に変換（walkoverフラグ解除）
+        if (m.is_walkover && hasP1 && hasP2) {
+          payload.is_walkover = false;
+          payload.walkover_winner = null;
+          payload.status = 'waiting';
+          payload.winner_id = null;
+          payload.end_time = null;
+          payload.court_id = null;
+
+          // 生成時にBYE伝播で埋まっていた次試合のプレイヤー枠をクリア
+          const nextPos = m.next_match_position ?? 1;
+          let nextMatch: Match | undefined;
+          if (m.next_match_id) {
+            nextMatch = allMatches.find(n => n.id === m.next_match_id);
+          } else if (m.next_match_number != null) {
+            nextMatch = allMatches.find(n =>
+              n.match_number === m.next_match_number && n.division === m.division
+            );
+          }
+          if (nextMatch && nextMatch.status !== 'completed') {
+            const clearUpdate: Record<string, unknown> =
+              nextPos === 1
+                ? { player1_id: '', player3_id: null, player5_id: null }
+                : { player2_id: '', player4_id: null, player6_id: null };
+            await updateDocument('matches', nextMatch.id, clearUpdate);
+          }
+        }
+
         await updateDocument('matches', m.id, payload);
 
-        const hasP1 = !!m.player1_id;
-        const hasP2 = !!m.player2_id;
         if (hasP1 !== hasP2 && (m.next_match_id || m.next_match_number != null)) {
           await propagateByePlayerChange({ ...m, ...payload } as Match, allMatches);
         }
