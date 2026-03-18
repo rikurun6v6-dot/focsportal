@@ -501,7 +501,19 @@ export default function ResultsTab() {
     });
     if (!confirmed) { setShowForceAssignFor(null); return; }
     try {
-      await updateDocument('matches', matchId, { status: 'calling', court_id: courtId });
+      // コートに既存の試合がある場合はその試合の court_id を解除（ゴースト防止）
+      const targetCourt = courts.find(c => c.id === courtId);
+      if (targetCourt?.current_match_id && targetCourt.current_match_id !== matchId) {
+        await updateDocument('matches', targetCourt.current_match_id, { court_id: null });
+      }
+
+      // available_at / reserved_court_id をクリアしてラウンドロックを解除
+      await updateDocument('matches', matchId, {
+        status: 'calling',
+        court_id: courtId,
+        available_at: null,
+        reserved_court_id: null,
+      });
       await updateDocument('courts', courtId, { current_match_id: matchId });
       // Web Push 通知（fire-and-forget）
       fetch('/api/push/send', {

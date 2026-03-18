@@ -45,9 +45,19 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
     useEffect(() => {
         const fetchCamps = async () => {
             try {
-                const q = query(collection(db, 'camps'), where('status', '==', 'active'), orderBy('created_at', 'desc'));
+                // 'active' に加えて 'setup' 状態のキャンプも表示（開催中ならステータスに関わらず表示）
+                const q = query(collection(db, 'camps'), where('status', 'in', ['active', 'setup']), orderBy('created_at', 'desc'));
                 const snapshot = await safeGetDocs(q);
-                const campList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Camp));
+                let campList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Camp));
+
+                // フォールバック: クエリが空の場合はステータスフィルタなしで全取得し archived を除外
+                if (campList.length === 0) {
+                    const qAll = query(collection(db, 'camps'), orderBy('created_at', 'desc'));
+                    const snapshotAll = await safeGetDocs(qAll);
+                    campList = snapshotAll.docs
+                        .map(doc => ({ id: doc.id, ...doc.data() } as Camp))
+                        .filter(c => c.status !== 'archived');
+                }
 
                 setCamps(campList);
                 if (campList.length > 0) {

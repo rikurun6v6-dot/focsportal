@@ -214,8 +214,14 @@ function calcPreliminaryMidScore(match: Match, ctx: ScoreContext): number {
 
   // 2. 部門バランス: 最大 divisionBonusBase 点
   let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
-  if (adjacentCourtDivisions && match.division && adjacentCourtDivisions.includes(match.division)) {
-    divisionBonus -= 30;
+  if (adjacentCourtDivisions && match.division && adjacentCourtDivisions.length > 0) {
+    const sameCount = adjacentCourtDivisions.filter(d => d === match.division).length;
+    // 同一部門コートごとに -50 点（旧: -30）
+    divisionBonus -= sameCount * 50;
+    // 多様性維持: 同一部門がコート全体の50%超なら追加 -100 ペナルティ
+    if (sameCount / adjacentCourtDivisions.length > 0.5) {
+      divisionBonus -= 100;
+    }
   }
 
   // 3. グループ平準化: 消化数が多いグループに -groupPenalty 点/試合
@@ -267,8 +273,12 @@ function calcKnockoutScore(match: Match, ctx: ScoreContext): number {
 
   // 部門バランス
   let divisionBonus = match.division === preferredDivision ? divisionBonusBase : 0;
-  if (adjacentCourtDivisions && match.division && adjacentCourtDivisions.includes(match.division)) {
-    divisionBonus -= 30;
+  if (adjacentCourtDivisions && match.division && adjacentCourtDivisions.length > 0) {
+    const sameCount = adjacentCourtDivisions.filter(d => d === match.division).length;
+    divisionBonus -= sameCount * 50;
+    if (sameCount / adjacentCourtDivisions.length > 0.5) {
+      divisionBonus -= 100;
+    }
   }
 
   // AIブースト

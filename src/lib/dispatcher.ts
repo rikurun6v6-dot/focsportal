@@ -326,6 +326,16 @@ export async function dispatchToEmptyCourt(
     return minRound === undefined || match.round === minRound;
   });
 
+  // 性別ガード: manual_gender_unlock が設定されていない限り、
+  // コートの preferred_gender と異なる試合を候補から完全除外する
+  const genderPreFilteredMatches = (court.preferred_gender && !court.manual_gender_unlock)
+    ? roundFilteredMatches.filter(match => {
+        const mg = getPreferredGender(match);
+        // neutral (mixed_doubles, team_battle) は OK。同性別も OK。逆性別は除外。
+        return mg === null || mg === court.preferred_gender;
+      })
+    : roundFilteredMatches;
+
   // 隣接コートの部門を取得（既存コート + 今回のバッチ割り当て分を合算）
   const allCourts = await getAllDocuments<Court>('courts');
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
@@ -347,7 +357,7 @@ export async function dispatchToEmptyCourt(
     ? { ...scoreCtx, preferredDivision: divisionPreference, divisionBonusBase: 150, adjacentCourtDivisions }
     : { ...scoreCtx, adjacentCourtDivisions };
 
-  const candidatesWithScore = roundFilteredMatches.map(match => {
+  const candidatesWithScore = genderPreFilteredMatches.map(match => {
     // 共通スコア関数（matchScoring.ts）でスコアを計算
     const baseScore = calcMatchScore(match, scoreCtxForCourt);
 
