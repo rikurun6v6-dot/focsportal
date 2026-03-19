@@ -27,7 +27,7 @@ import { buildScoreContext, calcMatchScore, getGroupKey } from '@/lib/matchScori
 import { diagnoseWaitingMatches, type MatchDiagnostic } from '@/lib/dispatcher';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
-import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp, Pencil, Check, X } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
 
@@ -65,6 +65,9 @@ export default function ResultsTab() {
   const [diagnostics, setDiagnostics] = useState<MatchDiagnostic[]>([]);
   // 診断カードの展開状態 (matchId → boolean)
   const [expandedDiagnostic, setExpandedDiagnostic] = useState<Record<string, boolean>>({});
+  // 選手名インライン編集
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [editingPlayerName, setEditingPlayerName] = useState('');
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -277,6 +280,34 @@ export default function ResultsTab() {
     }
 
     setSubmitting(null);
+  };
+
+  const handleSavePlayerName = async (playerId: string) => {
+    const newName = editingPlayerName.trim();
+    if (!newName) return;
+    try {
+      await updateDocument('players', playerId, { name: newName });
+      setMatchesCache(prev => {
+        const updated: Record<string, MatchWithPlayers> = {};
+        Object.entries(prev).forEach(([matchId, m]) => {
+          const patch = (p?: Player) => p?.id === playerId ? { ...p, name: newName } : p;
+          updated[matchId] = {
+            ...m,
+            player1: patch(m.player1) ?? m.player1,
+            player2: patch(m.player2) ?? m.player2,
+            player3: patch(m.player3),
+            player4: patch(m.player4),
+            player5: patch(m.player5),
+            player6: patch(m.player6),
+          };
+        });
+        return updated;
+      });
+      setEditingPlayerId(null);
+      toastSuccess('名前を更新しました');
+    } catch {
+      toastError('名前の更新に失敗しました');
+    }
   };
 
   const handleWalkover = async (match: MatchWithPlayers, courtId: string, winnerSide: 1 | 2) => {
@@ -866,11 +897,38 @@ export default function ResultsTab() {
                       {/* 選手表示（団体戦はチーム名） */}
                       <div className="space-y-1.5">
                         <div className="bg-white p-2 rounded border border-slate-200">
-                          <p className={`font-bold text-slate-800 text-center ${isTeamBattle(match) ? 'text-base' : 'text-sm'}`}>
-                            {isTeamBattle(match)
-                              ? getTeamName(match, 1)
-                              : ([match.player1?.name, match.player3?.name, match.player5?.name].filter(Boolean).join(' / ') || '未登録')}
-                          </p>
+                          {isTeamBattle(match) ? (
+                            <p className="font-bold text-slate-800 text-center text-base">{getTeamName(match, 1)}</p>
+                          ) : (
+                            <div className="flex flex-col items-center gap-0.5">
+                              {([match.player1, match.player3, match.player5] as (Player | undefined)[]).filter(Boolean).map((player) => (
+                                <div key={player!.id} className="flex items-center justify-center gap-1">
+                                  {editingPlayerId === player!.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        value={editingPlayerName}
+                                        onChange={(e) => setEditingPlayerName(e.target.value)}
+                                        className="h-6 text-xs text-center w-24 px-1"
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSavePlayerName(player!.id); if (e.key === 'Escape') setEditingPlayerId(null); }}
+                                        autoFocus
+                                      />
+                                      <Button size="sm" className="h-5 w-5 p-0" onClick={() => handleSavePlayerName(player!.id)}><Check className="w-3 h-3" /></Button>
+                                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => setEditingPlayerId(null)}><X className="w-3 h-3" /></Button>
+                                    </div>
+                                  ) : (
+                                    <span
+                                      className="text-sm font-bold text-slate-800 cursor-pointer hover:text-sky-600 flex items-center gap-0.5 group"
+                                      onClick={() => { setEditingPlayerId(player!.id); setEditingPlayerName(player!.name); }}
+                                    >
+                                      {player!.name}
+                                      <Pencil className="w-2.5 h-2.5 text-slate-300 group-hover:text-sky-400 opacity-0 group-hover:opacity-100" />
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                              {!match.player1 && <span className="text-sm text-slate-400">未登録</span>}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center justify-center">
@@ -878,11 +936,38 @@ export default function ResultsTab() {
                         </div>
 
                         <div className="bg-white p-2 rounded border border-slate-200">
-                          <p className={`font-bold text-slate-800 text-center ${isTeamBattle(match) ? 'text-base' : 'text-sm'}`}>
-                            {isTeamBattle(match)
-                              ? getTeamName(match, 2)
-                              : ([match.player2?.name, match.player4?.name, match.player6?.name].filter(Boolean).join(' / ') || '未登録')}
-                          </p>
+                          {isTeamBattle(match) ? (
+                            <p className="font-bold text-slate-800 text-center text-base">{getTeamName(match, 2)}</p>
+                          ) : (
+                            <div className="flex flex-col items-center gap-0.5">
+                              {([match.player2, match.player4, match.player6] as (Player | undefined)[]).filter(Boolean).map((player) => (
+                                <div key={player!.id} className="flex items-center justify-center gap-1">
+                                  {editingPlayerId === player!.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        value={editingPlayerName}
+                                        onChange={(e) => setEditingPlayerName(e.target.value)}
+                                        className="h-6 text-xs text-center w-24 px-1"
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSavePlayerName(player!.id); if (e.key === 'Escape') setEditingPlayerId(null); }}
+                                        autoFocus
+                                      />
+                                      <Button size="sm" className="h-5 w-5 p-0" onClick={() => handleSavePlayerName(player!.id)}><Check className="w-3 h-3" /></Button>
+                                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => setEditingPlayerId(null)}><X className="w-3 h-3" /></Button>
+                                    </div>
+                                  ) : (
+                                    <span
+                                      className="text-sm font-bold text-slate-800 cursor-pointer hover:text-sky-600 flex items-center gap-0.5 group"
+                                      onClick={() => { setEditingPlayerId(player!.id); setEditingPlayerName(player!.name); }}
+                                    >
+                                      {player!.name}
+                                      <Pencil className="w-2.5 h-2.5 text-slate-300 group-hover:text-sky-400 opacity-0 group-hover:opacity-100" />
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                              {!match.player2 && <span className="text-sm text-slate-400">未登録</span>}
+                            </div>
+                          )}
                         </div>
                       </div>
 

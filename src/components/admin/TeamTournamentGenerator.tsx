@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Loading } from '@/components/ui/loading';
 import type { TeamMatchConfig, TeamEncounter, TeamRankEntry } from '@/types';
 import {
   buildGameSlots,
@@ -19,6 +20,8 @@ import {
   resolveTeamBronzeEncounter,
   recordTeamGameResult,
 } from '@/lib/tournament-logic';
+import { getDocument, setDocument, deleteDocument } from '@/lib/firestore-helpers';
+import { useCamp } from '@/context/CampContext';
 import TeamMatchConfigEditor from './TeamMatchConfigEditor';
 import TeamPreliminaryGroup from './TeamPreliminaryGroup';
 import TeamKnockoutTree from './TeamKnockoutTree';
@@ -55,8 +58,9 @@ type Phase = 'setup' | 'preliminary' | 'placement' | 'knockout';
 type FinalFormat = 'placement' | 'knockout';
 
 const LS_KEY = 'ttg_state_v1';
+const FS_COLLECTION = 'team_tournament_states';
 
-function loadSaved(): Record<string, unknown> | null {
+function loadFromLocalStorage(): Record<string, unknown> | null {
   if (typeof window === 'undefined') return null;
   try {
     const s = localStorage.getItem(LS_KEY);
@@ -65,38 +69,83 @@ function loadSaved(): Record<string, unknown> | null {
 }
 
 export default function TeamTournamentGenerator() {
-  const saved = loadSaved();
+  const { camp } = useCamp();
 
-  const [teams, setTeams] = useState<SimpleTeam[]>((saved?.teams as SimpleTeam[]) ?? DEFAULT_TEAMS);
+  const [teams, setTeams] = useState<SimpleTeam[]>(DEFAULT_TEAMS);
   const [newTeamName, setNewTeamName] = useState('');
-  const [config, setConfig] = useState<TeamMatchConfig>((saved?.config as TeamMatchConfig) ?? DEFAULT_CONFIG);
-  const [groupCount, setGroupCount] = useState<number>((saved?.groupCount as number) ?? 2);
-  const [qualifiersPerGroup, setQualifiersPerGroup] = useState<number>((saved?.qualifiersPerGroup as number) ?? 2);
-  const [finalFormat, setFinalFormat] = useState<FinalFormat>((saved?.finalFormat as FinalFormat) ?? 'placement');
-  const [phase, setPhase] = useState<Phase>((saved?.phase as Phase) ?? 'setup');
-  const [teamGroupAssignments, setTeamGroupAssignments] = useState<Record<string, number>>(
-    (saved?.teamGroupAssignments as Record<string, number>) ?? {}
-  );
-
-  const [prelimEncounters, setPrelimEncounters] = useState<TeamEncounter[]>((saved?.prelimEncounters as TeamEncounter[]) ?? []);
-  const [placementEncounters, setPlacementEncounters] = useState<TeamEncounter[]>((saved?.placementEncounters as TeamEncounter[]) ?? []);
-  const [knockoutEncounters, setKnockoutEncounters] = useState<TeamEncounter[]>((saved?.knockoutEncounters as TeamEncounter[]) ?? []);
-  const [bronzeEncounter, setBronzeEncounter] = useState<TeamEncounter | null>((saved?.bronzeEncounter as TeamEncounter) ?? null);
-  const [jankenWinners, setJankenWinners] = useState<Record<string, string>>((saved?.jankenWinners as Record<string, string>) ?? {});
+  const [config, setConfig] = useState<TeamMatchConfig>(DEFAULT_CONFIG);
+  const [groupCount, setGroupCount] = useState<number>(2);
+  const [qualifiersPerGroup, setQualifiersPerGroup] = useState<number>(2);
+  const [finalFormat, setFinalFormat] = useState<FinalFormat>('placement');
+  const [phase, setPhase] = useState<Phase>('setup');
+  const [teamGroupAssignments, setTeamGroupAssignments] = useState<Record<string, number>>({});
+  const [prelimEncounters, setPrelimEncounters] = useState<TeamEncounter[]>([]);
+  const [placementEncounters, setPlacementEncounters] = useState<TeamEncounter[]>([]);
+  const [knockoutEncounters, setKnockoutEncounters] = useState<TeamEncounter[]>([]);
+  const [bronzeEncounter, setBronzeEncounter] = useState<TeamEncounter | null>(null);
+  const [jankenWinners, setJankenWinners] = useState<Record<string, string>>({});
 
   // UI state (not persisted)
   const [showSetupEdit, setShowSetupEdit] = useState(false);
+  const [stateLoaded, setStateLoaded] = useState(false);
 
-  // Persist state to localStorage whenever it changes
+  const applyState = (s: Record<string, unknown>) => {
+    if (Array.isArray(s.teams)) setTeams(s.teams as SimpleTeam[]);
+    if (s.config) setConfig(s.config as TeamMatchConfig);
+    if (typeof s.groupCount === 'number') setGroupCount(s.groupCount);
+    if (typeof s.qualifiersPerGroup === 'number') setQualifiersPerGroup(s.qualifiersPerGroup);
+    if (s.finalFormat) setFinalFormat(s.finalFormat as FinalFormat);
+    if (s.phase) setPhase(s.phase as Phase);
+    if (s.teamGroupAssignments) setTeamGroupAssignments(s.teamGroupAssignments as Record<string, number>);
+    if (Array.isArray(s.prelimEncounters)) setPrelimEncounters(s.prelimEncounters as TeamEncounter[]);
+    if (Array.isArray(s.placementEncounters)) setPlacementEncounters(s.placementEncounters as TeamEncounter[]);
+    if (Array.isArray(s.knockoutEncounters)) setKnockoutEncounters(s.knockoutEncounters as TeamEncounter[]);
+    setBronzeEncounter((s.bronzeEncounter as TeamEncounter | null) ?? null);
+    if (s.jankenWinners) setJankenWinners(s.jankenWinners as Record<string, string>);
+  };
+
+  // Firestoreからロード（campが変わるたびに）
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({
-        teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
-        teamGroupAssignments, prelimEncounters, placementEncounters,
-        knockoutEncounters, bronzeEncounter, jankenWinners,
-      }));
-    } catch { /* ignore quota errors */ }
-  }, [teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
+    if (!camp?.id) return;
+    setStateLoaded(false);
+    const load = async () => {
+      try {
+        const saved = await getDocument<Record<string, unknown>>(FS_COLLECTION, camp.id);
+        if (saved) {
+          applyState(saved);
+        } else {
+          // localStorageからマイグレーション
+          const ls = loadFromLocalStorage();
+          if (ls) applyState(ls);
+        }
+      } catch {
+        const ls = loadFromLocalStorage();
+        if (ls) applyState(ls);
+      }
+      setStateLoaded(true);
+    };
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camp?.id]);
+
+  // 状態変化をFirestore+localStorageに保存（ロード完了後のみ）
+  useEffect(() => {
+    if (!stateLoaded || !camp?.id) return;
+    const state = {
+      teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
+      teamGroupAssignments, prelimEncounters, placementEncounters,
+      knockoutEncounters, bronzeEncounter, jankenWinners,
+    };
+    // localStorageに即時保存
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+    // Firestoreにデバウンス保存（1.5秒後）
+    const timer = setTimeout(async () => {
+      try {
+        await setDocument(FS_COLLECTION, { id: camp.id, campId: camp.id, ...state });
+      } catch { /* ignore */ }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [stateLoaded, camp?.id, teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
     teamGroupAssignments, prelimEncounters, placementEncounters,
     knockoutEncounters, bronzeEncounter, jankenWinners]);
 
@@ -257,9 +306,12 @@ export default function TeamTournamentGenerator() {
     setPhase('preliminary');
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!confirm('大会をリセットしますか？全データが消去されます。')) return;
     try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+    if (camp?.id) {
+      try { await deleteDocument(FS_COLLECTION, camp.id); } catch { /* ignore */ }
+    }
     setTeams(DEFAULT_TEAMS);
     setConfig(DEFAULT_CONFIG);
     setGroupCount(2);
@@ -454,6 +506,10 @@ export default function TeamTournamentGenerator() {
       </Button>
     </div>
   );
+
+  if (camp?.id && !stateLoaded) {
+    return <Loading />;
+  }
 
   return (
     <div className="space-y-6">
