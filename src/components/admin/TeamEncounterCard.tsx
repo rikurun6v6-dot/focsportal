@@ -79,7 +79,7 @@ export default function TeamEncounterCard({
         <div className="flex flex-wrap gap-1.5">
           {encounter.games.map((game: TeamGame) => {
             const label = GAME_TYPE_LABEL[game.type] ?? game.type;
-            const isLocked = readOnly || (encounter.completed && game.winner != null);
+            const isLocked = readOnly;
             return (
               <div key={game.id} className="flex flex-col items-center gap-0.5">
                 <span className="text-[10px] text-slate-500">{label}</span>
