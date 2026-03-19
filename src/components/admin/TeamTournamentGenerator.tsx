@@ -84,6 +84,7 @@ export default function TeamTournamentGenerator() {
   const [knockoutEncounters, setKnockoutEncounters] = useState<TeamEncounter[]>([]);
   const [bronzeEncounter, setBronzeEncounter] = useState<TeamEncounter | null>(null);
   const [jankenWinners, setJankenWinners] = useState<Record<string, string>>({});
+  const [manualRanksByGroup, setManualRanksByGroup] = useState<Record<string, string[]>>({});
 
   // UI state (not persisted)
   const [showSetupEdit, setShowSetupEdit] = useState(false);
@@ -102,6 +103,7 @@ export default function TeamTournamentGenerator() {
     if (Array.isArray(s.knockoutEncounters)) setKnockoutEncounters(s.knockoutEncounters as TeamEncounter[]);
     setBronzeEncounter((s.bronzeEncounter as TeamEncounter | null) ?? null);
     if (s.jankenWinners) setJankenWinners(s.jankenWinners as Record<string, string>);
+    if (s.manualRanksByGroup) setManualRanksByGroup(s.manualRanksByGroup as Record<string, string[]>);
   };
 
   // Firestoreからロード（campが変わるたびに）
@@ -134,7 +136,7 @@ export default function TeamTournamentGenerator() {
     const state = {
       teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
       teamGroupAssignments, prelimEncounters, placementEncounters,
-      knockoutEncounters, bronzeEncounter, jankenWinners,
+      knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup,
     };
     // localStorageに即時保存
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
@@ -147,7 +149,7 @@ export default function TeamTournamentGenerator() {
     return () => clearTimeout(timer);
   }, [stateLoaded, camp?.id, teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
     teamGroupAssignments, prelimEncounters, placementEncounters,
-    knockoutEncounters, bronzeEncounter, jankenWinners]);
+    knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup]);
 
   const getTeamName = (id: string) => {
     if (id === 'BYE') return 'BYE';
@@ -165,7 +167,16 @@ export default function TeamTournamentGenerator() {
 
   for (const g of groups) {
     encountersByGroup[g] = prelimEncounters.filter(e => e.group === g);
-    rankingsByGroup[g] = rankTeamGroup(encountersByGroup[g], jankenWinners);
+    const autoRanked = rankTeamGroup(encountersByGroup[g], jankenWinners);
+    const manualOrder = manualRanksByGroup[g] ?? [];
+    if (manualOrder.length > 0) {
+      const map = new Map(autoRanked.map(r => [r.teamId, r]));
+      rankingsByGroup[g] = manualOrder.map(id => map.get(id)).filter(Boolean) as typeof autoRanked;
+      // autoRankedにあってmanualOrderにないチームを末尾に追加
+      autoRanked.forEach(r => { if (!manualOrder.includes(r.teamId)) rankingsByGroup[g].push(r); });
+    } else {
+      rankingsByGroup[g] = autoRanked;
+    }
     jankenPairsByGroup[g] = getNeedJankenPairs(rankingsByGroup[g], encountersByGroup[g], jankenWinners);
   }
 
@@ -223,6 +234,7 @@ export default function TeamTournamentGenerator() {
     }
 
     setPrelimEncounters(encs);
+    setManualRanksByGroup({});
     setPhase('preliminary');
     setShowSetupEdit(false);
   };
@@ -297,6 +309,10 @@ export default function TeamTournamentGenerator() {
   const handleJanken = (team1Id: string, team2Id: string, winnerId: string) => {
     const key = [team1Id, team2Id].sort().join('_');
     setJankenWinners(prev => ({ ...prev, [key]: winnerId }));
+  };
+
+  const handleManualRankChange = (group: string, orderedTeamIds: string[]) => {
+    setManualRanksByGroup(prev => ({ ...prev, [group]: orderedTeamIds }));
   };
 
   const handleBackToPrelim = () => {
@@ -568,9 +584,11 @@ export default function TeamTournamentGenerator() {
             encountersByGroup={encountersByGroup}
             rankingsByGroup={rankingsByGroup}
             jankenPairsByGroup={jankenPairsByGroup}
+            manualRanksByGroup={manualRanksByGroup}
             getTeamName={getTeamName}
             onGameResult={handlePrelimGameResult}
             onJanken={handleJanken}
+            onManualRankChange={handleManualRankChange}
           />
 
           {needJanken && (

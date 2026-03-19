@@ -429,11 +429,11 @@ export function rankTeamGroup(
   return Array.from(map.values()).sort((a, b) => {
     // 1. 勝利数
     if (b.wins !== a.wins) return b.wins - a.wins;
-    // 2. 直接対決
+    // 2. 得失試合数差（三つ巴でも機能する推移的な指標を先に）
+    if (b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
+    // 3. 直接対決（2チーム間の場合のみ有効）
     const h2h = getHeadToHead(a.teamId, b.teamId, completed);
     if (h2h !== null) return h2h === a.teamId ? -1 : 1;
-    // 3. 得失試合数差
-    if (b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
     // 4. じゃんけん（得失点差は無視）
     if (jankenWinners) {
       const key = [a.teamId, b.teamId].sort().join('_');
@@ -457,10 +457,10 @@ export function getNeedJankenPairs(
       const a = entries[i];
       const b = entries[j];
       if (a.wins !== b.wins) continue;
+      if (a.gameDiff !== b.gameDiff) continue;
       const h2h = getHeadToHead(a.teamId, b.teamId, completed);
       if (h2h !== null) continue;
-      if (a.gameDiff !== b.gameDiff) continue;
-      // 得失点差は判定基準外のため、得失試合数差が同じ時点でじゃんけん対象
+      // 勝利数・得失ゲーム数・直接対決が全て同じ時にじゃんけん対象
       const key = [a.teamId, b.teamId].sort().join('_');
       if (jankenWinners?.[key]) continue;
       pairs.push([a.teamId, b.teamId]);

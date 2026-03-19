@@ -1,6 +1,6 @@
 'use client';
 
-import { Trophy, Scissors } from 'lucide-react';
+import { Trophy, Scissors, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TeamEncounter, TeamRankEntry } from '@/types';
 import TeamEncounterCard from './TeamEncounterCard';
@@ -10,9 +10,11 @@ interface TeamPreliminaryGroupProps {
   encountersByGroup: Record<string, TeamEncounter[]>;
   rankingsByGroup: Record<string, TeamRankEntry[]>;
   jankenPairsByGroup?: Record<string, [string, string][]>;
+  manualRanksByGroup?: Record<string, string[]>;
   getTeamName: (id: string) => string;
   onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => void;
   onJanken?: (team1Id: string, team2Id: string, winnerId: string) => void;
+  onManualRankChange?: (group: string, orderedTeamIds: string[]) => void;
   readOnly?: boolean;
 }
 
@@ -21,11 +23,32 @@ export default function TeamPreliminaryGroup({
   encountersByGroup,
   rankingsByGroup,
   jankenPairsByGroup,
+  manualRanksByGroup,
   getTeamName,
   onGameResult,
   onJanken,
+  onManualRankChange,
   readOnly = false,
 }: TeamPreliminaryGroupProps) {
+  const handleMoveUp = (group: string, idx: number) => {
+    if (idx === 0) return;
+    const rankings = rankingsByGroup[group] ?? [];
+    const newOrder = rankings.map(r => r.teamId);
+    [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
+    onManualRankChange?.(group, newOrder);
+  };
+
+  const handleMoveDown = (group: string, idx: number) => {
+    const rankings = rankingsByGroup[group] ?? [];
+    if (idx >= rankings.length - 1) return;
+    const newOrder = rankings.map(r => r.teamId);
+    [newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
+    onManualRankChange?.(group, newOrder);
+  };
+
+  const handleResetManual = (group: string) => {
+    onManualRankChange?.(group, []);
+  };
   return (
     <div>
       <h2 className="text-lg font-bold text-violet-700 mb-4 flex items-center gap-2">
@@ -62,7 +85,19 @@ export default function TeamPreliminaryGroup({
                 {/* 順位表 */}
                 {rankings.length > 0 && (
                   <div className="mt-2">
-                    <p className="text-[10px] font-semibold text-slate-500 mb-1">現在の順位</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] font-semibold text-slate-500">現在の順位</p>
+                      {!readOnly && (manualRanksByGroup?.[group] ?? []).length > 0 && (
+                        <button
+                          onClick={() => handleResetManual(group)}
+                          className="flex items-center gap-0.5 text-[9px] text-amber-600 hover:text-amber-800"
+                          title="自動順位に戻す"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          手動設定中
+                        </button>
+                      )}
+                    </div>
                     <div className="bg-slate-50 rounded-md overflow-hidden border border-slate-200">
                       <table className="w-full text-xs">
                         <thead>
@@ -72,7 +107,7 @@ export default function TeamPreliminaryGroup({
                             <th className="py-1 px-1 text-center">勝</th>
                             <th className="py-1 px-1 text-center">負</th>
                             <th className="py-1 px-1 text-center" title="得失試合数差">試</th>
-                            <th className="py-1 px-1 text-center" title="得失点差">点</th>
+                            {!readOnly && onManualRankChange && <th className="py-1 px-1 text-center">移動</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -85,14 +120,36 @@ export default function TeamPreliminaryGroup({
                               <td className={`py-1 px-1 text-center ${r.gameDiff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                                 {r.gameDiff > 0 ? `+${r.gameDiff}` : r.gameDiff}
                               </td>
-                              <td className={`py-1 px-1 text-center text-[10px] ${r.pointDiff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                                {r.pointDiff !== 0 ? (r.pointDiff > 0 ? `+${r.pointDiff}` : r.pointDiff) : '-'}
-                              </td>
+                              {!readOnly && onManualRankChange && (
+                                <td className="py-1 px-1 text-center">
+                                  <div className="flex flex-col items-center gap-0">
+                                    <button
+                                      onClick={() => handleMoveUp(group, i)}
+                                      disabled={i === 0}
+                                      className="text-slate-400 hover:text-slate-700 disabled:opacity-20"
+                                    >
+                                      <ChevronUp className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleMoveDown(group, i)}
+                                      disabled={i === rankings.length - 1}
+                                      className="text-slate-400 hover:text-slate-700 disabled:opacity-20"
+                                    >
+                                      <ChevronDown className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    {!readOnly && onManualRankChange && (
+                      <p className="text-[9px] text-slate-400 mt-0.5">
+                        順位基準: 勝利数→得失試合数→直接対決。▲▼で手動変更可
+                      </p>
+                    )}
                   </div>
                 )}
 
