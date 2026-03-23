@@ -196,6 +196,7 @@ export interface Config {
   group_penalty?: number; // グループ平準化ペナルティ（デフォルト100）
   division_bonus_max?: number; // 部門バランスボーナス上限（デフォルト50）
   wait_factor?: number; // 待機時間係数（デフォルト1.0）
+  team_battle_ranking_method?: 'wins_games_points' | 'wins_h2h_points'; // 団体戦の予選順位決定方法
 }
 
 /**

@@ -189,9 +189,17 @@ function generateGroupStageMatches(
   return matches;
 }
 
-export default function TournamentGenerator({ readOnly = false, onGenerateSuccess }: { readOnly?: boolean; onGenerateSuccess?: () => void }) {
+export default function TournamentGenerator({ readOnly = false }: { readOnly?: boolean }) {
   const { camp } = useCamp();
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkFormat, setBulkFormat] = useState<TournamentFormat>('group-stage-knockout');
+  const [bulkPoints, setBulkPoints] = useState(15);
+  const [bulkGroupCount, setBulkGroupCount] = useState(4);
+  const [bulkQualifiers, setBulkQualifiers] = useState(2);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkLog, setBulkLog] = useState<{ key: string; status: 'ok' | 'error'; message: string }[]>([]);
 
   // 1部用の状態
   const [division1State, setDivision1State] = useState<TournamentGeneratorState>({
@@ -229,7 +237,7 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
     baselineDuration21: 15,
   });
 
-  const handleGenerate = async (division: Division) => {
+  const handleGenerate = async (division: Division, stateOverride?: Partial<TournamentGeneratorState>) => {
     console.log('[トーナメント生成] 開始:', { division, campId: camp?.id });
 
     if (!camp) {
@@ -239,7 +247,8 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
       return;
     }
 
-    const currentState = division === 1 ? division1State : division2State;
+    const baseState = division === 1 ? division1State : division2State;
+    const currentState = stateOverride ? { ...baseState, ...stateOverride } : baseState;
     const setState = division === 1 ? setDivision1State : setDivision2State;
 
     console.log('[トーナメント生成] 設定:', {
@@ -249,7 +258,9 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
       pointsPerGame: currentState.pointsPerGame
     });
 
-    setState(prev => ({ ...prev, loading: true, result: null, error: null }));
+    if (!stateOverride) {
+      setState(prev => ({ ...prev, loading: true, result: null, error: null }));
+    }
 
     try {
       // 0. トーナメント設定を作成・保存
@@ -623,20 +634,16 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
         console.log('[トーナメント生成] Firestore書き込み完了確認 ✅');
 
         // State更新を一度にまとめて実行
-        setState(prev => ({
-          ...prev,
-          loading: false,
-          result: {
-            matchCount: allMatches.length,
-            roundCount: totalRounds,
-            warnings: pairErrors.length > 0 ? pairErrors : undefined,
-          }
-        }));
-
-        // 生成成功時のコールバック（await後に実行）
-        if (onGenerateSuccess) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          onGenerateSuccess();
+        if (!stateOverride) {
+          setState(prev => ({
+            ...prev,
+            loading: false,
+            result: {
+              matchCount: allMatches.length,
+              roundCount: totalRounds,
+              warnings: pairErrors.length > 0 ? pairErrors : undefined,
+            }
+          }));
         }
 
       } else {
@@ -875,20 +882,16 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
         });
 
         // State更新を一度にまとめて実行
-        setState(prev => ({
-          ...prev,
-          loading: false,
-          result: {
-            matchCount: bracket.slots.length,
-            roundCount: bracket.totalRounds,
-            warnings: pairErrors.length > 0 ? pairErrors : undefined,
-          }
-        }));
-
-        // 生成成功時のコールバック（await後に実行）
-        if (onGenerateSuccess) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          onGenerateSuccess();
+        if (!stateOverride) {
+          setState(prev => ({
+            ...prev,
+            loading: false,
+            result: {
+              matchCount: bracket.slots.length,
+              roundCount: bracket.totalRounds,
+              warnings: pairErrors.length > 0 ? pairErrors : undefined,
+            }
+          }));
         }
       } // else句を閉じる
 
@@ -955,12 +958,42 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
         }
       }
 
-      setState(prev => ({
-        ...prev,
-        loading: false,
-        error: errorMessage
-      }));
+      if (!stateOverride) {
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          error: errorMessage
+        }));
+      } else {
+        throw err;
+      }
     }
+  };
+
+  const handleBulkGenerate = async () => {
+    if (bulkSelected.size === 0) return;
+    setBulkLoading(true);
+    setBulkLog([]);
+    const results: { key: string; status: 'ok' | 'error'; message: string }[] = [];
+    for (const key of Array.from(bulkSelected)) {
+      const [typeStr, divStr] = key.split('_div_');
+      const type = typeStr as TournamentType;
+      const division = parseInt(divStr) as Division;
+      try {
+        await handleGenerate(division, {
+          tournamentType: type,
+          format: bulkFormat,
+          pointsPerGame: bulkPoints,
+          groupCount: bulkGroupCount,
+          qualifiersPerGroup: bulkQualifiers,
+        });
+        results.push({ key, status: 'ok', message: `${getTournamentName(type)} ${division}部: 生成完了` });
+      } catch (e: any) {
+        results.push({ key, status: 'error', message: `${getTournamentName(type)} ${division}部: ${e?.message || 'エラー'}` });
+      }
+    }
+    setBulkLog(results);
+    setBulkLoading(false);
   };
 
   const renderDivisionCard = (division: Division) => {
@@ -1246,6 +1279,115 @@ export default function TournamentGenerator({ readOnly = false, onGenerateSucces
 
   return (
     <div className="space-y-6">
+      {/* 一括生成 */}
+      <Card className="border-t-4 border-t-emerald-400">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-emerald-700">
+            <Sparkles className="w-5 h-5" />
+            一括生成
+          </CardTitle>
+          <CardDescription>複数種目を一括で生成します</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {(['mens_doubles', 'womens_doubles', 'mixed_doubles', 'mens_singles', 'womens_singles'] as TournamentType[]).flatMap(type =>
+              ([1, 2] as Division[]).map(div => {
+                const key = `${type}_div_${div}`;
+                const checked = bulkSelected.has(key);
+                return (
+                  <label key={key} className={`flex items-center gap-2 p-2 rounded border cursor-pointer text-xs font-medium transition-colors ${checked ? 'bg-emerald-50 border-emerald-400 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => {
+                        const next = new Set(bulkSelected);
+                        if (e.target.checked) next.add(key);
+                        else next.delete(key);
+                        setBulkSelected(next);
+                      }}
+                      className="w-3 h-3"
+                    />
+                    {getTournamentName(type)} {div}部
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">形式</label>
+              <Select value={bulkFormat} onValueChange={v => setBulkFormat(v as TournamentFormat)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single-elimination">シングルエリミネーション</SelectItem>
+                  <SelectItem value="group-stage-knockout">予選リーグ + 決勝トーナメント</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">基本点数</label>
+              <Select value={bulkPoints.toString()} onValueChange={v => setBulkPoints(parseInt(v))}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="11">11点</SelectItem>
+                  <SelectItem value="15">15点</SelectItem>
+                  <SelectItem value="21">21点</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {bulkFormat === 'group-stage-knockout' && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-600">グループ数</label>
+                  <Select value={bulkGroupCount.toString()} onValueChange={v => setBulkGroupCount(parseInt(v))}>
+                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2">2G</SelectItem>
+                      <SelectItem value="3">3G</SelectItem>
+                      <SelectItem value="4">4G</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-600">通過人数/G</label>
+                  <Select value={bulkQualifiers.toString()} onValueChange={v => setBulkQualifiers(parseInt(v))}>
+                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1位のみ</SelectItem>
+                      <SelectItem value="2">2位まで</SelectItem>
+                      <SelectItem value="3">3位まで</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+          </div>
+
+          <Button
+            onClick={handleBulkGenerate}
+            disabled={bulkSelected.size === 0 || bulkLoading || readOnly}
+            className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+          >
+            {bulkLoading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />生成中...</> : <><Sparkles className="w-4 h-4 mr-2" />{bulkSelected.size}種目を一括生成</>}
+          </Button>
+
+          {bulkLog.length > 0 && (
+            <div className="space-y-1">
+              {bulkLog.map(log => (
+                <div key={log.key} className={`text-xs px-2 py-1 rounded ${log.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                  {log.status === 'ok' ? '✓' : '✗'} {log.message}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* ステップインジケーター */}
       <div className="flex items-center justify-center gap-4 mb-6">
         {[1, 2, 3].map((step) => (

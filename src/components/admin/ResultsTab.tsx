@@ -19,7 +19,8 @@ import {
   setMatchBreak,
   cancelMatchBreak,
   startMatchOnReservedCourt,
-  resetMatchResult
+  resetMatchResult,
+  swapMatchWinner
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
 import type { Match, Court, MatchWithPlayers, Team, Player, Config } from '@/types';
@@ -27,7 +28,7 @@ import { buildScoreContext, calcMatchScore, getGroupKey } from '@/lib/matchScori
 import { diagnoseWaitingMatches, type MatchDiagnostic } from '@/lib/dispatcher';
 import { getRoundName } from '@/lib/formatters';
 import { useCamp } from '@/context/CampContext';
-import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp, Pencil, Check, X } from 'lucide-react';
+import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp, Pencil, Check, X, ArrowLeftRight } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
 
@@ -577,6 +578,24 @@ export default function ResultsTab() {
     }
   };
 
+  const handleSwapWinner = async (matchId: string) => {
+    const confirmed = await confirm({
+      title: '⇄ 勝者入れ替え',
+      message: '勝者と敗者を入れ替えますか？\nスコアが反転し、次ラウンドの進出選手も変更されます。',
+      confirmText: '入れ替える',
+      cancelText: 'キャンセル',
+      type: 'info',
+    });
+    if (!confirmed) return;
+    try {
+      const result = await swapMatchWinner(matchId);
+      if (result.success) toastSuccess('勝者を入れ替えました');
+      else toastError(result.error || '入れ替えに失敗しました');
+    } catch {
+      toastError('エラーが発生しました');
+    }
+  };
+
   const handleStartOnReservedCourt = async (matchId: string) => {
     // 進行制御チェック（enabled_tournamentsに含まれない種目は完全ブロック）
     const match = breakingMatches.find(m => m.id === matchId);
@@ -1023,10 +1042,18 @@ export default function ResultsTab() {
                             </span>
                           </div>
                           <Button
+                            onClick={() => handleSwapWinner(match.id)}
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-2 border-amber-400 text-amber-700 hover:bg-amber-50 h-7 text-xs"
+                          >
+                            ⇄ 勝者入れ替え
+                          </Button>
+                          <Button
                             onClick={() => handleCancelResult(match.id)}
                             variant="outline"
                             size="sm"
-                            className="w-full mt-2 border-red-300 text-red-600 hover:bg-red-50 h-7 text-xs"
+                            className="w-full mt-1 border-red-300 text-red-600 hover:bg-red-50 h-7 text-xs"
                           >
                             ↩️ 結果を取り消す
                           </Button>

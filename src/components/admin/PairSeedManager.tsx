@@ -6,6 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getMatchesByTournament, getAllPlayers, updateDocument, propagateByePlayerChange } from "@/lib/firestore-helpers";
+import { writeBatch, doc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType } from "@/types";
 import { Users, Award, Save } from "lucide-react";
@@ -54,8 +56,8 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
         setMessage("");
         let savedCount = 0;
         try {
-            // 全試合データを取得（BYE伝播の構造参照に使用）
             const allMatches = await getMatchesByTournament(tournamentType, camp!.id);
+            const batch = writeBatch(db);
 
             for (const match of matches) {
                 if (!match.id) {
@@ -76,7 +78,6 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                     seed_p2: match.seed_p2 ?? null,
                 };
 
-                // BYEスロットに両選手が揃った場合 → 実戦に変換（walkoverフラグ解除）
                 if (match.is_walkover && hasP1 && hasP2) {
                     payload.is_walkover = false;
                     payload.walkover_winner = null;
@@ -85,7 +86,6 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                     payload.end_time = null;
                     payload.court_id = null;
 
-                    // 生成時にBYE伝播で埋まっていた次試合のプレイヤー枠をクリア
                     const nextPos = match.next_match_position ?? 1;
                     let nextMatch: Match | undefined;
                     if (match.next_match_id) {
@@ -101,21 +101,34 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                             nextPos === 1
                                 ? { player1_id: '', player3_id: null, player5_id: null }
                                 : { player2_id: '', player4_id: null, player6_id: null };
-                        await updateDocument('matches', nextMatch.id, clearUpdate);
+                        batch.update(doc(db, 'matches', nextMatch.id), clearUpdate);
                     }
                 }
 
-                console.log(`[PairSeedManager] 保存: matches/${match.id}`, payload);
-                await updateDocument('matches', match.id, payload);
+                batch.update(doc(db, 'matches', match.id), payload);
                 savedCount++;
+            }
 
-                // BYE試合（片方のみ選手がいる）の場合、次ラウンドに変更を伝播
+            await batch.commit();
+            setMessage(`✓ ${savedCount}試合のペア・シード設定を保存しました`);
+
+            // BYE伝播（バッチ後に実行）
+            for (const match of matches) {
+                const hasP1 = !!match.player1_id;
+                const hasP2 = !!match.player2_id;
                 if ((hasP1 !== hasP2) && (match.next_match_id || match.next_match_number != null)) {
+                    const payload = {
+                        player1_id: match.player1_id,
+                        player2_id: match.player2_id,
+                        player3_id: match.player3_id ?? null,
+                        player4_id: match.player4_id ?? null,
+                        player5_id: match.player5_id ?? null,
+                        player6_id: match.player6_id ?? null,
+                    };
                     const updatedMatch = { ...match, ...payload } as Match;
                     await propagateByePlayerChange(updatedMatch, allMatches);
                 }
             }
-            setMessage(`✓ ${savedCount}試合のペア・シード設定を保存しました`);
         } catch (error: any) {
             const detail = error?.code ? `(${error.code})` : error?.message ? `(${error.message})` : '';
             setMessage(`✗ 保存に失敗しました ${detail}`);
@@ -160,7 +173,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                         </div>
                         <Button onClick={handleSave} disabled={saving || matches.length === 0 || readOnly} className="bg-sky-500 hover:bg-sky-600">
                             <Save className="w-4 h-4 mr-2" />
-                            保存
+                            一括確定保存
                         </Button>
                     </div>
 

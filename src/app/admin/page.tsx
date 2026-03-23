@@ -22,7 +22,6 @@ import TournamentTypeControl from "@/components/admin/TournamentTypeControl";
 import VisualBracket from "@/components/admin/VisualBracket";
 import PairSeedManager from "@/components/admin/PairSeedManager";
 import GroupRankingManager from "@/components/admin/GroupRankingManager";
-import VisualSeedingEditor from "@/components/admin/VisualSeedingEditor";
 import PreliminaryGroupEditor from "@/components/admin/PreliminaryGroupEditor";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
@@ -857,7 +856,7 @@ export default function AdminDashboard() {
                     <CardDescription>種目、トーナメント形式、点数設定を行いトーナメント表を作成</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <TournamentGenerator readOnly={isArchived} onGenerateSuccess={() => setActiveTab("bracket")} />
+                    <TournamentGenerator readOnly={isArchived} />
                   </CardContent>
                 </Card>
 
@@ -1186,7 +1185,6 @@ export default function AdminDashboard() {
               </TabsContent>
 
               <TabsContent value="pairseed" className="space-y-6">
-                <VisualSeedingEditor readOnly={isArchived} />
                 <PairSeedManager readOnly={isArchived} />
               </TabsContent>
 

@@ -1,5 +1,7 @@
 import type { Match, Player } from '@/types';
 
+export type RankingMethod = 'wins_games_points' | 'wins_h2h_points';
+
 export interface GroupStanding {
   playerId: string;
   partnerId?: string;
@@ -154,24 +156,27 @@ export function getLossRatio(standing: GroupStanding): number {
 export function compareStandings(
   a: GroupStanding,
   b: GroupStanding,
-  groupMatches?: Match[]
+  groupMatches?: Match[],
+  rankingMethod?: RankingMethod
 ): number {
   // 1. 勝利数（降順）
   if (b.wins !== a.wins) return b.wins - a.wins;
 
-  // 2. 直接対決
+  if (rankingMethod === 'wins_games_points') {
+    // 2. 勝利ゲーム数差（gameDiff降順）
+    if (b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
+    // 3. 得失点差（pointDiff降順）
+    return b.pointDiff - a.pointDiff;
+  }
+
+  // Default: wins_h2h_points（直接対決 > 得失点差）
   if (groupMatches) {
     const h2hWinner = getHeadToHeadWinner(a, b, groupMatches);
     if (h2hWinner === a) return -1;
     if (h2hWinner === b) return 1;
   }
 
-  // 3. 失点率（昇順 = 低い方が上位）
-  const aRatio = getLossRatio(a);
-  const bRatio = getLossRatio(b);
-  if (Math.abs(bRatio - aRatio) > 0.00001) return aRatio - bRatio;
-
-  return 0;
+  return b.pointDiff - a.pointDiff;
 }
 
 /**
@@ -179,7 +184,7 @@ export function compareStandings(
  * 優先順位: 勝利数 > 失点率 > 直接対決 > 得失ゲーム差 > 得失点差
  * 手動順位が設定されている場合はそれを最優先
  */
-export function rankStandings(standings: GroupStanding[], matches?: Match[], group?: string): GroupStanding[] {
+export function rankStandings(standings: GroupStanding[], matches?: Match[], group?: string, rankingMethod?: RankingMethod): GroupStanding[] {
   const groupMatches = matches && group
     ? matches.filter(m => m.group === group && m.status === 'completed')
     : undefined;
@@ -192,7 +197,7 @@ export function rankStandings(standings: GroupStanding[], matches?: Match[], gro
     if (a.rank !== undefined) return -1;
     if (b.rank !== undefined) return 1;
 
-    return compareStandings(a, b, groupMatches);
+    return compareStandings(a, b, groupMatches, rankingMethod);
   });
 
   // 自動で順位を付与（手動設定がない場合のみ）

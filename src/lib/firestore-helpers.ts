@@ -653,6 +653,66 @@ export async function editMatchResultSafe(
   }
 }
 
+/**
+ * 勝者と敗者を入れ替える（スコア反転＋次ラウンドの進出選手も更新）
+ * - 次の試合が calling/playing なら禁止
+ */
+export async function swapMatchWinner(matchId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!matchId) return { success: false, error: '試合IDが不正です' };
+    const currentMatch = await getDocument<Match>(COLLECTIONS.matches, matchId);
+    if (!currentMatch) return { success: false, error: '試合が見つかりません' };
+    if (currentMatch.status !== 'completed') return { success: false, error: '完了済みの試合のみ入れ替えできます' };
+
+    const isP1Winner = currentMatch.winner_id === currentMatch.player1_id;
+    const newWinnerId = isP1Winner ? currentMatch.player2_id : currentMatch.player1_id;
+    if (!newWinnerId) return { success: false, error: '入れ替え先の選手が見つかりません' };
+
+    const nextMatch = await findNextMatch(currentMatch);
+    if (nextMatch && (nextMatch.status === 'calling' || nextMatch.status === 'playing')) {
+      return { success: false, error: '次の試合が開始されているため、入れ替えできません' };
+    }
+
+    const batch = writeBatch(db);
+    const now = Timestamp.now();
+
+    // スコア反転・勝者変更
+    batch.update(doc(db, COLLECTIONS.matches, matchId), {
+      score_p1: currentMatch.score_p2,
+      score_p2: currentMatch.score_p1,
+      winner_id: newWinnerId,
+      updated_at: now,
+    });
+
+    // 次の試合の進出選手を更新
+    if (nextMatch) {
+      const position = currentMatch.next_match_position ?? ((currentMatch.match_number ?? 0) % 2 === 1 ? 1 : 2);
+      const newWinnerIsP1Side = !isP1Winner;
+      const main = newWinnerIsP1Side ? currentMatch.player1_id : currentMatch.player2_id;
+      const partner = newWinnerIsP1Side ? currentMatch.player3_id : currentMatch.player4_id;
+      const third = newWinnerIsP1Side ? currentMatch.player5_id : currentMatch.player6_id;
+
+      const nextUpdate: Record<string, unknown> = { updated_at: now };
+      if (position === 1) {
+        nextUpdate.player1_id = main || '';
+        nextUpdate.player3_id = partner || null;
+        nextUpdate.player5_id = third || null;
+      } else {
+        nextUpdate.player2_id = main || '';
+        nextUpdate.player4_id = partner || null;
+        nextUpdate.player6_id = third || null;
+      }
+      batch.update(doc(db, COLLECTIONS.matches, nextMatch.id), nextUpdate);
+    }
+
+    await batch.commit();
+    return { success: true };
+  } catch (error) {
+    console.error('Error swapping match winner:', error);
+    return { success: false, error: 'システムエラーが発生しました' };
+  }
+}
+
 export async function updateMatchResult(
   matchId: string,
   scoreP1: number,

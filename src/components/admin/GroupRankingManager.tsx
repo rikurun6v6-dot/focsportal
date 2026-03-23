@@ -5,9 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { calculateGroupStandings, rankStandings, needsManualIntervention, compareStandings, getLossRatio, type GroupStanding } from '@/lib/group-ranking';
-import { getMatchesByTournament, getAllPlayers, updateDocument } from '@/lib/firestore-helpers';
+import { getMatchesByTournament, getAllPlayers, updateDocument, getDocument } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
-import type { Match, Player, TournamentType, Division, TeamGroup } from '@/types';
+import type { Match, Player, TournamentType, Division, TeamGroup, Config } from '@/types';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
 
@@ -20,6 +20,7 @@ export default function GroupRankingManager() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [groupStandings, setGroupStandings] = useState<Map<string, GroupStanding[]>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [rankingMethod, setRankingMethod] = useState<'wins_games_points' | 'wins_h2h_points'>('wins_h2h_points');
 
   useEffect(() => {
     if (!camp) return;
@@ -38,13 +39,23 @@ export default function GroupRankingManager() {
     setMatches(matchList);
     setPlayers(playerList);
 
+    // 順位決定方式をconfigから読み込み
+    let currentRankingMethod: 'wins_games_points' | 'wins_h2h_points' = rankingMethod;
+    try {
+      const campConfig = await getDocument<Config>('config', camp.id);
+      if (campConfig?.team_battle_ranking_method) {
+        currentRankingMethod = campConfig.team_battle_ranking_method;
+        setRankingMethod(campConfig.team_battle_ranking_method);
+      }
+    } catch { /* ignore */ }
+
     const preliminaryMatches = matchList.filter(m => m.phase === 'preliminary' && m.division === division);
     const groups = [...new Set(preliminaryMatches.map(m => m.group).filter(g => g))] as TeamGroup[];
 
     const standingsMap = new Map<string, GroupStanding[]>();
     groups.forEach(group => {
       const standings = calculateGroupStandings(preliminaryMatches, playerList, group);
-      const ranked = rankStandings(standings, preliminaryMatches, group);
+      const ranked = rankStandings(standings, preliminaryMatches, group, currentRankingMethod);
       standingsMap.set(group, ranked);
     });
 
@@ -60,10 +71,31 @@ export default function GroupRankingManager() {
     updated[standingIndex].rank = newRank;
 
     const preliminaryMatches = matches.filter(m => m.phase === 'preliminary' && m.division === division);
-    const sorted = rankStandings(updated, preliminaryMatches, group);
+    const sorted = rankStandings(updated, preliminaryMatches, group, rankingMethod);
     const newMap = new Map(groupStandings);
     newMap.set(group, sorted);
     setGroupStandings(newMap);
+  };
+
+  const handleSaveRankingMethod = async (method: 'wins_games_points' | 'wins_h2h_points') => {
+    if (!camp) return;
+    setRankingMethod(method);
+    try {
+      await updateDocument('config', camp.id, { team_battle_ranking_method: method });
+      // Recalculate standings with new method
+      const preliminaryMatches = matches.filter(m => m.phase === 'preliminary' && m.division === division);
+      const groups = [...new Set(preliminaryMatches.map(m => m.group).filter(g => g))] as TeamGroup[];
+      const standingsMap = new Map<string, GroupStanding[]>();
+      groups.forEach(group => {
+        const standings = calculateGroupStandings(preliminaryMatches, players, group);
+        const ranked = rankStandings(standings, preliminaryMatches, group, method);
+        standingsMap.set(group, ranked);
+      });
+      setGroupStandings(standingsMap);
+      toastSuccess('順位決定方式を保存しました');
+    } catch {
+      toastError('保存に失敗しました');
+    }
   };
 
   /**
@@ -237,6 +269,31 @@ export default function GroupRankingManager() {
                 再読み込み
               </Button>
             </div>
+
+            {/* 団体戦: 順位決定方式 */}
+            {tournamentType === 'team_battle' && (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                <p className="text-xs font-bold text-slate-700">順位決定方式</p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={rankingMethod === 'wins_h2h_points' ? 'default' : 'outline'}
+                    onClick={() => handleSaveRankingMethod('wins_h2h_points')}
+                    className={`text-xs h-7 ${rankingMethod === 'wins_h2h_points' ? 'bg-sky-600' : ''}`}
+                  >
+                    勝利数 &gt; 直接対決 &gt; 得失点差
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={rankingMethod === 'wins_games_points' ? 'default' : 'outline'}
+                    onClick={() => handleSaveRankingMethod('wins_games_points')}
+                    className={`text-xs h-7 ${rankingMethod === 'wins_games_points' ? 'bg-sky-600' : ''}`}
+                  >
+                    勝利数 &gt; 勝利ゲーム数 &gt; 得失点差
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* スーパーシード表示（3グループ以上） */}
             {superSeed && (
