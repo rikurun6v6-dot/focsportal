@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { initializeCourts, initializeConfig, getDocument, updateDocument, deleteAllPlayers, deleteAllMatches, getAllDocuments, deleteDocument, safeGetDocs } from "@/lib/firestore-helpers";
+import { calculateGroupStandings, rankStandings } from "@/lib/group-ranking";
 import { autoDispatchAll } from "@/lib/dispatcher";
 import { auth, db, app } from "@/lib/firebase";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
@@ -27,7 +28,7 @@ import TournamentDebug from "@/components/admin/TournamentDebug";
 import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
-import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division } from "@/types";
+import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division, TeamGroup } from "@/types";
 import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
@@ -42,6 +43,7 @@ import OperationalAdvisor from "@/components/admin/OperationalAdvisor";
 import { getRoundName } from "@/lib/formatters";
 import { subscribeToCollection, getPlayerById } from "@/lib/firestore-helpers";
 import type { Court, Player } from "@/types";
+// Player is used in create3rdPlaceMatch
 
 const GUIDE_SEEN_KEY = 'focs_guide_seen';
 
@@ -475,72 +477,144 @@ export default function AdminDashboard() {
   };
 
   const create3rdPlaceMatch = async (tournamentType: TournamentType, division: Division) => {
-    if (!camp) {
-      toastError("合宿が選択されていません");
-      return;
-    }
+    if (!camp) { toastError("合宿が選択されていません"); return; }
 
     try {
-      // Get all matches for this tournament
-      const allMatches = await getAllDocuments<Match>('matches', [
+      const allTournamentMatches = await getAllDocuments<Match>('matches', [
         where('campId', '==', camp.id),
         where('tournament_type', '==', tournamentType),
         where('division', '==', division),
-        where('phase', '==', 'knockout')
       ]);
+      const knockoutMatches = allTournamentMatches.filter(m => m.phase === 'knockout');
+      const prelimMatches = allTournamentMatches.filter(m => m.phase === 'preliminary');
 
-      // Check if 3rd place match already exists
-      const existingThirdPlace = allMatches.find(m => m.subtitle === "3位決定戦");
-      if (existingThirdPlace) {
-        toastError("3位決定戦は既に作成されています");
+      // 3位決定戦が既に出場選手込みで存在する場合はエラー
+      const existing3rd = knockoutMatches.find(m => m.subtitle === "3位決定戦");
+      if (existing3rd && (existing3rd.player1_id || existing3rd.player2_id)) {
+        toastError("3位決定戦は既に出場選手が登録されています");
         return;
       }
 
-      // Find max round (finals)
-      if (allMatches.length === 0) {
+      const getLoser = (sf: Match) => {
+        const isP1Win = sf.winner_id === sf.player1_id;
+        return {
+          p1: isP1Win ? sf.player2_id : sf.player1_id,
+          p3: isP1Win ? sf.player4_id : sf.player3_id,
+          p5: isP1Win ? sf.player6_id : sf.player5_id,
+        };
+      };
+
+      // ── CASE 1: 空の3位決定戦スロットがある (group-stage-knockout 4名以上通過) ──
+      if (existing3rd && !existing3rd.player1_id && !existing3rd.player2_id) {
+        const mainMatches = knockoutMatches.filter(m => m.subtitle !== "3位決定戦");
+        const maxRound = Math.max(...mainMatches.map(m => m.round));
+        const semiFinals = mainMatches.filter(m => m.round === maxRound - 1);
+        if (semiFinals.length !== 2) {
+          toastError(`準決勝が見つかりません（${semiFinals.length}試合）。準決勝が終了してから実行してください。`);
+          return;
+        }
+        if (!semiFinals.every(m => m.status === 'completed' && m.winner_id)) {
+          toastError("準決勝が両方完了してから実行してください");
+          return;
+        }
+        const l1 = getLoser(semiFinals[0]);
+        const l2 = getLoser(semiFinals[1]);
+        await updateDocument('matches', existing3rd.id, {
+          player1_id: l1.p1 || '',
+          player2_id: l2.p1 || '',
+          player3_id: l1.p3 || null,
+          player4_id: l2.p3 || null,
+          player5_id: l1.p5 || null,
+          player6_id: l2.p5 || null,
+          status: 'waiting',
+          updated_at: Timestamp.now(),
+        });
+        toastSuccess("3位決定戦に準決勝敗者を登録しました");
+        return;
+      }
+
+      // ── CASE 2: 予選リーグあり・3位スロットなし (2グループ×1位通過など) ──
+      if (prelimMatches.length > 0) {
+        const groups = [...new Set(prelimMatches.map(m => m.group).filter(Boolean))].sort() as TeamGroup[];
+        if (groups.length < 2) {
+          toastError(`グループが2つ以上必要です（現在: ${groups.length}グループ）`);
+          return;
+        }
+        const allPlayers = await getAllDocuments<Player>('players', [where('campId', '==', camp.id)]);
+        const secondPlaces: { group: TeamGroup; p1: string; p3?: string }[] = [];
+        for (const group of groups) {
+          const standings = calculateGroupStandings(prelimMatches, allPlayers, group as string);
+          const ranked = rankStandings(standings, prelimMatches, group as string);
+          if (ranked.length < 2) {
+            toastError(`グループ${group}の2位が確定していません（試合完了数を確認してください）`);
+            return;
+          }
+          secondPlaces.push({ group, p1: ranked[1].playerId, p3: ranked[1].partnerId });
+        }
+        const maxMatchNum = Math.max(...allTournamentMatches.map(m => m.match_number || 0), 0);
+        const refPoints = prelimMatches[0]?.points_per_match ?? 15;
+        const matchId = `${camp.id}_${tournamentType}_${division}_3rd_place`;
+        await setDoc(doc(db, 'matches', matchId), {
+          id: matchId,
+          campId: camp.id,
+          tournament_type: tournamentType,
+          division,
+          round: 99,
+          match_number: maxMatchNum + 1,
+          phase: 'knockout',
+          subtitle: "3位決定戦",
+          player1_id: secondPlaces[0].p1,
+          player2_id: secondPlaces[1].p1,
+          player3_id: secondPlaces[0].p3 || null,
+          player4_id: secondPlaces[1].p3 || null,
+          player5_id: null,
+          player6_id: null,
+          status: 'waiting',
+          court_id: null,
+          score_p1: 0,
+          score_p2: 0,
+          winner_id: null,
+          start_time: null,
+          end_time: null,
+          points_per_match: refPoints,
+          created_at: Timestamp.now(),
+          updated_at: Timestamp.now(),
+        });
+        toastSuccess(`3位決定戦を作成しました（${groups.map(g => `${g}組2位`).join(' vs ')}）`);
+        return;
+      }
+
+      // ── CASE 3: シンプルブラケット ── 準決勝敗者
+      if (knockoutMatches.length === 0) {
         toastError("トーナメント試合が見つかりません");
         return;
       }
-
-      const maxRound = Math.max(...allMatches.map(m => m.round));
-
-      // Semi-finals = maxRound - 1
-      const semiFinals = allMatches.filter(m => m.round === maxRound - 1);
-
+      const maxRound = Math.max(...knockoutMatches.map(m => m.round));
+      const semiFinals = knockoutMatches.filter(m => m.round === maxRound - 1 && m.subtitle !== "3位決定戦");
       if (semiFinals.length !== 2) {
-        toastError(`準決勝が見つかりません（${semiFinals.length}試合検出）`);
+        toastError(`準決勝が見つかりません（${semiFinals.length}試合検出）。準決勝は4名以上の参加が必要です。`);
         return;
       }
-
-      // Check if both semi-finals are completed
-      const allCompleted = semiFinals.every(m => m.status === 'completed' && m.winner_id);
-      if (!allCompleted) {
-        toastError("準決勝が全て完了していません");
+      if (!semiFinals.every(m => m.status === 'completed' && m.winner_id)) {
+        toastError("準決勝が両方完了してから実行してください");
         return;
       }
-
-      // Get losers from both semi-finals
-      const loser1 = semiFinals[0].winner_id === semiFinals[0].player1_id
-        ? { p1: semiFinals[0].player2_id, p2: semiFinals[0].player4_id }
-        : { p1: semiFinals[0].player1_id, p2: semiFinals[0].player3_id };
-
-      const loser2 = semiFinals[1].winner_id === semiFinals[1].player1_id
-        ? { p1: semiFinals[1].player2_id, p2: semiFinals[1].player4_id }
-        : { p1: semiFinals[1].player1_id, p2: semiFinals[1].player3_id };
-
-      // Create 3rd place match
+      const l1 = getLoser(semiFinals[0]);
+      const l2 = getLoser(semiFinals[1]);
       const matchId = `${camp.id}_${tournamentType}_${division}_3rd_place`;
-      const matchData: Partial<Match> = {
+      await setDoc(doc(db, 'matches', matchId), {
         id: matchId,
         campId: camp.id,
         tournament_type: tournamentType,
-        division: division,
-        round: 98, // Special round number above finals
+        division,
+        round: 98,
         subtitle: "3位決定戦",
-        player1_id: loser1.p1,
-        player2_id: loser2.p1,
-        player3_id: loser1.p2 || undefined, // Partner for doubles
-        player4_id: loser2.p2 || undefined,
+        player1_id: l1.p1,
+        player2_id: l2.p1,
+        player3_id: l1.p3 || null,
+        player4_id: l2.p3 || null,
+        player5_id: l1.p5 || null,
+        player6_id: l2.p5 || null,
         status: 'waiting',
         court_id: null,
         score_p1: 0,
@@ -550,11 +624,9 @@ export default function AdminDashboard() {
         end_time: null,
         created_at: Timestamp.now(),
         updated_at: Timestamp.now(),
-        phase: 'knockout'
-      };
-
-      await setDoc(doc(db, 'matches', matchId), matchData);
-      toastSuccess("3位決定戦を作成しました");
+        phase: 'knockout',
+      });
+      toastSuccess("3位決定戦を作成しました（準決勝敗者）");
     } catch (error) {
       console.error("Error creating 3rd place match:", error);
       toastError("3位決定戦の作成に失敗しました");
@@ -1077,7 +1149,10 @@ export default function AdminDashboard() {
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
                       <Trophy className="w-5 h-5 text-amber-500" /> 3位決定戦
                     </CardTitle>
-                    <CardDescription>準決勝終了後、3位決定戦を作成します（ブラケット表には非表示）</CardDescription>
+                    <CardDescription>
+                      予選リーグ形式: 2G×1位通過→各グループ2位同士で作成 / 4名以上通過→準決勝後に敗者を登録<br />
+                      シンプルブラケット: 準決勝終了後に敗者を自動取得
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {[
