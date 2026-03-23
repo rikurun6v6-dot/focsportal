@@ -360,8 +360,8 @@ export default function AdvancedAnalytics({ campId }: Props) {
   }, [fetchData, runAIDiagnosis]);
 
   useEffect(() => {
-    if (isUnlocked) fetchAndMaybeDiagnose();
-  }, [isUnlocked, fetchAndMaybeDiagnose]);
+    if (isUnlocked) fetchData();
+  }, [isUnlocked, fetchData]);
 
   // 重み設定をFirestoreからロード
   useEffect(() => {
