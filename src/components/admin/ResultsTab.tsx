@@ -20,7 +20,8 @@ import {
   cancelMatchBreak,
   startMatchOnReservedCourt,
   resetMatchResult,
-  swapMatchWinner
+  swapMatchWinner,
+  editMatchResultSafe
 } from '@/lib/firestore-helpers';
 import { recordMatchDuration } from '@/lib/eta';
 import type { Match, Court, MatchWithPlayers, Team, Player, Config } from '@/types';
@@ -69,6 +70,8 @@ export default function ResultsTab() {
   // 選手名インライン編集
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [editingPlayerName, setEditingPlayerName] = useState('');
+  // 確定済み試合のスコア修正
+  const [editingResultFor, setEditingResultFor] = useState<string | null>(null);
 
   // 10秒ごとに現在時刻を更新（経過時間表示用）
   useEffect(() => {
@@ -596,6 +599,27 @@ export default function ResultsTab() {
     }
   };
 
+  const handleEditResultSubmit = async (match: MatchWithPlayers) => {
+    const score = scores[match.id];
+    if (!score) return;
+    const newWinnerId = score.p1 > score.p2 ? match.player1_id : match.player2_id;
+    if (!newWinnerId) { toastError('勝者を判定できません'); return; }
+    setSubmitting(match.id);
+    try {
+      const result = await editMatchResultSafe(match.id, score.p1, score.p2, newWinnerId);
+      if (result.success) {
+        toastSuccess('スコアを修正しました（次ラウンドの進出選手も更新）');
+        setEditingResultFor(null);
+        setScores(prev => { const n = { ...prev }; delete n[match.id]; return n; });
+      } else {
+        toastError(result.error || '修正に失敗しました');
+      }
+    } catch {
+      toastError('エラーが発生しました');
+    }
+    setSubmitting(null);
+  };
+
   const handleStartOnReservedCourt = async (matchId: string) => {
     // 進行制御チェック（enabled_tournamentsに含まれない種目は完全ブロック）
     const match = breakingMatches.find(m => m.id === matchId);
@@ -1031,32 +1055,82 @@ export default function ResultsTab() {
                       {/* スコア入力（結果入力ボタンクリック時に表示） */}
                       {(isTeamBattle(match) && matchCourtCount > 1 && !isPrimaryCourtForMatch && match.status !== 'completed') ? null : match.status === 'completed' ? (
                         <div className="bg-green-50 border border-green-200 rounded p-2">
-                          <p className="text-center text-green-800 font-bold text-xs mb-1">試合終了</p>
-                          <div className="flex justify-center gap-3 text-xl font-bold">
-                            <span className={match.winner_id === match.player1_id ? 'text-green-600' : 'text-gray-400'}>
-                              {match.score_p1}{isTeamBattle(match) ? '勝' : ''}
-                            </span>
-                            <span className="text-gray-400">-</span>
-                            <span className={match.winner_id === match.player2_id ? 'text-green-600' : 'text-gray-400'}>
-                              {match.score_p2}{isTeamBattle(match) ? '勝' : ''}
-                            </span>
-                          </div>
-                          <Button
-                            onClick={() => handleSwapWinner(match.id)}
-                            variant="outline"
-                            size="sm"
-                            className="w-full mt-2 border-amber-400 text-amber-700 hover:bg-amber-50 h-7 text-xs"
-                          >
-                            ⇄ 勝者入れ替え
-                          </Button>
-                          <Button
-                            onClick={() => handleCancelResult(match.id)}
-                            variant="outline"
-                            size="sm"
-                            className="w-full mt-1 border-red-300 text-red-600 hover:bg-red-50 h-7 text-xs"
-                          >
-                            ↩️ 結果を取り消す
-                          </Button>
+                          {editingResultFor === match.id ? (
+                            /* スコア修正インライン編集 */
+                            <div className="space-y-2">
+                              <p className="text-center text-xs font-bold text-amber-700">スコアを修正</p>
+                              <div className="flex gap-1.5 items-center">
+                                <Input
+                                  type="number" min="0" placeholder="0"
+                                  value={scores[match.id]?.p1 ?? match.score_p1}
+                                  onChange={e => handleScoreChange(match.id, 'p1', e.target.value)}
+                                  className="text-center text-base font-bold h-8"
+                                  disabled={submitting === match.id}
+                                  autoFocus
+                                />
+                                <span className="text-slate-400 font-bold text-sm">-</span>
+                                <Input
+                                  type="number" min="0" placeholder="0"
+                                  value={scores[match.id]?.p2 ?? match.score_p2}
+                                  onChange={e => handleScoreChange(match.id, 'p2', e.target.value)}
+                                  className="text-center text-base font-bold h-8"
+                                  disabled={submitting === match.id}
+                                />
+                              </div>
+                              <div className="flex gap-1">
+                                <Button
+                                  onClick={() => handleEditResultSubmit(match)}
+                                  size="sm"
+                                  disabled={submitting === match.id}
+                                  className="flex-1 h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                                >
+                                  {submitting === match.id ? '保存中...' : '確定'}
+                                </Button>
+                                <Button
+                                  onClick={() => { setEditingResultFor(null); setScores(prev => { const n={...prev}; delete n[match.id]; return n; }); }}
+                                  variant="outline" size="sm"
+                                  className="flex-1 h-7 text-xs"
+                                  disabled={submitting === match.id}
+                                >
+                                  キャンセル
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-center text-green-800 font-bold text-xs mb-1">試合終了</p>
+                              <div className="flex justify-center gap-3 text-xl font-bold">
+                                <span className={match.winner_id === match.player1_id ? 'text-green-600' : 'text-gray-400'}>
+                                  {match.score_p1}{isTeamBattle(match) ? '勝' : ''}
+                                </span>
+                                <span className="text-gray-400">-</span>
+                                <span className={match.winner_id === match.player2_id ? 'text-green-600' : 'text-gray-400'}>
+                                  {match.score_p2}{isTeamBattle(match) ? '勝' : ''}
+                                </span>
+                              </div>
+                              <Button
+                                onClick={() => { setEditingResultFor(match.id); setScores(prev => ({ ...prev, [match.id]: { p1: match.score_p1, p2: match.score_p2 } })); }}
+                                variant="outline" size="sm"
+                                className="w-full mt-2 border-amber-400 text-amber-700 hover:bg-amber-50 h-7 text-xs"
+                              >
+                                ✏️ スコア修正
+                              </Button>
+                              <Button
+                                onClick={() => handleSwapWinner(match.id)}
+                                variant="outline" size="sm"
+                                className="w-full mt-1 border-amber-400 text-amber-700 hover:bg-amber-50 h-7 text-xs"
+                              >
+                                ⇄ 勝者入れ替え
+                              </Button>
+                              <Button
+                                onClick={() => handleCancelResult(match.id)}
+                                variant="outline" size="sm"
+                                className="w-full mt-1 border-red-300 text-red-600 hover:bg-red-50 h-7 text-xs"
+                              >
+                                ↩️ 結果を取り消す
+                              </Button>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <>
