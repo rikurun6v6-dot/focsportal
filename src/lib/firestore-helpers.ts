@@ -1348,6 +1348,45 @@ export const updateCamp = async (campId: string, title: string, courtCount: numb
   }
 };
 
+/**
+ * 指定した日のコート数を取得（未設定なら court_count にフォールバック）
+ */
+export const getCampCourtCountForDay = (camp: Camp, day: 1 | 2): number => {
+  const v = day === 1 ? camp.court_count_day1 : camp.court_count_day2;
+  return (typeof v === 'number' && v > 0) ? v : camp.court_count;
+};
+
+/**
+ * 1日目・2日目のコート数を保存（コートの再初期化は行わない）
+ */
+export const saveCampDayCourtCounts = async (campId: string, day1: number, day2: number) => {
+  try {
+    await updateDocument('camps', campId, { court_count_day1: day1, court_count_day2: day2 });
+    return true;
+  } catch (error) {
+    console.error('Error saving camp day court counts:', error);
+    return false;
+  }
+};
+
+/**
+ * 開催日を切り替える。その日のコート数でコートを再初期化し、
+ * court_count（現在有効なコート数）と active_day を更新する。
+ * ※ setupCampCourts は余剰コートを無効化し、コートの current_match_id をリセットする
+ *   （日の切り替えは試合進行中でない前提）。
+ */
+export const switchCampDay = async (campId: string, day: 1 | 2, courtCount: number) => {
+  try {
+    const ok = await setupCampCourts(courtCount, campId);
+    if (!ok) return false;
+    await updateDocument('camps', campId, { active_day: day, court_count: courtCount });
+    return true;
+  } catch (error) {
+    console.error('Error switching camp day:', error);
+    return false;
+  }
+};
+
 export const deleteCamp = async (campId: string) => {
   try {
     const campRef = doc(db, 'camps', campId);
