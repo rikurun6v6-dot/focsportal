@@ -19,7 +19,8 @@ export default function CampManager() {
 
     const [camps, setCamps] = useState<Camp[]>([]);
     const [newTitle, setNewTitle] = useState("");
-    const [courtCount, setCourtCount] = useState(6);
+    const [newDay1, setNewDay1] = useState(6); // 新規作成: 1日目のコート数
+    const [newDay2, setNewDay2] = useState(6); // 新規作成: 2日目のコート数
     const [loading, setLoading] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -175,13 +176,21 @@ export default function CampManager() {
     // 新規作成
     const handleCreate = async () => {
         if (!newTitle.trim()) return;
+        if (newDay1 < 1 || newDay2 < 1) {
+            toastError('コート数は1以上にしてください');
+            return;
+        }
         setLoading(true);
 
-        // 合宿データ作成（owner_idを渡す）
-        const newId = await createCamp(newTitle, courtCount, currentUserId || undefined);
+        // 合宿データ作成（owner_idを渡す）。初期の有効コート数は1日目を採用
+        const newId = await createCamp(newTitle, newDay1, currentUserId || undefined);
 
         if (newId) {
+            // 1日目・2日目のコート数を保存
+            await saveCampDayCourtCounts(newId, newDay1, newDay2);
             setNewTitle("");
+            setNewDay1(6);
+            setNewDay2(6);
             // リストは自動更新されるため、手動更新は不要
         }
         setLoading(false);
@@ -374,7 +383,7 @@ export default function CampManager() {
                             }
                         </CardTitle>
                         <CardDescription>
-                            合宿名と使用コート数を設定して箱を作ります
+                            合宿名とコート数（1日目・2日目）を設定して箱を作ります
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -387,12 +396,22 @@ export default function CampManager() {
                                     placeholder="名称を入力..."
                                 />
                             </div>
-                            <div className="w-full md:w-32 space-y-2">
-                                <label className="text-sm font-medium text-slate-700">コート数</label>
+                            <div className="w-full md:w-24 space-y-2">
+                                <label className="text-sm font-medium text-slate-700">1日目</label>
                                 <Input
                                     type="number"
-                                    value={courtCount}
-                                    onChange={(e) => setCourtCount(Number(e.target.value))}
+                                    value={newDay1}
+                                    onChange={(e) => setNewDay1(Number(e.target.value))}
+                                    min={1}
+                                    max={20}
+                                />
+                            </div>
+                            <div className="w-full md:w-24 space-y-2">
+                                <label className="text-sm font-medium text-slate-700">2日目</label>
+                                <Input
+                                    type="number"
+                                    value={newDay2}
+                                    onChange={(e) => setNewDay2(Number(e.target.value))}
                                     min={1}
                                     max={20}
                                 />
