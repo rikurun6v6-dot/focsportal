@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData, updateCamp } from "@/lib/firestore-helpers";
+import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData, updateCamp, saveCampDayCourtCounts, switchCampDay, getCampCourtCountForDay } from "@/lib/firestore-helpers";
 import { auth } from "@/lib/firebase";
 import { useCamp } from "@/context/CampContext";
 import type { Camp } from "@/types";
@@ -35,12 +35,15 @@ export default function CampManager() {
     // インライン編集
     const [editingCampId, setEditingCampId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
-    const [editCourtCount, setEditCourtCount] = useState(6);
+    const [editDay1, setEditDay1] = useState(6); // 1日目のコート数
+    const [editDay2, setEditDay2] = useState(6); // 2日目のコート数
+    const [switchingDay, setSwitchingDay] = useState<string | null>(null); // 日切替中の campId
 
     const handleStartEdit = (camp: Camp) => {
         setEditingCampId(camp.id);
         setEditTitle(camp.title);
-        setEditCourtCount(camp.court_count);
+        setEditDay1(getCampCourtCountForDay(camp, 1));
+        setEditDay2(getCampCourtCountForDay(camp, 2));
     };
 
     const handleCancelEdit = () => {
@@ -49,12 +52,20 @@ export default function CampManager() {
 
     const handleSaveEdit = async (camp: Camp) => {
         if (!editTitle.trim()) return;
+        if (editDay1 < 1 || editDay2 < 1) {
+            toastError('コート数は1以上にしてください');
+            return;
+        }
         setLoading(true);
-        const ok = await updateCamp(camp.id, editTitle.trim(), editCourtCount);
-        if (ok) {
-            // コート数が変わった場合はコートも更新（activeな合宿のみ）
-            if (camp.status === 'active' && editCourtCount !== camp.court_count) {
-                await setupCampCourts(editCourtCount, camp.id);
+        // 現在の開催日に応じて有効コート数（court_count）を決める
+        const activeDay = camp.active_day ?? 1;
+        const effectiveCount = activeDay === 1 ? editDay1 : editDay2;
+        const okTitle = await updateCamp(camp.id, editTitle.trim(), effectiveCount);
+        const okDays = await saveCampDayCourtCounts(camp.id, editDay1, editDay2);
+        if (okTitle && okDays) {
+            // 現在の日のコート数が変わった場合はコートも更新（activeな合宿のみ）
+            if (camp.status === 'active' && effectiveCount !== camp.court_count) {
+                await setupCampCourts(effectiveCount, camp.id);
             }
             toastSuccess('合宿情報を更新しました');
             setEditingCampId(null);
@@ -62,6 +73,30 @@ export default function CampManager() {
             toastError('更新に失敗しました');
         }
         setLoading(false);
+    };
+
+    // 開催日（1日目 / 2日目）を切り替える
+    const handleSwitchDay = async (camp: Camp, day: 1 | 2) => {
+        const currentDay = camp.active_day ?? 1;
+        if (currentDay === day) return; // 既にその日
+        const count = getCampCourtCountForDay(camp, day);
+        const confirmed = await confirm({
+            title: `🗓️ ${day}日目に切り替え`,
+            message: `開催日を「${day}日目」（${count}面）に切り替えます。\nコートを ${count} 面で再初期化します（進行中の割り当てはリセットされます）。\n試合データ・結果は保持されます。`,
+            confirmText: `${day}日目にする`,
+            cancelText: 'キャンセル',
+            type: 'warning',
+        });
+        if (!confirmed) return;
+        setSwitchingDay(camp.id);
+        const ok = await switchCampDay(camp.id, day, count);
+        if (ok) {
+            await refreshCamp();
+            toastSuccess(`${day}日目（${count}面）に切り替えました`);
+        } else {
+            toastError('日の切り替えに失敗しました');
+        }
+        setSwitchingDay(null);
     };
 
     const requireUnlock = (action: () => void) => {
@@ -408,15 +443,28 @@ export default function CampManager() {
                                                             onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(camp); if (e.key === 'Escape') handleCancelEdit(); }}
                                                         />
                                                         <div className="flex items-center gap-1">
-                                                            <label className="text-xs text-slate-500 whitespace-nowrap">コート数</label>
+                                                            <label className="text-xs text-slate-500 whitespace-nowrap">1日目</label>
                                                             <Input
                                                                 type="number"
-                                                                value={editCourtCount}
-                                                                onChange={(e) => setEditCourtCount(Number(e.target.value))}
+                                                                value={editDay1}
+                                                                onChange={(e) => setEditDay1(Number(e.target.value))}
                                                                 min={1}
                                                                 max={20}
-                                                                className="w-16"
+                                                                className="w-14"
                                                             />
+                                                            <span className="text-xs text-slate-400">面</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <label className="text-xs text-slate-500 whitespace-nowrap">2日目</label>
+                                                            <Input
+                                                                type="number"
+                                                                value={editDay2}
+                                                                onChange={(e) => setEditDay2(Number(e.target.value))}
+                                                                min={1}
+                                                                max={20}
+                                                                className="w-14"
+                                                            />
+                                                            <span className="text-xs text-slate-400">面</span>
                                                         </div>
                                                         <Button size="sm" onClick={() => handleSaveEdit(camp)} disabled={loading || !editTitle.trim()} className="bg-emerald-500 hover:bg-emerald-600 text-white">
                                                             <Check className="w-4 h-4" />
@@ -425,9 +473,13 @@ export default function CampManager() {
                                                             <X className="w-4 h-4" />
                                                         </Button>
                                                     </div>
-                                                    {camp.status === 'active' && editCourtCount !== camp.court_count && (
-                                                        <p className="text-xs text-amber-600">コート数変更→開催中のため即時反映されます</p>
-                                                    )}
+                                                    {(() => {
+                                                        const activeDay = camp.active_day ?? 1;
+                                                        const effective = activeDay === 1 ? editDay1 : editDay2;
+                                                        return camp.status === 'active' && effective !== camp.court_count ? (
+                                                            <p className="text-xs text-amber-600">現在の{activeDay}日目のコート数変更→開催中のため即時反映されます</p>
+                                                        ) : null;
+                                                    })()}
                                                 </div>
                                             ) : (
                                                 <>
@@ -451,8 +503,33 @@ export default function CampManager() {
                                                         )}
                                                     </div>
                                                     <p className="text-sm text-slate-500">
-                                                        コート数: {camp.court_count}面 | ID: {camp.id.slice(0, 8)}...
+                                                        コート数: 1日目 {getCampCourtCountForDay(camp, 1)}面 / 2日目 {getCampCourtCountForDay(camp, 2)}面 | ID: {camp.id.slice(0, 8)}...
                                                     </p>
+                                                    {camp.status === 'active' && (
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-xs text-slate-500 whitespace-nowrap flex items-center gap-1">
+                                                                <Calendar className="w-3.5 h-3.5" />開催日:
+                                                            </span>
+                                                            {([1, 2] as const).map((day) => {
+                                                                const isActive = (camp.active_day ?? 1) === day;
+                                                                return (
+                                                                    <Button
+                                                                        key={day}
+                                                                        size="sm"
+                                                                        variant={isActive ? 'default' : 'outline'}
+                                                                        disabled={switchingDay === camp.id || isActive}
+                                                                        onClick={() => requireUnlock(() => handleSwitchDay(camp, day))}
+                                                                        className={isActive ? 'bg-indigo-500 hover:bg-indigo-600 text-white h-7 px-2.5' : 'h-7 px-2.5'}
+                                                                        title={isActive ? '現在の開催日' : `${day}日目（${getCampCourtCountForDay(camp, day)}面）に切り替え`}
+                                                                    >
+                                                                        {!isUnlocked && !isActive && <Lock className="w-3 h-3 mr-1" />}
+                                                                        {day}日目（{getCampCourtCountForDay(camp, day)}面）
+                                                                    </Button>
+                                                                );
+                                                            })}
+                                                            {switchingDay === camp.id && <span className="text-xs text-slate-400">切替中...</span>}
+                                                        </div>
+                                                    )}
                                                 </>
                                             )}
                                         </div>

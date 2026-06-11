@@ -22,7 +22,10 @@ export { Timestamp };
 export interface Camp {
   id: string;
   title: string;          // 合宿名 (例: 2025春合宿)
-  court_count: number;    // その合宿で使うコート数 (例: 6)
+  court_count: number;    // 現在有効なコート数 (= 現在の日のコート数)。後方互換のため維持
+  court_count_day1?: number; // 1日目のコート数（未設定なら court_count を使用）
+  court_count_day2?: number; // 2日目のコート数（未設定なら court_count を使用）
+  active_day?: 1 | 2;     // 現在の開催日（未設定なら 1 日目扱い）
   status: 'setup' | 'active' | 'archived'; // 状態
   created_at: Timestamp;
   owner_id?: string;      // 合宿作成者のUID (認証ユーザー)
