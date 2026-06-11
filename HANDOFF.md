@@ -132,3 +132,12 @@
 - 影響範囲: 全ページのbody overflow挙動とトースト幅。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★Previewをスマホ実機で確認後にマージ。overflow-x: clip により万一はみ出す要素があれば右側がクリップされる（その場合は該当要素を個別にレスポンシブ化する）。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-11 — [最適化A] Firestore通信を AutoDetect long polling に変更
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/firestore-autodetect-polling / #7
+- 変更内容: `lib/firebase.ts` の `experimentalForceLongPolling: true` を `experimentalAutoDetectLongPolling: true` に変更。通常はWebChannelで高速、必要な回線でのみロングポーリングへ自動フォールバック。
+- 変更理由: 常時ロングポーリングが通信を遅くしていたため、全体高速化（最適化A）。
+- 影響範囲: Firestore の通信方式のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: 特定回線/プロキシ環境で接続が不安定になる場合は revert（ForceLongPolling に戻す）。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
