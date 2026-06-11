@@ -102,10 +102,16 @@ export default function AdminDashboard() {
   const [finalsWaitMode, setFinalsWaitMode] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState("setup");
   const [isExpanded, setIsExpanded] = useState(false);
-  // サイドバーのグループ開閉状態（既定: 全グループ閉じておく）
+  const [mobileNavOpen, setMobileNavOpen] = useState(false); // スマホ用ドロワーの開閉
+  // サイドバーのグループ開閉状態（既定: 全グループ閉じておく。アクティブなグループは自動で開く）
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     prep: false, progress: false, results: false, settings: false,
   });
+  // アクティブなタブを含むグループを自動で開く（現在地が見える・同セクション内は1クリック）
+  useEffect(() => {
+    const grp = NAV_GROUPS.find((g) => g.items.some((it) => it.value === activeTab));
+    if (grp) setOpenGroups((s) => (s[grp.key] ? s : { ...s, [grp.key]: true }));
+  }, [activeTab]);
   const [isOnline, setIsOnline] = useState(true);
   const [authRetryCount, setAuthRetryCount] = useState(0);
   const [clearing, setClearing] = useState(false);
@@ -798,8 +804,8 @@ export default function AdminDashboard() {
       <div className="min-h-screen bg-slate-50 text-slate-900 flex">
         {autoDispatchEnabled && <AutoDispatchEngine />}
 
-        {/* サイドバー: 折りたたみ時はw-16、展開時はw-64 */}
-        <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-slate-200 shadow-sm transition-all duration-300 z-50 flex flex-col ${isExpanded ? 'w-64' : 'w-16'}`}>
+        {/* サイドバー: スマホはドロワー(オーバーレイ)、デスクトップは固定レール(折りたたみw-16/展開w-64) */}
+        <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-slate-200 shadow-sm transition-all duration-300 z-[120] flex flex-col w-64 ${isExpanded ? 'md:w-64' : 'md:w-16'} ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
           <div className="p-3 border-b border-slate-200 flex items-center justify-center relative">
             <Image
               src="/new-logo_transparent.png"
@@ -826,72 +832,77 @@ export default function AdminDashboard() {
           </div>
 
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={() => { setIsExpanded(!isExpanded); setMobileNavOpen(false); }}
             className="m-2 p-3 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
+            aria-label="メニュー"
           >
             <Menu className="w-5 h-5 text-slate-600" />
           </button>
 
           <nav className="flex-1 overflow-y-auto py-2">
-            {/* 折りたたみ時(バーガー閉): グループの代表アイコン4個のみ表示。クリックで展開＋そのグループを開く */}
-            {!isExpanded
-              ? NAV_GROUPS.map((group) => {
-                  const GroupIcon = group.icon;
-                  const groupHasActive = group.items.some((it) => it.value === activeTab);
-                  return (
+            {/* グループ見出し＋項目（ラベル付き）: モバイルは常に表示、デスクトップは展開時のみ。
+                アクティブなグループは自動で開く（現在地が見える・1クリックで切替） */}
+            <div className={isExpanded ? 'block' : 'block md:hidden'}>
+              {NAV_GROUPS.map((group, gi) => {
+                const groupHasActive = group.items.some((it) => it.value === activeTab);
+                const isOpen = openGroups[group.key] || groupHasActive;
+                return (
+                  <div key={group.key} className={gi > 0 ? 'border-t border-slate-100 mt-1 pt-1' : ''}>
                     <button
-                      key={group.key}
-                      onClick={() => {
-                        setIsExpanded(true);
-                        setOpenGroups((s) => ({ ...s, [group.key]: true }));
-                      }}
-                      title={group.label}
-                      className={`w-full px-3 py-4 flex items-center justify-center transition-all ${groupHasActive
-                        ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
-                        : 'text-slate-600 hover:bg-slate-50'
-                        }`}
+                      onClick={() => setOpenGroups((s) => ({ ...s, [group.key]: !isOpen }))}
+                      className={`w-full px-3 py-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wide ${groupHasActive ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                      <GroupIcon className={`w-5 h-5 shrink-0 ${groupHasActive ? 'text-indigo-600' : ''}`} />
+                      <span>{group.label}</span>
+                      {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
-                  );
-                })
-              : /* 展開時(バーガー開): グループ見出し4個。既定で閉。クリックで開閉 */
-                NAV_GROUPS.map((group, gi) => {
-                  const isOpen = openGroups[group.key];
-                  const groupHasActive = group.items.some((it) => it.value === activeTab);
-                  return (
-                    <div key={group.key} className={gi > 0 ? 'border-t border-slate-100 mt-1 pt-1' : ''}>
-                      <button
-                        onClick={() => setOpenGroups((s) => ({ ...s, [group.key]: !isOpen }))}
-                        className={`w-full px-3 py-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wide ${groupHasActive ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        <span>{group.label}</span>
-                        {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      </button>
-                      {isOpen &&
-                        group.items.map((item) => {
-                          const Icon = item.icon;
-                          const isActive = activeTab === item.value;
-                          return (
-                            <button
-                              key={item.value}
-                              onClick={() => setActiveTab(item.value)}
-                              title={item.label}
-                              className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
-                                ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
-                                : 'text-slate-600 hover:bg-slate-50'
-                                }`}
-                            >
-                              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
-                              <span className="text-sm font-medium whitespace-nowrap overflow-hidden pl-1">
-                                {item.label}
-                              </span>
-                            </button>
-                          );
-                        })}
-                    </div>
-                  );
-                })}
+                    {isOpen &&
+                      group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeTab === item.value;
+                        return (
+                          <button
+                            key={item.value}
+                            onClick={() => { setActiveTab(item.value); setMobileNavOpen(false); }}
+                            title={item.label}
+                            className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
+                              ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                              : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                          >
+                            <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
+                            <span className="text-sm font-medium whitespace-nowrap overflow-hidden pl-1">
+                              {item.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                );
+              })}
+            </div>
+            {/* アイコンレール（グループ代表アイコン4個）: デスクトップ折りたたみ時のみ。クリックで展開＋そのグループを開く */}
+            <div className={isExpanded ? 'hidden' : 'hidden md:block'}>
+              {NAV_GROUPS.map((group) => {
+                const GroupIcon = group.icon;
+                const groupHasActive = group.items.some((it) => it.value === activeTab);
+                return (
+                  <button
+                    key={group.key}
+                    onClick={() => {
+                      setIsExpanded(true);
+                      setOpenGroups((s) => ({ ...s, [group.key]: true }));
+                    }}
+                    title={group.label}
+                    className={`w-full px-3 py-4 flex items-center justify-center transition-all ${groupHasActive
+                      ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                      : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                  >
+                    <GroupIcon className={`w-5 h-5 shrink-0 ${groupHasActive ? 'text-indigo-600' : ''}`} />
+                  </button>
+                );
+              })}
+            </div>
           </nav>
 
           {/* ヘルプボタン（サイドバー下部） */}
@@ -909,11 +920,27 @@ export default function AdminDashboard() {
           </div>
         </aside>
 
-        {/* メインコンテンツ */}
-        <div className={`flex-1 flex flex-col transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-16'}`}>
+        {/* スマホ用ドロワーの背景（タップで閉じる） */}
+        {mobileNavOpen && (
+          <div
+            className="fixed inset-0 bg-black/30 z-[110] md:hidden"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* メインコンテンツ: スマホは全幅(ml-0)、デスクトップはサイドバー分オフセット */}
+        <div className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${isExpanded ? 'md:ml-64' : 'md:ml-16'}`}>
           <header className="bg-white border-b border-slate-200 sticky top-0 z-[100] shadow-sm">
             <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setMobileNavOpen(true)}
+                  className="md:hidden p-2 -ml-1 rounded-lg hover:bg-slate-100 text-slate-600"
+                  aria-label="メニューを開く"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
                 <Shield className="w-6 h-6 text-sky-500 shrink-0" />
                 <div className="flex flex-col md:flex-row md:items-end md:gap-2 leading-none">
                   <h1 className="text-lg md:text-2xl font-bold text-slate-800">
