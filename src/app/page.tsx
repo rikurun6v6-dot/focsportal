@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { User, Shield, Activity } from "lucide-react";
+import { User } from "lucide-react";
 
 export default function HomePage() {
     return (
@@ -29,9 +29,8 @@ export default function HomePage() {
                     </p>
                 </div>
 
-                {/* 選択カード */}
-                <div className="grid md:grid-cols-2 gap-6">
-                    {/* 参加者用 */}
+                {/* 参加者用カード（管理者導線は非表示。運営は /admin へ直接アクセス） */}
+                <div className="max-w-md mx-auto">
                     <Link href="/user">
                         <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer group border-2 border-transparent hover:border-sky-200 h-full">
                             <CardHeader className="text-center pb-4">
@@ -39,7 +38,7 @@ export default function HomePage() {
                                     <User className="w-8 h-8 text-sky-600" />
                                 </div>
                                 <CardTitle className="text-2xl text-slate-800">
-                                    参加者
+                                    参加者はこちら
                                 </CardTitle>
                                 <CardDescription className="text-base">
                                     試合状況の確認・待ち時間検索
@@ -57,37 +56,6 @@ export default function HomePage() {
                                 <div className="flex items-start gap-2">
                                     <span className="text-sky-500 font-bold">✓</span>
                                     <span>他の選手の待ち時間検索</span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </Link>
-
-                    {/* 管理者用 */}
-                    <Link href="/admin">
-                        <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer group border-2 border-transparent hover:border-amber-200 h-full">
-                            <CardHeader className="text-center pb-4">
-                                <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-amber-200 transition-colors">
-                                    <Shield className="w-8 h-8 text-amber-600" />
-                                </div>
-                                <CardTitle className="text-2xl text-slate-800">
-                                    管理者
-                                </CardTitle>
-                                <CardDescription className="text-base">
-                                    大会運営・試合管理
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm text-slate-600">
-                                <div className="flex items-start gap-2">
-                                    <span className="text-amber-500 font-bold">✓</span>
-                                    <span>合宿・トーナメント設定</span>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                    <span className="text-amber-500 font-bold">✓</span>
-                                    <span>コート自動割り当て</span>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                    <span className="text-amber-500 font-bold">✓</span>
-                                    <span>試合結果入力</span>
                                 </div>
                             </CardContent>
                         </Card>
