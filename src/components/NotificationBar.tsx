@@ -115,7 +115,8 @@ export default function NotificationBar({
     timersRef.current[id] = [t];
   };
 
-  const leftOffset = sidebarExpanded ? 'ml-64' : 'ml-16';
+  // スマホはサイドバーがドロワー（常時非表示）のためオフセットなし。デスクトップのみオフセット。
+  const leftOffset = sidebarExpanded ? 'ml-0 md:ml-64' : 'ml-0 md:ml-16';
 
   return (
     <>
