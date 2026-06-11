@@ -195,3 +195,17 @@
 - 影響範囲: 自動割り当ての選定挙動（dispatcher.ts）＋休息記録（firestore-helpers.ts）＋ドキュメント。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★実データで「部門の散らばり」「決勝でコートが遊ばない」「3人組の休息が効く」を Preview 確認後マージ。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-12 — [検証中] 決勝T 同一ラウンド順を bracket_order（正規化最大60点）ベースに
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/bracket-order / #17（★Previewで実データ確認後マージ）
+- 背景: 同一ラウンドのタイブレークが `-match_number` だったが、match_number のスケールが生成パスで食い違う（シンプルブラケット=ラウンド内小／グループ予選→決勝=グローバル大）ため挙動が不安定だった。
+- 変更内容:
+  - `types/index.ts`: `Match` に `bracket_order?`（ラウンド内 0始まり・上→下）、`bracket_order_count?`（そのラウンドの試合数）を追加。
+  - `lib/matchScoring.ts`: `calcBracketOrderBonus` を追加。`bracket_order` を「ラウンド内順位0〜1」に正規化し最大 `BRACKET_ORDER_BONUS_MAX=60` のボーナスに。Phase C のタイブレークを `-match_number` → これに変更。規模に依らず最大差60で一定、ラウンド境界100は超えない。旧データは match_number 極小フォールバック。
+  - `components/admin/TournamentGenerator.tsx`: 両 knockout 生成パス（グループ予選→決勝／シンプルブラケット）で `bracket_order`(=pos-1 or slot.matchNumber-1)・`bracket_order_count`(そのラウンドの試合数) を保存。ローカル MatchData 型にも追加。
+  - `docs/court-dispatch-logic.md`: Phase C を更新。
+- 変更理由: 「同一ラウンド内は表の自然な順（左上→左下→右上→右下）で出したい」要望。固定倍率だと規模依存になるため正規化方式を採用。
+- 影響範囲: 決勝T のスコアリングと knockout 生成（bracket_order の保存）。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★既存の生成済み大会には bracket_order が無い→旧フォールバック（match_number極小）で動作。新規生成分から正規化が効く。実データで「同ラウンドが表の順で出るか」「ラウンド優先・休息が壊れないか」を Preview 確認。team_battle は未対応（必要なら別途）。
+- オーナー承認: （Preview検証→承認待ち）

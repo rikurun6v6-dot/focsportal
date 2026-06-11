@@ -63,6 +63,8 @@ interface MatchData {
   is_walkover?: boolean;
   walkover_winner?: 1 | 2;
   subtitle?: string;
+  bracket_order?: number;
+  bracket_order_count?: number;
   created_at?: unknown;
   updated_at?: unknown;
 }
@@ -500,6 +502,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             division: division,
             round: 1,
             match_number: matchNumMap.get(`1_${pos}`)!,
+            bracket_order: pos - 1,              // 同一ラウンド内の自然な出場順（上→下）
+            bracket_order_count: round1Total,    // そのラウンドの試合数（正規化用）
             phase: 'knockout' as const,
             status: 'waiting',
             court_id: null,
@@ -537,6 +541,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
               division: division,
               round: round,
               match_number: matchNumMap.get(`${round}_${pos}`)!,
+              bracket_order: pos - 1,                 // 同一ラウンド内の自然な出場順（上→下）
+              bracket_order_count: matchesInRound,    // そのラウンドの試合数（正規化用）
               phase: 'knockout' as const,
               status: 'waiting',
               court_id: null,
@@ -666,6 +672,10 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           participantCount: bracket.participantCount
         });
 
+        // ラウンド別の試合数（bracket_order の正規化用）
+        const roundMatchCount = new Map<number, number>();
+        bracket.slots.forEach(s => roundMatchCount.set(s.roundNumber, (roundMatchCount.get(s.roundNumber) ?? 0) + 1));
+
         // バッチ処理用
         const BATCH_SIZE = 500;
         let currentBatch = writeBatch(db);
@@ -694,6 +704,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             division: division,
             round: slot.roundNumber,
             match_number: slot.matchNumber,
+            bracket_order: slot.matchNumber - 1,                              // 同一ラウンド内の自然な出場順（上→下）
+            bracket_order_count: roundMatchCount.get(slot.roundNumber) ?? 1,  // そのラウンドの試合数（正規化用）
             phase: 'knockout' as const,
             status: "waiting",
             court_id: null,

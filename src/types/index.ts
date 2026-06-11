@@ -93,6 +93,8 @@ export interface Match {
   walkover_winner?: 1 | 2; // 👈 棄権時の勝者 (1=player1側, 2=player2側)
   points_per_match?: number; // 👈 この試合の点数設定（カスタム点数対応）
   subtitle?: string; // 👈 試合カードの補足情報（例：「敗者復活戦」「1部」）
+  bracket_order?: number;       // 👈 決勝T: 同一ラウンド内の自然な出場順（0始まり, 上→下＝左上→左下→右上→右下）
+  bracket_order_count?: number; // 👈 決勝T: そのラウンド内の試合数（bracket_order の正規化に使用）
 }
 
 /**
