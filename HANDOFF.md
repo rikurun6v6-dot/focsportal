@@ -99,11 +99,45 @@
 - 注意点 / 引き継ぎ事項: 閾値は totalPages = ceil(activeCourts/3) 基準。COURTS_PER_PAGE=3。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（オーナー本人の変更のため即マージ）
 
-## 2026-06-11 — [最適化A・検証中] Firestore通信を AutoDetect long polling に変更（未マージ）
+## 2026-06-11 — HOTFIX: タブが切替できない不具合を修正（keep-alive撤去）
 - 担当者: rikurun6v6-dot（Claude Code 経由）
-- ブランチ / PR: feat/firestore-autodetect-polling / #7（★Previewで検証後にマージ）
+- ブランチ / PR: hotfix/remove-broken-keepalive / #8
+- 不具合: PR#5で入れたタブ keep-alive（Radix TabsContent への forceMount）が原因で、Radix が `hidden: !present` を常に false にするため、訪問済みタブのコンテンツが全て重なって表示され、タブ切替が機能しなくなった（本番影響）。
+- 変更内容: `app/admin/page.tsx` から forceMount/keepMounted/mountedTabs/selectTab を撤去し、通常の setActiveTab による切替に戻した。永続キャッシュ（firebase.ts）とナビ4グループは維持。
+- 変更理由: 本番でタブが反応しない重大リグレッションの復旧。
+- 影響範囲: 管理画面のタブ切替挙動のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: Radix Tabs は forceMount を付けると常時表示になり keep-alive 用途には使えない。再挑戦する場合は「Radix外で全パネルを描画し activeTab で表示制御」等の別実装にし、必ず Preview で検証すること。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（本番復旧のため即マージ）
+
+## 2026-06-11 — [検証中] 管理ナビ操作性改善＋スマホUI（ドロワー化）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/admin-mobile-nav / #9（★Previewで検証後にマージ）
+- 変更内容（`app/admin/page.tsx`）:
+  - アクティブなタブを含むグループを自動展開（現在地が見える・同セクション内は1クリック切替）。操作性低下（2〜3クリック問題）の改善。
+  - スマホ: サイドバーをオーバーレイのドロワー化。ヘッダー左にハンバーガー（md:hidden）、背景タップ/タブ選択で閉じる。本文はスマホで全幅(ml-0)、デスクトップは従来オフセット(md:ml-16/64)。
+  - ナビを「グループ一覧（ラベル付き・モバイル常時/デスクトップ展開時）」と「アイコンレール（デスクトップ折りたたみ時のみ）」の2系統に整理（Tailwind の md: と isExpanded の併用で出し分け）。
+  - z-index: ドロワー z-[120] / 背景 z-[110] をヘッダー z-[100] より上に。
+- 変更理由: 「操作性が悪い（クリック数が多い）」「スマホ未対応」の改善要望。
+- 影響範囲: 管理画面のナビ/レイアウトのみ。タブの中身・データは不変。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★リスク配慮で**本番マージ前に Vercel Preview（特にスマホ実機）で検証**する。上部固定領域 pt-[136px] の縦圧迫（項目4）は未対応・別途。
+- オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-11 — [検証中] スマホ横はみ出し＆ステータスバー位置の修正
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/mobile-overflow / #12（★Previewでスマホ確認後マージ）
+- 不具合: iOS Safari でページが横にはみ出し、コンテンツが左右に収まらない／`fixed` のステータスバー(StatusBar)がはみ出し領域の右端に張り付いて変な位置に見える。
+- 原因/対応:
+  - `app/globals.css`: `html, body { overflow-x: clip; max-width: 100% }` を追加。clip は overflow:hidden と違い sticky/fixed を壊さずに横はみ出しのみ抑制。これで横スクロールが消え、StatusBar も正位置に固定される。
+  - トースト(sonner)の `min-width: 320px / 400px` 固定をレスポンシブ化（`min(…, calc(100vw - 2rem))`）。スマホ幅超過によるはみ出し誘発を防止。
+- 影響範囲: 全ページのbody overflow挙動とトースト幅。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★Previewをスマホ実機で確認後にマージ。overflow-x: clip により万一はみ出す要素があれば右側がクリップされる（その場合は該当要素を個別にレスポンシブ化する）。
+- オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-11 — [最適化A] Firestore通信を AutoDetect long polling に変更
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/firestore-autodetect-polling / #7
 - 変更内容: `lib/firebase.ts` の `experimentalForceLongPolling: true` を `experimentalAutoDetectLongPolling: true` に変更。通常はWebChannelで高速、必要な回線でのみロングポーリングへ自動フォールバック。
 - 変更理由: 常時ロングポーリングが通信を遅くしていたため、全体高速化（最適化A）。
 - 影響範囲: Firestore の通信方式のみ。`npm run build` 成功。
-- 注意点 / 引き継ぎ事項: ★リスク配慮のため**本番マージ前に Vercel Preview で実機検証**する。特定回線/プロキシ環境で接続が不安定になる場合は revert（ForceLongPolling に戻す）。問題なければマージ。
-- オーナー承認: （Preview検証→承認待ち）
+- 注意点 / 引き継ぎ事項: 特定回線/プロキシ環境で接続が不安定になる場合は revert（ForceLongPolling に戻す）。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
