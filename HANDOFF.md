@@ -89,3 +89,12 @@
 - 影響範囲: Firestore 初期化とナビUI／タブのマウント挙動。各タブの中身は不変。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: keep-alive により訪問済みタブの onSnapshot リスナーは保持される（メモリ・リスナー増は許容範囲）。さらなる高速化案として `experimentalForceLongPolling`→`experimentalAutoDetectLongPolling` への切替、重いタブの dynamic import、ポーリング(5秒間隔)の onSnapshot 化などが候補。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（オーナー本人の変更のため即マージ）
+
+## 2026-06-11 — モニター(preview)の自動ページ送り間隔をページ数で可変に
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/preview-page-interval / #6
+- 変更内容: `app/preview/page.tsx` の固定 8秒切替を、ページ数に応じた可変 `pageIntervalMs` に変更。4ページ以上=4秒 / 3ページ=5秒 / それ未満=8秒。進捗バーのアニメーション時間も連動。
+- 変更理由: コート数（ページ数）が多いと一巡が長すぎるため、多いほど速く回す。
+- 影響範囲: preview 画面のページ送りタイミングのみ。`tsc --noEmit` 通過。
+- 注意点 / 引き継ぎ事項: 閾値は totalPages = ceil(activeCourts/3) 基準。COURTS_PER_PAGE=3。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（オーナー本人の変更のため即マージ）
