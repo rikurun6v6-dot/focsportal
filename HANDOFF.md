@@ -122,11 +122,31 @@
 - 注意点 / 引き継ぎ事項: ★リスク配慮で**本番マージ前に Vercel Preview（特にスマホ実機）で検証**する。上部固定領域 pt-[136px] の縦圧迫（項目4）は未対応・別途。
 - オーナー承認: （Preview検証→承認待ち）
 
-## 2026-06-11 — [最適化B・検証中] 合宿リストをポーリング→onSnapshot化（未マージ）
+## 2026-06-11 — [検証中] スマホ横はみ出し＆ステータスバー位置の修正
 - 担当者: rikurun6v6-dot（Claude Code 経由）
-- ブランチ / PR: feat/camp-realtime-v2 / #10（★Previewで検証後にマージ）
+- ブランチ / PR: fix/mobile-overflow / #12（★Previewでスマホ確認後マージ）
+- 不具合: iOS Safari でページが横にはみ出し、コンテンツが左右に収まらない／`fixed` のステータスバー(StatusBar)がはみ出し領域の右端に張り付いて変な位置に見える。
+- 原因/対応:
+  - `app/globals.css`: `html, body { overflow-x: clip; max-width: 100% }` を追加。clip は overflow:hidden と違い sticky/fixed を壊さずに横はみ出しのみ抑制。これで横スクロールが消え、StatusBar も正位置に固定される。
+  - トースト(sonner)の `min-width: 320px / 400px` 固定をレスポンシブ化（`min(…, calc(100vw - 2rem))`）。スマホ幅超過によるはみ出し誘発を防止。
+- 影響範囲: 全ページのbody overflow挙動とトースト幅。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★Previewをスマホ実機で確認後にマージ。overflow-x: clip により万一はみ出す要素があれば右側がクリップされる（その場合は該当要素を個別にレスポンシブ化する）。
+- オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-11 — [最適化A] Firestore通信を AutoDetect long polling に変更
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/firestore-autodetect-polling / #7
+- 変更内容: `lib/firebase.ts` の `experimentalForceLongPolling: true` を `experimentalAutoDetectLongPolling: true` に変更。通常はWebChannelで高速、必要な回線でのみロングポーリングへ自動フォールバック。
+- 変更理由: 常時ロングポーリングが通信を遅くしていたため、全体高速化（最適化A）。
+- 影響範囲: Firestore の通信方式のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: 特定回線/プロキシ環境で接続が不安定になる場合は revert（ForceLongPolling に戻す）。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
+
+## 2026-06-11 — [最適化B] 合宿リストをポーリング→onSnapshot化
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/camp-realtime-v2 / #10
 - 変更内容: `lib/firestore-helpers.ts` に `subscribeToCamps`（onSnapshot購読）を追加。`components/admin/CampManager.tsx` の5秒ポーリングをリアルタイム購読に置換（getAllCamps import 撤去）。
 - 変更理由: 無駄な再取得の削減・即時反映（最適化B）。
 - 影響範囲: 合宿リスト画面のデータ取得方式のみ。`npm run build` 成功。
-- 注意点 / 引き継ぎ事項: ★Previewで合宿の作成/更新/日切替が即時反映されるか確認後にマージ。空スナップショットでの上書き防止ガードは維持。
-- オーナー承認: （Preview検証→承認待ち）
+- 注意点 / 引き継ぎ事項: 空スナップショットでの上書き防止ガードは維持。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）

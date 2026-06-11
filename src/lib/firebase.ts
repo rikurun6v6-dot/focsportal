@@ -16,12 +16,15 @@ let db: Firestore;
 
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
-  // Task 2: 通信の「超」安定化 - Long Polling
+  // Task 2: 通信の安定化 - Long Polling
+  // [最適化A] 旧: experimentalForceLongPolling(常時ロングポーリング=低速) →
+  //   experimentalAutoDetectLongPolling(必要な回線でのみロングポーリング、通常はWebChannelで高速)
+  //   に変更。多くの環境で通信が速くなる。回線によってはロングポーリングへ自動フォールバック。
   // 永続ローカルキャッシュ（IndexedDB）を有効化し、画面切り替え時の再取得を高速化＋オフライン対応。
   // persistentMultipleTabManager で複数タブ（管理画面＋プレビュー等）でもキャッシュを共有。
   // IndexedDB はブラウザ専用のため、SSR/ビルド時（window 不在）はキャッシュ設定を付けない。
   db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
     ...(typeof window !== "undefined"
       ? { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }
       : {}),
