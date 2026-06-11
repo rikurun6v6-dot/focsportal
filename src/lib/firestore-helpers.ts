@@ -1873,11 +1873,14 @@ export const markMessageAsRead = async (messageId: string, playerId: string): Pr
  */
 export const updatePlayersRestTime = async (match: Match): Promise<void> => {
   try {
+    // 3人組（player5/6）も休息対象に含める（以前は1〜4のみで3人目の休息が効かなかった）
     const playerIds = [
       match.player1_id,
       match.player2_id,
       match.player3_id,
-      match.player4_id
+      match.player4_id,
+      (match as Match & { player5_id?: string }).player5_id,
+      (match as Match & { player6_id?: string }).player6_id,
     ].filter((id): id is string => typeof id === 'string' && id.length > 0);
 
     const now = Timestamp.now();

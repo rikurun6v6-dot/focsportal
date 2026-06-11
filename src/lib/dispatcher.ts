@@ -285,8 +285,14 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
-  // 選手休息チェック: 全員が休息完了しているカードを優先、なければ休息中選手がいるカードも使う
-  // （予選リーグなど連続試合が避けられない場合のフォールバック）
+  // ── 休息モデル（2概念）───────────────────────────────────────────────
+  //  (1) match.available_at … 試合単位の明示スケジュール（手動休憩 setMatchBreak / 予約）。
+  //       上の validMatches で「now < available_at なら除外」のハードゲートとして既に適用済み。
+  //  (2) player.last_match_finished_at … 試合完了時に自動記録される選手の休息（updatePlayersRestTime）。
+  //       これを2段階で使う:
+  //        - Tier1 (< defaultRestMinutes): 下記 isPlayerResting で除外（ソフト。全員休息中ならフォールバックで使う）
+  //        - Tier2 (< defaultRestMinutes*2): matchScoring 側で -200点（連戦回避。除外はしない）
+  //  ※ available_at（明示）と last_match_finished_at（自動）は別物。重複ではなく役割分担。
   const isPlayerResting = (match: Match): boolean => {
     const playerIds = [
       match.player1_id, match.player2_id, match.player3_id, match.player4_id,
@@ -340,7 +346,7 @@ export async function dispatchToEmptyCourt(
   //   「再取得分」と「batch分」で二重計上され、ペナルティが過剰に効くバグがあったため撤去。
   const allCourts = await getAllDocuments<Court>('courts');
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
-  const adjacentCourtDivisions = getAdjacentCourtDivisions(court.number, campCourts, allMatches);
+  const adjacentCourtDivisions = getActiveCourtDivisions(campCourts, allMatches);
 
   // 混合ダブルスのコート制限チェック
   const mixedDoublesActive = waitingMatches.some(m => m.tournament_type === 'mixed_doubles');
@@ -351,12 +357,54 @@ export async function dispatchToEmptyCourt(
     waitingMatches
   ) : null;
 
-  // divisionPreference が指定されている場合、その部を強制的に優先（+150）
+  // 部門バランスの制御方式は2系統あり「綱引き」を避けるため排他にする:
+  //  (1) コート別の部優先 divisionPreference（先頭=1部/末尾=2部/中間=多い部）が指定されている場合
+  //      → その部を +150 で優先するのみ。隣接ペナルティ(adjacentCourtDivisions)は適用しない。
+  //      （コート割りで既に部を散らしているため、ペナルティを重ねると相殺し合って予測不能になる）
+  //  (2) divisionPreference がない場合（単発割り当て・部優先なしコート）
+  //      → 隣接ペナルティで部の偏りを抑える。
   const scoreCtxForCourt = divisionPreference
-    ? { ...scoreCtx, preferredDivision: divisionPreference, divisionBonusBase: 150, adjacentCourtDivisions }
+    ? { ...scoreCtx, preferredDivision: divisionPreference, divisionBonusBase: 150 }
     : { ...scoreCtx, adjacentCourtDivisions };
 
-  const candidatesWithScore = genderPreFilteredMatches.map(match => {
+  // [遊休回避] 決勝センターコート制御:
+  // finalsWaitMode 有効時、決勝戦は優先(センター)コートが空いている間は非優先コートでは取らない。
+  // ただし以前は return null でコートを遊ばせていた。ここでは「候補から除外」するだけにして、
+  // 非優先コートは別の試合を取れるようにする（＝コートを遊ばせない）。
+  const finalsActive = Object.keys(finalsWaitMode).length > 0;
+  const finalsCourtCount = finalsActive
+    ? ((await getDocument<Camp>('camps', court.campId || ''))?.court_count || 6)
+    : 6;
+  const finalsMaxRoundCache = new Map<string, Map<number, number>>();
+  const getFinalsMaxRoundByDiv = (m: Match): Map<number, number> => {
+    const tKey = `${m.campId}_${m.tournament_type}`;
+    let cached = finalsMaxRoundCache.get(tKey);
+    if (!cached) {
+      cached = new Map<number, number>();
+      allMatches
+        .filter(x => x.campId === m.campId && x.tournament_type === m.tournament_type && x.subtitle !== '3位決定戦')
+        .forEach(x => { if (x.division) { const c = cached!.get(x.division) ?? 0; if (x.round > c) cached!.set(x.division, x.round); } });
+      finalsMaxRoundCache.set(tKey, cached);
+    }
+    return cached;
+  };
+  const isFinalsMatch = (m: Match): boolean => {
+    const myMax = getFinalsMaxRoundByDiv(m).get(m.division ?? 0) ?? 0;
+    return myMax > 0 && m.round === myMax;
+  };
+  const mustDeferFinalsToCenter = (m: Match): boolean => {
+    if (!finalsWaitMode[`${m.tournament_type}_${m.division}`]) return false;
+    if (!isFinalsMatch(m)) return false;
+    const prefNums = getFinalsPreferredCourts(m.tournament_type, m.division ?? 0, finalsCourtCount);
+    if (prefNums.length === 0 || prefNums.includes(court.number)) return false; // このコートが優先 → 出してOK
+    // 優先コートが空いているなら、このコートでは決勝を取らない（センターを待つ）
+    return campCourts.some(c => prefNums.includes(c.number) && c.is_active && !c.current_match_id && !c.manually_freed);
+  };
+  const selectableMatches = finalsActive
+    ? genderPreFilteredMatches.filter(m => !mustDeferFinalsToCenter(m))
+    : genderPreFilteredMatches;
+
+  const candidatesWithScore = selectableMatches.map(match => {
     // 共通スコア関数（matchScoring.ts）でスコアを計算
     const baseScore = calcMatchScore(match, scoreCtxForCourt);
 
@@ -423,49 +471,11 @@ export async function dispatchToEmptyCourt(
 
   if (!candidate) return null;
 
-  // Check if this is finals and apply center court priority
-  const key = `${candidate.match.tournament_type}_${candidate.match.division}`;
-  if (finalsWaitMode[key]) {
-    const allMatchesInType = allMatches.filter(m =>
-      m.campId === candidate.match.campId &&
-      m.tournament_type === candidate.match.tournament_type &&
-      m.subtitle !== "3位決定戦"
-    );
-
-    if (allMatchesInType.length > 0) {
-      const maxRoundByDiv = new Map<number, number>();
-      allMatchesInType.forEach(m => {
-        if (!m.division) return;
-        const cur = maxRoundByDiv.get(m.division) ?? 0;
-        if (m.round > cur) maxRoundByDiv.set(m.division, m.round);
-      });
-      const myMaxRound = maxRoundByDiv.get(candidate.match.division ?? 0) ?? 0;
-      const isFinals = candidate.match.round === myMaxRound && myMaxRound > 0;
-
-      if (isFinals) {
-        const campDoc = await getDocument<Camp>('camps', court.campId || '');
-        const courtCount = campDoc?.court_count || 6;
-
-        const preferredCourtNumbers = getFinalsPreferredCourts(
-          candidate.match.tournament_type,
-          candidate.match.division ?? 0,
-          courtCount
-        );
-
-        if (preferredCourtNumbers.length > 0 && !preferredCourtNumbers.includes(court.number)) {
-          const allCourts = await getAllDocuments<Court>('courts', []);
-          const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
-          const preferredAvailable = campCourts.some(c =>
-            preferredCourtNumbers.includes(c.number) &&
-            c.is_active &&
-            !c.current_match_id &&
-            !c.manually_freed
-          );
-          if (preferredAvailable) return null; // 優先コートが空くまで待機
-        }
-
-        toastInfo(`決勝戦がセンターコートで始まります！第${court.number}コート`);
-      }
+  // 決勝戦がセンター(優先)コートで始まる場合の通知（遊休回避は上の selectableMatches 除外で実施済み）
+  if (finalsActive && finalsWaitMode[`${candidate.match.tournament_type}_${candidate.match.division}`] && isFinalsMatch(candidate.match)) {
+    const prefNums = getFinalsPreferredCourts(candidate.match.tournament_type, candidate.match.division ?? 0, finalsCourtCount);
+    if (prefNums.includes(court.number)) {
+      toastInfo(`決勝戦がセンターコートで始まります！第${court.number}コート`);
     }
   }
 
@@ -545,11 +555,12 @@ function getPreferredGender(match: Match): 'male' | 'female' | null {
 }
 
 /**
- * 現在使用中の全コートの部門を取得（部門バランス制御用）
- * 同じ部門のコートが多いほどペナルティが累積し、部の偏りを防ぐ
+ * 現在「使用中（current_match_id あり）の全コート」の部門リストを返す（部門バランス制御用）。
+ * ※ 名称は以前 getAdjacentCourtDivisions だったが、実態は「隣接」ではなく全コート対象のため
+ *   getActiveCourtDivisions に改名（コート番号は使わない）。
+ * 同じ部門のコートが多いほどペナルティが累積し、部の偏りを防ぐ。
  */
-function getAdjacentCourtDivisions(
-  _courtNumber: number,
+function getActiveCourtDivisions(
   courts: Court[],
   matches: Match[]
 ): number[] {
