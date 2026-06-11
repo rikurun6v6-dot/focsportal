@@ -29,7 +29,7 @@ import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division, TeamGroup } from "@/types";
-import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight, Medal } from "lucide-react";
+import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight, Medal, ChevronDown, ChevronRight } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
 import AwardsTab from "@/components/admin/AwardsTab";
@@ -48,6 +48,48 @@ import type { Court, Player } from "@/types";
 
 const GUIDE_SEEN_KEY = 'focs_guide_seen';
 
+// サイドバーのタブを4グループに集約（操作性向上）
+const NAV_GROUPS: {
+  key: string;
+  label: string;
+  items: { value: string; label: string; icon: React.ComponentType<{ className?: string }> }[];
+}[] = [
+  {
+    key: 'prep', label: '準備',
+    items: [
+      { value: 'setup', label: '初期設定', icon: Settings },
+      { value: 'players', label: '選手', icon: Users },
+      { value: 'pairseed', label: 'ペア・シード', icon: Settings },
+      { value: 'groupedit', label: '予選配置編集', icon: ArrowLeftRight },
+      { value: 'team_battle', label: '団体戦', icon: Users },
+    ],
+  },
+  {
+    key: 'progress', label: '進行',
+    items: [
+      { value: 'control', label: '操作', icon: Play },
+      { value: 'results', label: 'コート結果', icon: Activity },
+    ],
+  },
+  {
+    key: 'results', label: '結果',
+    items: [
+      { value: 'groupranking', label: '予選順位', icon: BarChart3 },
+      { value: 'results-list', label: '結果一覧', icon: BarChart3 },
+      { value: 'bracket', label: 'トーナメント表', icon: Trophy },
+      { value: 'awards', label: '表彰', icon: Medal },
+    ],
+  },
+  {
+    key: 'settings', label: '設定・その他',
+    items: [
+      { value: 'messages', label: 'メッセージ', icon: MessageCircle },
+      { value: 'safety', label: '安全', icon: ShieldAlert },
+      { value: 'advanced', label: '応用', icon: Lock },
+    ],
+  },
+];
+
 export default function AdminDashboard() {
   const { camp, setManualCamp } = useCamp();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -59,6 +101,10 @@ export default function AdminDashboard() {
   const [finalsWaitMode, setFinalsWaitMode] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState("setup");
   const [isExpanded, setIsExpanded] = useState(false);
+  // サイドバーのグループ開閉状態（既定: 準備/進行/結果は開、設定・その他は閉）
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    prep: true, progress: true, results: true, settings: false,
+  });
   const [isOnline, setIsOnline] = useState(true);
   const [authRetryCount, setAuthRetryCount] = useState(0);
   const [clearing, setClearing] = useState(false);
@@ -786,38 +832,47 @@ export default function AdminDashboard() {
           </button>
 
           <nav className="flex-1 overflow-y-auto py-2">
-            {[
-              { value: "setup", label: "初期設定", icon: Settings },
-              { value: "players", label: "選手", icon: Users },
-              { value: "groupranking", label: "予選順位", icon: BarChart3 },
-              { value: "control", label: "操作", icon: Play },
-              { value: "results", label: "コート結果", icon: Activity },
-              { value: "results-list", label: "結果一覧", icon: BarChart3 },
-              { value: "bracket", label: "トーナメント表", icon: Trophy },
-              { value: "awards", label: "表彰", icon: Medal },
-              { value: "pairseed", label: "ペア・シード", icon: Settings },
-              { value: "groupedit", label: "予選配置編集", icon: ArrowLeftRight },
-              { value: "messages", label: "メッセージ", icon: MessageCircle },
-              { value: "team_battle", label: "団体戦", icon: Users },
-              { value: "safety", label: "安全", icon: ShieldAlert },
-              { value: "advanced", label: "応用", icon: Lock },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.value;
+            {NAV_GROUPS.map((group, gi) => {
+              // アクティブなタブを含むグループは常に開いて見せる
+              const groupHasActive = group.items.some((it) => it.value === activeTab);
+              const isOpen = openGroups[group.key] || groupHasActive;
               return (
-                <button
-                  key={item.value}
-                  onClick={() => setActiveTab(item.value)}
-                  className={`w-full px-3 py-4 flex items-center gap-3 transition-all ${isActive
-                    ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
-                    : 'text-slate-600 hover:bg-slate-50'
-                    }`}
-                >
-                  <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
-                  <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'hidden'}`}>
-                    {item.label}
-                  </span>
-                </button>
+                <div key={group.key} className={gi > 0 ? 'border-t border-slate-100 mt-1 pt-1' : ''}>
+                  {/* グループ見出し: サイドバー展開時のみ表示・クリックで開閉 */}
+                  {isExpanded ? (
+                    <button
+                      onClick={() => setOpenGroups((s) => ({ ...s, [group.key]: !isOpen }))}
+                      className="w-full px-3 py-2 flex items-center justify-between text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wide"
+                    >
+                      <span>{group.label}</span>
+                      {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    </button>
+                  ) : (
+                    gi > 0 && <div className="h-px" />
+                  )}
+                  {/* 項目: 展開時は開いているグループのみ、折りたたみ時は全アイコン表示 */}
+                  {(isExpanded ? isOpen : true) &&
+                    group.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeTab === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          onClick={() => setActiveTab(item.value)}
+                          title={item.label}
+                          className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
+                            ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                            : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                        >
+                          <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
+                          <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100 pl-1' : 'hidden'}`}>
+                            {item.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
               );
             })}
           </nav>
