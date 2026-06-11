@@ -98,3 +98,13 @@
 - 影響範囲: preview 画面のページ送りタイミングのみ。`tsc --noEmit` 通過。
 - 注意点 / 引き継ぎ事項: 閾値は totalPages = ceil(activeCourts/3) 基準。COURTS_PER_PAGE=3。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（オーナー本人の変更のため即マージ）
+
+## 2026-06-11 — HOTFIX: タブが切替できない不具合を修正（keep-alive撤去）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: hotfix/remove-broken-keepalive / #8
+- 不具合: PR#5で入れたタブ keep-alive（Radix TabsContent への forceMount）が原因で、Radix が `hidden: !present` を常に false にするため、訪問済みタブのコンテンツが全て重なって表示され、タブ切替が機能しなくなった（本番影響）。
+- 変更内容: `app/admin/page.tsx` から forceMount/keepMounted/mountedTabs/selectTab を撤去し、通常の setActiveTab による切替に戻した。永続キャッシュ（firebase.ts）とナビ4グループは維持。
+- 変更理由: 本番でタブが反応しない重大リグレッションの復旧。
+- 影響範囲: 管理画面のタブ切替挙動のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: Radix Tabs は forceMount を付けると常時表示になり keep-alive 用途には使えない。再挑戦する場合は「Radix外で全パネルを描画し activeTab で表示制御」等の別実装にし、必ず Preview で検証すること。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（本番復旧のため即マージ）
