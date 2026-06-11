@@ -106,13 +106,6 @@ export default function AdminDashboard() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     prep: false, progress: false, results: false, settings: false,
   });
-  // keep-alive: 一度開いたタブはアンマウントせず保持し、再表示を高速化
-  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(["setup"]));
-  const selectTab = (value: string) => {
-    setActiveTab(value);
-    setMountedTabs((prev) => (prev.has(value) ? prev : new Set(prev).add(value)));
-  };
-  const keepMounted = (value: string): true | undefined => (mountedTabs.has(value) ? true : undefined);
   const [isOnline, setIsOnline] = useState(true);
   const [authRetryCount, setAuthRetryCount] = useState(0);
   const [clearing, setClearing] = useState(false);
@@ -882,7 +875,7 @@ export default function AdminDashboard() {
                           return (
                             <button
                               key={item.value}
-                              onClick={() => selectTab(item.value)}
+                              onClick={() => setActiveTab(item.value)}
                               title={item.label}
                               className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
                                 ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
@@ -971,7 +964,7 @@ export default function AdminDashboard() {
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               {/* 各タブのコンテンツ */}
-              <TabsContent value="setup" className="space-y-6" forceMount={keepMounted("setup")}>
+              <TabsContent value="setup" className="space-y-6">
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-sky-400">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1016,7 +1009,7 @@ export default function AdminDashboard() {
                 <TournamentDebug />
               </TabsContent>
 
-              <TabsContent value="control" className="space-y-6" forceMount={keepMounted("control")}>
+              <TabsContent value="control" className="space-y-6">
                 <Card className="bg-white border-slate-200 shadow-sm">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1310,19 +1303,19 @@ export default function AdminDashboard() {
               </TabsContent>
 
               {/* 他のタブも背景色(bg-white)を確保しているため、既存コンポーネントの表示が改善されます */}
-              <TabsContent value="players" className="space-y-6" forceMount={keepMounted("players")}>
+              <TabsContent value="players" className="space-y-6">
                 <PlayerManager readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="groupranking" className="space-y-6" forceMount={keepMounted("groupranking")}>
+              <TabsContent value="groupranking" className="space-y-6">
                 <GroupRankingManager />
               </TabsContent>
 
-              <TabsContent value="results" className="space-y-6" forceMount={keepMounted("results")}>
+              <TabsContent value="results" className="space-y-6">
                 <ResultsTab />
               </TabsContent>
 
-              <TabsContent value="results-list" className="space-y-6" forceMount={keepMounted("results-list")}>
+              <TabsContent value="results-list" className="space-y-6">
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-sky-400">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1336,27 +1329,27 @@ export default function AdminDashboard() {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="bracket" className="space-y-6" forceMount={keepMounted("bracket")}>
+              <TabsContent value="bracket" className="space-y-6">
                 <VisualBracket />
               </TabsContent>
 
-              <TabsContent value="awards" className="space-y-6" forceMount={keepMounted("awards")}>
+              <TabsContent value="awards" className="space-y-6">
                 <AwardsTab />
               </TabsContent>
 
-              <TabsContent value="pairseed" className="space-y-6" forceMount={keepMounted("pairseed")}>
+              <TabsContent value="pairseed" className="space-y-6">
                 <PairSeedManager readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="groupedit" className="space-y-6" forceMount={keepMounted("groupedit")}>
+              <TabsContent value="groupedit" className="space-y-6">
                 <PreliminaryGroupEditor readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="messages" className="space-y-6" forceMount={keepMounted("messages")}>
+              <TabsContent value="messages" className="space-y-6">
                 <MessageManager readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="safety" className="space-y-6" forceMount={keepMounted("safety")}>
+              <TabsContent value="safety" className="space-y-6">
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-amber-400">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1405,7 +1398,7 @@ export default function AdminDashboard() {
                 <SafetyTab />
               </TabsContent>
 
-              <TabsContent value="team_battle" className="space-y-6" forceMount={keepMounted("team_battle")}>
+              <TabsContent value="team_battle" className="space-y-6">
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-violet-400">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
@@ -1422,7 +1415,7 @@ export default function AdminDashboard() {
                 </Card>
               </TabsContent>
 
-<TabsContent value="advanced" className="space-y-6" forceMount={keepMounted("advanced")}>
+<TabsContent value="advanced" className="space-y-6">
                 <AdvancedAnalytics campId={camp.id} />
               </TabsContent>
             </Tabs>
