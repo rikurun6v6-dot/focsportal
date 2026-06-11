@@ -816,11 +816,11 @@ export default function AdminDashboard() {
         <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-slate-200 shadow-sm transition-all duration-300 z-[120] flex flex-col w-64 ${isExpanded ? 'md:w-64' : 'md:w-16'} ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
           <div className="p-3 border-b border-slate-200 flex items-center justify-center relative">
             <Image
-              src="/new-logo_transparent.png"
-              alt="Logo"
+              src="/app-icon.png"
+              alt="Foc's Portal"
               width={40}
               height={40}
-              className="object-cover brightness-130 saturate-170"
+              className="object-cover rounded-lg shadow-sm"
             />
             {!isOnline && (
               <div

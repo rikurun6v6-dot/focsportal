@@ -159,3 +159,15 @@
 - 影響範囲: 管理画面の各タブの読み込みタイミングのみ（初回開いた時に該当チャンクを取得・一瞬「読み込み中…」表示）。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: 対象は全て default export。ssr:false は admin が "use client" のため可。さらに減らすなら他タブも同様に変換可能。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
+
+## 2026-06-11 — [検証中] アプリアイコン/ブランドロゴを新ロゴに刷新
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/new-app-icon / #14（★Previewで見た目確認後マージ）
+- 変更内容: 新ロゴ（キツネ＋シャトルの濃紺ラウンドタイル）を全アイコンに適用。
+  - sharp で `public/icon-192.png` / `icon-512.png` / `apple-touch-icon.png`(180) / `app-icon.png`(256・アプリ内用) を生成。
+  - アプリ内ロゴ参照を `new-logo_transparent.png` → `app-icon.png` に変更（サイドバー/トップ/ユーザー画面）。古い色補正フィルタ(brightness/saturate)を除去し `rounded-*`＋影で“なじむ”小タイル表示に。
+  - 通知アイコン（`user/page.tsx`・`public/sw.js`）を `icon-192.png` に統一。
+- 変更理由: アプリアイコンとアプリ内ロゴを新ブランドに統一したい（なじむ形で）。
+- 影響範囲: アイコン画像とロゴ参照のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★Previewで見た目（特に白背景上のロゴのなじみ）を確認後にマージ。`src/app/favicon.ico` は旧アイコンのまま（タブ表示は metadata の icon-192 が使われる）。アプリ内を「キツネのマークのみ・透過」にしたい場合は元画像の透過版が必要。
+- オーナー承認: （Preview確認→承認待ち）
