@@ -150,3 +150,12 @@
 - 影響範囲: 合宿リスト画面のデータ取得方式のみ。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: 空スナップショットでの上書き防止ガードは維持。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
+
+## 2026-06-11 — [最適化D] 重い/低頻度タブの遅延読み込み（dynamic import）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/lazy-load-tabs / #13
+- 変更内容: `app/admin/page.tsx` で 9コンポーネント（VisualBracket/AwardsTab/PairSeedManager/GroupRankingManager/PreliminaryGroupEditor/SafetyTab/AdvancedAnalytics/TeamTournamentGenerator/MessageManager）を `next/dynamic`（ssr:false, loading=読み込み中…）で遅延読み込みに変更。初回表示の setup/control/results/players は即時のまま。
+- 変更理由: 初回ロードのJSを削減し、管理画面の表示を軽くする（最適化D）。
+- 影響範囲: 管理画面の各タブの読み込みタイミングのみ（初回開いた時に該当チャンクを取得・一瞬「読み込み中…」表示）。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: 対象は全て default export。ssr:false は admin が "use client" のため可。さらに減らすなら他タブも同様に変換可能。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
