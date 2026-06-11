@@ -182,3 +182,16 @@
 - 影響範囲: 自動コート割り当ての選択順のみ。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★実データ（進行中の大会）で「コートが空かない」「部門の偏りが自然」を Preview で確認後マージ。未対応の発見（休息3系統の整理・getAdjacentCourtDivisionsの命名・divisionPreference係数の綱引き・finalsWaitMode遊休）は別途。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-12 — [検証中] コート割り当てロジック整理（休息/命名/部門バランス/決勝遊休）＋全貌ドキュメント
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/dispatcher-cleanup / #16（★Previewで実データ確認後マージ）
+- 変更内容:
+  - (a) 休息モデル整理: `updatePlayersRestTime` に player5/6 を追加（3人組の休息が効かないバグ修正）＋dispatcher に休息モデル（available_at=明示 / last_match_finished_at=自動2段階）の明確化コメント。
+  - (b) `getAdjacentCourtDivisions` → `getActiveCourtDivisions` に改名（実態は全コート対象）＋未使用の courtNumber 引数を削除。
+  - (c) 部門バランスの綱引き解消: コート別 divisionPreference(+150) があるコートは隣接ペナルティを適用しない（排他）。ない場合のみ隣接ペナルティ。
+  - (d) 決勝センターコートの遊休回避: 優先コート待ちの決勝を `return null` で遊ばせる代わりに「候補から除外」し、非優先コートは別試合を取れるように。
+  - `docs/court-dispatch-logic.md` 新規: 割り当てロジックの全貌（パイプライン/スコアリング/休息/部門/ラウンド/決勝/団体戦/混合/config）。
+- 影響範囲: 自動割り当ての選定挙動（dispatcher.ts）＋休息記録（firestore-helpers.ts）＋ドキュメント。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★実データで「部門の散らばり」「決勝でコートが遊ばない」「3人組の休息が効く」を Preview 確認後マージ。
+- オーナー承認: （Preview検証→承認待ち）
