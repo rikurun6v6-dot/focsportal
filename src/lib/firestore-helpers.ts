@@ -1279,6 +1279,14 @@ export const getAllCamps = async (currentUserId?: string): Promise<Camp[]> => {
 };
 
 /**
+ * [最適化B] 合宿リストをリアルタイム購読（onSnapshot）。
+ * 5秒ポーリングの置き換え用。created_at 降順。永続キャッシュからは即時に描画される。
+ */
+export function subscribeToCamps(callback: (camps: Camp[]) => void) {
+  return subscribeToCollection<Camp>('camps', callback, [orderBy('created_at', 'desc')]);
+}
+
+/**
  * 特定の合宿を「アクティブ（開催中）」にする
  * ユーザー画面にはこの合宿が表示されるようになる
  */

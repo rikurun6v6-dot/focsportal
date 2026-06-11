@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { createCamp, getAllCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData, updateCamp, saveCampDayCourtCounts, switchCampDay, getCampCourtCountForDay } from "@/lib/firestore-helpers";
+import { createCamp, subscribeToCamps, activateCamp, setupCampCourts, archiveCamp, unarchiveCamp, deleteCamp, deleteCompleteCampData, updateCamp, saveCampDayCourtCounts, switchCampDay, getCampCourtCountForDay } from "@/lib/firestore-helpers";
 import { auth } from "@/lib/firebase";
 import { useCamp } from "@/context/CampContext";
 import type { Camp } from "@/types";
@@ -141,37 +141,21 @@ export default function CampManager() {
         return () => unsubscribe();
     }, []);
 
-    // 一覧をリアルタイム購読
+    // 一覧をリアルタイム購読（[最適化B] 5秒ポーリング → onSnapshot）
     useEffect(() => {
-        const loadCamps = async () => {
-            try {
-                const data = await getAllCamps(currentUserId || undefined);
-
-                // データ蒸発防止: 空データでの上書きを防ぐ
-                if (data.length === 0 && camps.length > 0) {
+        const unsubscribe = subscribeToCamps((data) => {
+            setCamps((prev) => {
+                // データ蒸発防止: 空データでの上書きを防ぐ（既存があるのに空が来たら保持）
+                if (data.length === 0 && prev.length > 0) {
                     console.log('[CampManager] 空データを検知、既存データを保持');
-                    return; // 既存のcampsを維持
+                    return prev;
                 }
-
-                // データがある場合、または初回読み込みの場合は更新
-                setCamps(data);
-                console.log('[CampManager] 合宿リスト更新:', data.length, '件');
-            } catch (error) {
-                console.error('[CampManager] 合宿リスト取得エラー:', error);
-                // エラー時は既存データを維持（上書きしない）
-            }
-        };
-
-        // 初回読み込み
-        loadCamps();
-
-        // 5秒ごとに再読み込み（リアルタイム更新）
-        const interval = setInterval(() => {
-            loadCamps();
-        }, 5000);
-
-        return () => clearInterval(interval);
-    }, [currentUserId, camps.length]);
+                console.log('[CampManager] 合宿リスト更新(realtime):', data.length, '件');
+                return data;
+            });
+        });
+        return () => unsubscribe();
+    }, []);
 
     // 新規作成
     const handleCreate = async () => {

@@ -121,3 +121,12 @@
 - 影響範囲: 管理画面のナビ/レイアウトのみ。タブの中身・データは不変。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★リスク配慮で**本番マージ前に Vercel Preview（特にスマホ実機）で検証**する。上部固定領域 pt-[136px] の縦圧迫（項目4）は未対応・別途。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-11 — [最適化B・検証中] 合宿リストをポーリング→onSnapshot化（未マージ）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/camp-realtime-v2 / #10（★Previewで検証後にマージ）
+- 変更内容: `lib/firestore-helpers.ts` に `subscribeToCamps`（onSnapshot購読）を追加。`components/admin/CampManager.tsx` の5秒ポーリングをリアルタイム購読に置換（getAllCamps import 撤去）。
+- 変更理由: 無駄な再取得の削減・即時反映（最適化B）。
+- 影響範囲: 合宿リスト画面のデータ取得方式のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★Previewで合宿の作成/更新/日切替が即時反映されるか確認後にマージ。空スナップショットでの上書き防止ガードは維持。
+- オーナー承認: （Preview検証→承認待ち）
