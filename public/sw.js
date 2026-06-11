@@ -35,7 +35,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title ?? '🏸 試合呼び出し！', {
       body: data.body ?? 'コートへお越しください',
-      icon: '/new-logo_transparent.png',
+      icon: '/icon-192.png',
       tag: data.tag ?? 'match-calling',
       requireInteraction: true,
       data: { url: '/user' }

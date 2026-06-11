@@ -14,11 +14,11 @@ export default function HomePage() {
                 <div className="text-center space-y-4">
                     <div className="flex items-center justify-center gap-3 mb-6">
                         <Image
-                            src="/new-logo_transparent.png"
+                            src="/app-icon.png"
                             alt="Foc's Portal Logo"
-                            width={48}
-                            height={48}
-                            className="object-cover brightness-130 saturate-170"
+                            width={56}
+                            height={56}
+                            className="object-cover rounded-xl shadow-md"
                         />
                         <h1 className="text-4xl md:text-5xl font-black text-slate-800">
                             Foc's Portal

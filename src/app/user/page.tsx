@@ -218,7 +218,7 @@ export default function UserDashboard() {
         if (!notifEnabledRef.current || !('Notification' in window) || Notification.permission !== 'granted') return;
         const opts: NotificationOptions = {
             body,
-            icon: '/new-logo_transparent.png',
+            icon: '/icon-192.png',
             tag,
             requireInteraction: tag === 'match-calling',
         };
@@ -752,11 +752,11 @@ export default function UserDashboard() {
                     {/* 左: ロゴ + プレイヤー名 */}
                     <div className="flex items-center gap-1.5 min-w-0 flex-shrink">
                         <Image
-                            src="/new-logo_transparent.png"
-                            alt="Logo"
-                            width={28}
-                            height={28}
-                            className="object-cover brightness-140 saturate-180 flex-shrink-0"
+                            src="/app-icon.png"
+                            alt="Foc's Portal"
+                            width={30}
+                            height={30}
+                            className="object-cover rounded-md shadow-sm flex-shrink-0"
                         />
                         <div className="min-w-0">
                             <h1 className="text-[10px] font-bold text-slate-400 leading-none mb-0.5 whitespace-nowrap">Foc's Portal</h1>
