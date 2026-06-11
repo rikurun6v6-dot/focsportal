@@ -121,3 +121,14 @@
 - 影響範囲: 管理画面のナビ/レイアウトのみ。タブの中身・データは不変。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★リスク配慮で**本番マージ前に Vercel Preview（特にスマホ実機）で検証**する。上部固定領域 pt-[136px] の縦圧迫（項目4）は未対応・別途。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-11 — [検証中] スマホ横はみ出し＆ステータスバー位置の修正
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/mobile-overflow / #12（★Previewでスマホ確認後マージ）
+- 不具合: iOS Safari でページが横にはみ出し、コンテンツが左右に収まらない／`fixed` のステータスバー(StatusBar)がはみ出し領域の右端に張り付いて変な位置に見える。
+- 原因/対応:
+  - `app/globals.css`: `html, body { overflow-x: clip; max-width: 100% }` を追加。clip は overflow:hidden と違い sticky/fixed を壊さずに横はみ出しのみ抑制。これで横スクロールが消え、StatusBar も正位置に固定される。
+  - トースト(sonner)の `min-width: 320px / 400px` 固定をレスポンシブ化（`min(…, calc(100vw - 2rem))`）。スマホ幅超過によるはみ出し誘発を防止。
+- 影響範囲: 全ページのbody overflow挙動とトースト幅。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★Previewをスマホ実機で確認後にマージ。overflow-x: clip により万一はみ出す要素があれば右側がクリップされる（その場合は該当要素を個別にレスポンシブ化する）。
+- オーナー承認: （Preview検証→承認待ち）

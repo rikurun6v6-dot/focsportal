@@ -24,6 +24,16 @@
      もし消えてしまっていたら、元のglobals.cssから戻す必要があります */
 }
 
+/* スマホでの横はみ出し(横スクロール)防止。
+   overflow-x: clip は overflow: hidden と違い、sticky/fixed の挙動やスクロール位置を壊さずに
+   ビューポート外（オフキャンバスのドロワー等）への横方向のはみ出しだけを抑制する。
+   これにより iOS Safari で content が左右に収まり、fixed のステータスバーも正位置に固定される。 */
+html,
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
 /* もしダークモード対応などが消えている場合は、ここに追加してください */
 
 @keyframes slide-in {
@@ -60,7 +70,7 @@
   font-size: 1rem !important; /* text-base */
   font-weight: 500 !important;
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3) !important;
-  min-width: 320px !important;
+  min-width: min(320px, calc(100vw - 2rem)) !important; /* スマホ幅を超えないように */
 }
 
 [data-sonner-toast][data-styled="true"] [data-content] {
@@ -134,7 +144,7 @@
 
 /* 試合更新通知（特大） */
 .toast-match-update {
-  min-width: 400px !important;
+  min-width: min(400px, calc(100vw - 2rem)) !important; /* スマホ幅を超えないように */
   padding: 1.5rem !important;
   border-width: 3px !important;
   border-color: rgb(251, 191, 36) !important; /* amber-400 */
