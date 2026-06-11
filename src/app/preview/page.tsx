@@ -113,6 +113,8 @@ function PreviewContent() {
   // ── auto-page ────────────────────────────────────────────────────────────
   const activeCourts = courts.filter((c) => c.is_active);
   const totalPages = Math.max(1, Math.ceil(activeCourts.length / COURTS_PER_PAGE));
+  // ページ数に応じて切替間隔を変更（4ページ以上=4秒, 3ページ=5秒, それ未満=8秒）
+  const pageIntervalMs = totalPages >= 4 ? 4000 : totalPages >= 3 ? 5000 : PAGE_INTERVAL_MS;
 
   useEffect(() => {
     // ページ数が変わったとき範囲外になっていたらリセット
@@ -123,9 +125,9 @@ function PreviewContent() {
     if (totalPages <= 1) return;
     const t = setInterval(() => {
       setPage((p) => (p + 1) % totalPages);
-    }, PAGE_INTERVAL_MS);
+    }, pageIntervalMs);
     return () => clearInterval(t);
-  }, [totalPages]);
+  }, [totalPages, pageIntervalMs]);
 
   // ── ETA ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -228,7 +230,7 @@ function PreviewContent() {
               background: 'linear-gradient(90deg, #6366f1, #06b6d4)',
               filter: 'blur(6px)',
               opacity: 0.6,
-              animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
+              animation: `growBar ${pageIntervalMs}ms linear forwards`,
             }}
           />
           {/* Gradient fill */}
@@ -239,7 +241,7 @@ function PreviewContent() {
               height: 4,
               width: '0%',
               background: 'linear-gradient(90deg, #6366f1, #a855f7, #06b6d4)',
-              animation: `growBar ${PAGE_INTERVAL_MS}ms linear forwards`,
+              animation: `growBar ${pageIntervalMs}ms linear forwards`,
             }}
           />
         </div>
