@@ -9,6 +9,33 @@ import type { Match, Player, Config } from '@/types';
 /** ラウンド係数（ラウンドが若いほど優先）デフォルト値 */
 export const ROUND_COEFFICIENT = 100;
 
+/**
+ * 決勝T 同一ラウンド内の「ブラケット順ボーナス」の最大点。
+ * ラウンド境界（roundWeight=100）を超えないよう 60 に固定。
+ * トーナメント規模（8/16/32試合）に依らず最大差を一定にするため、
+ * bracket_order を「ラウンド内順位（0〜1）」に正規化して 0〜BRACKET_ORDER_BONUS_MAX に写像する。
+ */
+export const BRACKET_ORDER_BONUS_MAX = 60;
+
+/**
+ * 決勝T 同一ラウンド内の自然な出場順（左上→左下→右上→右下）を表すボーナス。
+ * - bracket_order（0始まり, 上ほど小）＋ bracket_order_count（そのラウンドの試合数）を使い、
+ *   先頭=+BRACKET_ORDER_BONUS_MAX、末尾=+0 に正規化。規模に依らず最大差は常に一定。
+ * - bracket_order 未設定（旧データ）は match_number ベースの微小フォールバック（規模差を作らないよう極小）。
+ */
+export function calcBracketOrderBonus(match: Match): number {
+  const order = (match as Match & { bracket_order?: number }).bracket_order;
+  const count = (match as Match & { bracket_order_count?: number }).bracket_order_count;
+  if (typeof order !== 'number') {
+    // 旧データ用フォールバック: match_number 昇順をごく弱く反映（規模差を作らないため極小・上限あり）
+    const mn = match.match_number ?? 0;
+    return -Math.min(mn, 100) * 0.05;
+  }
+  if (typeof count !== 'number' || count <= 1) return BRACKET_ORDER_BONUS_MAX;
+  const normalized = 1 - order / (count - 1); // 先頭=1, 末尾=0
+  return normalized * BRACKET_ORDER_BONUS_MAX;
+}
+
 /** スコア計算フェーズ */
 export type ScorePhase = 'preliminary_first' | 'preliminary_mid' | 'knockout';
 
@@ -289,10 +316,12 @@ function calcKnockoutScore(match: Match, ctx: ScoreContext): number {
     if (boostValue && expiresAt && now < expiresAt) categoryBoost = boostValue;
   }
 
-  // 同一ラウンド内の順序タイブレーカー（match_number が小さい方が優先）
-  const matchOrderTiebreak = -(match.match_number ?? 0);
+  // 同一ラウンド内の自然な出場順（左上→左下→右上→右下）。
+  // bracket_order を「ラウンド内順位 0〜1」に正規化し最大 BRACKET_ORDER_BONUS_MAX(=60) のボーナスに。
+  // 規模に依らず最大差は一定で、ラウンド境界(100)は超えない（ラウンド優先は維持）。
+  const bracketOrderBonus = calcBracketOrderBonus(match);
 
-  return roundScore + waitTime + divisionBonus + categoryBoost + matchOrderTiebreak;
+  return roundScore + waitTime + divisionBonus + categoryBoost + bracketOrderBonus;
 }
 
 /**
