@@ -195,6 +195,15 @@ export function generateTournamentBracket(pairCount: number): {
 /**
  * シングルス参加者リストを取得
  */
+/**
+ * 選手の「実効部」を返す。種目ごとの例外（division_overrides）があればそれを優先し、
+ * なければ既定の division を使う。
+ */
+export function getEffectiveDivision(player: Player, tournamentType: TournamentType): Division {
+  const ov = player.division_overrides?.[tournamentType];
+  return (ov === 1 || ov === 2) ? ov : player.division;
+}
+
 export function getEligiblePlayersForSingles(
   players: Player[],
   gender: Gender,

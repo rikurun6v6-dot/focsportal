@@ -209,3 +209,16 @@
 - 影響範囲: 決勝T のスコアリングと knockout 生成（bracket_order の保存）。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★既存の生成済み大会には bracket_order が無い→旧フォールバック（match_number極小）で動作。新規生成分から正規化が効く。実データで「同ラウンドが表の順で出るか」「ラウンド優先・休息が壊れないか」を Preview 確認。team_battle は未対応（必要なら別途）。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-12 — [検証中] 種目ごとの部(1部/2部)の例外設定（division_overrides）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/per-event-division / #18（★Previewで確認後マージ）
+- 変更内容:
+  - `types/index.ts`: `Player.division_overrides?: Partial<Record<TournamentType, Division>>` を追加（既定は `Player.division`、種目ごとに上書き）。
+  - `lib/tournament-generator.ts`: `getEffectiveDivision(player, type)` を追加（override 優先・なければ division）。
+  - `components/admin/TournamentGenerator.tsx`: 生成時の選手フィルタを `p.division === division` → `getEffectiveDivision(p, type) === division` に変更（単発・一括の両方をカバー。L364の1箇所で両対応）。
+  - `components/admin/PlayerManager.tsx`: 各選手行に「種目別の部（例外）」ボタン＋件数バッジを追加。ダイアログで性別別の対象種目（S/D/混合）ごとに 既定/1部/2部 を選択。既定と同じ値は保存しない。
+- 変更理由: 同一人物が種目ごとに 1部/2部 を変えたい（例外）要望。
+- 影響範囲: 選手データ（任意フィールド追加・後方互換）／大会生成の選手選別／PlayerManager UI。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★Previewで「例外を設定→その種目だけ実効部が変わって生成されるか」を確認。team_battle は対象外。CSV では未対応（UIのみ）。マッチの division は種目の部のまま（実効部で選別された選手がその部の試合に入る）。
+- オーナー承認: （Preview検証→承認待ち）

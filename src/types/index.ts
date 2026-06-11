@@ -45,6 +45,8 @@ export interface Player {
   name: string;
   gender: Gender;
   division: Division;
+  /** 種目ごとの部の例外（既定は division）。実効部 = division_overrides?.[種目] ?? division */
+  division_overrides?: Partial<Record<TournamentType, Division>>;
   team_id: string; // Team ID for team battles
   is_active: boolean; // false if player has withdrawn
   total_points?: number; // Phase 9: Accumulated points
