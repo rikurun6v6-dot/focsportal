@@ -1,0 +1,6 @@
+# CODEOWNERS — このリポジトリの全変更はオーナーのレビュー承認を必須とする
+# 詳細ルールは /CLAUDE.md を参照。
+# ブランチ保護ルールセットの "Require review from Code Owners" と組み合わせて、
+# master へのマージにはオーナー (@rikurun6v6-dot) の承認を強制する。
+
+* @rikurun6v6-dot
