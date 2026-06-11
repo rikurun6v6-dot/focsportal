@@ -29,9 +29,10 @@ import SafetyTab from "@/components/admin/SafetyTab";
 import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
 import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division, TeamGroup } from "@/types";
-import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight } from "lucide-react";
+import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight, Medal } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
+import AwardsTab from "@/components/admin/AwardsTab";
 import MessageManager from "@/components/admin/MessageManager";
 import { Toaster } from "sonner";
 import { toastSuccess, toastError, toastInfo } from "@/lib/toast";
@@ -793,6 +794,7 @@ export default function AdminDashboard() {
               { value: "results", label: "コート結果", icon: Activity },
               { value: "results-list", label: "結果一覧", icon: BarChart3 },
               { value: "bracket", label: "トーナメント表", icon: Trophy },
+              { value: "awards", label: "表彰", icon: Medal },
               { value: "pairseed", label: "ペア・シード", icon: Settings },
               { value: "groupedit", label: "予選配置編集", icon: ArrowLeftRight },
               { value: "messages", label: "メッセージ", icon: MessageCircle },
@@ -1257,6 +1259,10 @@ export default function AdminDashboard() {
 
               <TabsContent value="bracket" className="space-y-6">
                 <VisualBracket />
+              </TabsContent>
+
+              <TabsContent value="awards" className="space-y-6">
+                <AwardsTab />
               </TabsContent>
 
               <TabsContent value="pairseed" className="space-y-6">
