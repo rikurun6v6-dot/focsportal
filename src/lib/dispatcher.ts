@@ -30,8 +30,6 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const assignedMatchIds = new Set<string>();
   // 団体戦マルチコート: このループで既に確保済みのコートIDを追跡
   const claimedCourtIds = new Set<string>();
-  // バッチ内で割り当てた部を追跡（スタート時など全コート空でも部の偏りを防ぐ）
-  const batchAssignedDivisions: number[] = [];
 
   // 全体の待機試合数で「試合数の多い部」を判定（中間コートに割り当てる dominant division）
   const div1Total = waitingMatches.filter(m => m.division === 1).length;
@@ -57,12 +55,11 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
     if (claimedCourtIds.has(court.id)) continue;
 
     const divPref = courtDivisionPreference.get(court.id);
-    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, batchAssignedDivisions, divPref);
+    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, divPref);
     if (assigned) {
       dispatchedCount++;
       assignedMatchIds.add(assigned.id);
       claimedCourtIds.add(court.id);
-      if (assigned.division) batchAssignedDivisions.push(assigned.division);
       const idx = waitingMatches.findIndex(m => m.id === assigned.id);
       if (idx >= 0) waitingMatches.splice(idx, 1);
 
@@ -94,7 +91,6 @@ export async function dispatchToEmptyCourt(
   waitingMatches: Match[],
   defaultRestMinutes: number = 10,
   assignedMatchIds: Set<string> = new Set(),
-  batchAssignedDivisions: number[] = [],
   divisionPreference?: 1 | 2
 ): Promise<Match | null> {
   const now = Date.now();
@@ -307,12 +303,14 @@ export async function dispatchToEmptyCourt(
   // 全員休息済みのカードがあればそれだけ使う。なければ全validMatchesで（連続試合フォールバック）
   const restFilteredMatches = restedMatches.length > 0 ? restedMatches : validMatches;
 
-  // ラウンド順序の厳守: 両選手が揃っている待機試合を基準にラウンド下限を計算
-  // validMatches（空き・休息チェック後）ではなく waitingMatches（選手IDあり・enabled済）を使うことで、
-  // 下位ラウンドの選手が休息中でも上位ラウンドを先出しさせない
-  // グループキーに group フィールドを含める: 予選グループA/B/Cが互いにブロックしないようにする
+  // ラウンド順序: グループごとに「今すぐ出せる」試合の最小ラウンドを下限にする。
+  // [コート稼働優先] 基準を waitingMatches（busy/休息中も含む全待機）ではなく
+  // restFilteredMatches（空き・休息チェック後＝今すぐ出せる試合）にすることで、
+  // 最小ラウンドの試合が他コートで試合中／休息中で出せない場合は、
+  // 出せる次のラウンドを解放してコートを空けない（水平進行よりコート稼働を優先）。
+  // グループキーに group フィールドを含める: 予選グループA/B/Cが互いにブロックしないようにする。
   const minRoundByGroup = new Map<string, number>();
-  for (const match of waitingMatches) {
+  for (const match of restFilteredMatches) {
     if (!match.player1_id || !match.player2_id) continue; // 選手未確定の枠はスキップ
     const groupKey = getGroupKey(match);
     const existing = minRoundByGroup.get(groupKey);
@@ -336,12 +334,13 @@ export async function dispatchToEmptyCourt(
       })
     : roundFilteredMatches;
 
-  // 隣接コートの部門を取得（既存コート + 今回のバッチ割り当て分を合算）
+  // 使用中コートの部門を取得（部門バランス制御用）。
+  // Firestore 再取得（awaited write 反映済み）が唯一の真実なので、これだけを使う。
+  // ※ 以前は batchAssignedDivisions をマージしていたが、バッチで割り当て済みのコートが
+  //   「再取得分」と「batch分」で二重計上され、ペナルティが過剰に効くバグがあったため撤去。
   const allCourts = await getAllDocuments<Court>('courts');
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
-  const existingCourtDivisions = getAdjacentCourtDivisions(court.number, campCourts, allMatches);
-  // バッチ内で既に割り当てた部をマージ（スタート時など全コート空でも偏り防止が効く）
-  const adjacentCourtDivisions = [...existingCourtDivisions, ...batchAssignedDivisions];
+  const adjacentCourtDivisions = getAdjacentCourtDivisions(court.number, campCourts, allMatches);
 
   // 混合ダブルスのコート制限チェック
   const mixedDoublesActive = waitingMatches.some(m => m.tournament_type === 'mixed_doubles');

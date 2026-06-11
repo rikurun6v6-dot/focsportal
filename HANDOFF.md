@@ -171,3 +171,14 @@
 - 影響範囲: アイコン画像とロゴ参照のみ。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★Previewで見た目（特に白背景上のロゴのなじみ）を確認後にマージ。`src/app/favicon.ico` は旧アイコンのまま（タブ表示は metadata の icon-192 が使われる）。アプリ内を「キツネのマークのみ・透過」にしたい場合は元画像の透過版が必要。
 - オーナー承認: （Preview確認→承認待ち）
+
+## 2026-06-12 — [検証中] コート割り当てロジック修正（コート稼働優先＋部門バランス二重計上バグ）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/dispatcher-fixes / #15（★Previewで実データ確認後マージ）
+- 不具合/分析: ①最小ラウンドの試合がブロック中(busy/休息)でも上位ラウンドを出さず、コートが空いたまま待機していた（`minRoundByGroup` を全待機 `waitingMatches` から計算していたため）。②部門バランスの隣接ペナルティが「Firestore再取得分」と「batchAssignedDivisions分」で二重計上され過剰に効いていた。
+- 変更内容（`lib/dispatcher.ts`）:
+  - ①[コート稼働優先] `minRoundByGroup` の基準を `waitingMatches` → `restFilteredMatches`（今すぐ出せる試合）に変更。最小ラウンドがブロック中なら出せる次ラウンドを解放。水平進行はやや崩れるが対戦の正しさ（選手確定）は保たれる。
+  - ②二重計上を撤去。`adjacentCourtDivisions` は Firestore 再取得分のみ（awaited write 反映済みで唯一の真実）。`batchAssignedDivisions` の仕組み（autoDispatchAll の追跡・引数）を削除。
+- 影響範囲: 自動コート割り当ての選択順のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★実データ（進行中の大会）で「コートが空かない」「部門の偏りが自然」を Preview で確認後マージ。未対応の発見（休息3系統の整理・getAdjacentCourtDivisionsの命名・divisionPreference係数の綱引き・finalsWaitMode遊休）は別途。
+- オーナー承認: （Preview検証→承認待ち）
