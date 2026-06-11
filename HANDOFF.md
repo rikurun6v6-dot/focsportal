@@ -141,3 +141,12 @@
 - 影響範囲: Firestore の通信方式のみ。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: 特定回線/プロキシ環境で接続が不安定になる場合は revert（ForceLongPolling に戻す）。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
+
+## 2026-06-11 — [最適化B] 合宿リストをポーリング→onSnapshot化
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/camp-realtime-v2 / #10
+- 変更内容: `lib/firestore-helpers.ts` に `subscribeToCamps`（onSnapshot購読）を追加。`components/admin/CampManager.tsx` の5秒ポーリングをリアルタイム購読に置換（getAllCamps import 撤去）。
+- 変更理由: 無駄な再取得の削減・即時反映（最適化B）。
+- 影響範囲: 合宿リスト画面のデータ取得方式のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: 空スナップショットでの上書き防止ガードは維持。
+- オーナー承認: rikurun6v6-dot / 2026-06-11（即マージ指示）
