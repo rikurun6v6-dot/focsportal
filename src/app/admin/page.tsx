@@ -20,20 +20,13 @@ import ResultsTab from "@/components/admin/ResultsTab";
 import PlayerManager from "@/components/admin/PlayerManager";
 import AdminGuard from "@/components/admin/AdminGuard";
 import TournamentTypeControl from "@/components/admin/TournamentTypeControl";
-import VisualBracket from "@/components/admin/VisualBracket";
-import PairSeedManager from "@/components/admin/PairSeedManager";
-import GroupRankingManager from "@/components/admin/GroupRankingManager";
-import PreliminaryGroupEditor from "@/components/admin/PreliminaryGroupEditor";
+import dynamic from "next/dynamic";
 import TournamentDebug from "@/components/admin/TournamentDebug";
-import SafetyTab from "@/components/admin/SafetyTab";
-import AdvancedAnalytics from "@/components/admin/AdvancedAnalytics";
-import TeamTournamentGenerator from "@/components/admin/TeamTournamentGenerator";
+// 重い/低頻度のタブは [最適化D] 遅延読み込み（下部の dynamic() 定義を参照）
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division, TeamGroup } from "@/types";
 import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight, Medal, ChevronDown, ChevronRight } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
-import AwardsTab from "@/components/admin/AwardsTab";
-import MessageManager from "@/components/admin/MessageManager";
 import { Toaster } from "sonner";
 import { toastSuccess, toastError, toastInfo } from "@/lib/toast";
 import StatusBar from "@/components/admin/StatusBar";
@@ -45,6 +38,21 @@ import { getRoundName } from "@/lib/formatters";
 import { subscribeToCollection, getPlayerById } from "@/lib/firestore-helpers";
 import type { Court, Player } from "@/types";
 // Player is used in create3rdPlaceMatch
+
+// [最適化D] 重い/低頻度タブの遅延読み込み（初回ロードを軽くする）。
+// 初回表示される setup/control/results/players は即時読み込みのまま。
+const TabLoading = () => (
+  <div className="py-16 text-center text-slate-400 text-sm">読み込み中...</div>
+);
+const VisualBracket = dynamic(() => import("@/components/admin/VisualBracket"), { loading: TabLoading, ssr: false });
+const AwardsTab = dynamic(() => import("@/components/admin/AwardsTab"), { loading: TabLoading, ssr: false });
+const PairSeedManager = dynamic(() => import("@/components/admin/PairSeedManager"), { loading: TabLoading, ssr: false });
+const GroupRankingManager = dynamic(() => import("@/components/admin/GroupRankingManager"), { loading: TabLoading, ssr: false });
+const PreliminaryGroupEditor = dynamic(() => import("@/components/admin/PreliminaryGroupEditor"), { loading: TabLoading, ssr: false });
+const SafetyTab = dynamic(() => import("@/components/admin/SafetyTab"), { loading: TabLoading, ssr: false });
+const AdvancedAnalytics = dynamic(() => import("@/components/admin/AdvancedAnalytics"), { loading: TabLoading, ssr: false });
+const TeamTournamentGenerator = dynamic(() => import("@/components/admin/TeamTournamentGenerator"), { loading: TabLoading, ssr: false });
+const MessageManager = dynamic(() => import("@/components/admin/MessageManager"), { loading: TabLoading, ssr: false });
 
 const GUIDE_SEEN_KEY = 'focs_guide_seen';
 
