@@ -98,3 +98,12 @@
 - 影響範囲: preview 画面のページ送りタイミングのみ。`tsc --noEmit` 通過。
 - 注意点 / 引き継ぎ事項: 閾値は totalPages = ceil(activeCourts/3) 基準。COURTS_PER_PAGE=3。
 - オーナー承認: rikurun6v6-dot / 2026-06-11（オーナー本人の変更のため即マージ）
+
+## 2026-06-11 — [最適化A・検証中] Firestore通信を AutoDetect long polling に変更（未マージ）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/firestore-autodetect-polling / #7（★Previewで検証後にマージ）
+- 変更内容: `lib/firebase.ts` の `experimentalForceLongPolling: true` を `experimentalAutoDetectLongPolling: true` に変更。通常はWebChannelで高速、必要な回線でのみロングポーリングへ自動フォールバック。
+- 変更理由: 常時ロングポーリングが通信を遅くしていたため、全体高速化（最適化A）。
+- 影響範囲: Firestore の通信方式のみ。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★リスク配慮のため**本番マージ前に Vercel Preview で実機検証**する。特定回線/プロキシ環境で接続が不安定になる場合は revert（ForceLongPolling に戻す）。問題なければマージ。
+- オーナー承認: （Preview検証→承認待ち）
