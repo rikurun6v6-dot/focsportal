@@ -52,10 +52,11 @@ const GUIDE_SEEN_KEY = 'focs_guide_seen';
 const NAV_GROUPS: {
   key: string;
   label: string;
+  icon: React.ComponentType<{ className?: string }>;
   items: { value: string; label: string; icon: React.ComponentType<{ className?: string }> }[];
 }[] = [
   {
-    key: 'prep', label: '準備',
+    key: 'prep', label: '準備', icon: Settings,
     items: [
       { value: 'setup', label: '初期設定', icon: Settings },
       { value: 'players', label: '選手', icon: Users },
@@ -65,14 +66,14 @@ const NAV_GROUPS: {
     ],
   },
   {
-    key: 'progress', label: '進行',
+    key: 'progress', label: '進行', icon: Play,
     items: [
       { value: 'control', label: '操作', icon: Play },
       { value: 'results', label: 'コート結果', icon: Activity },
     ],
   },
   {
-    key: 'results', label: '結果',
+    key: 'results', label: '結果', icon: Trophy,
     items: [
       { value: 'groupranking', label: '予選順位', icon: BarChart3 },
       { value: 'results-list', label: '結果一覧', icon: BarChart3 },
@@ -81,7 +82,7 @@ const NAV_GROUPS: {
     ],
   },
   {
-    key: 'settings', label: '設定・その他',
+    key: 'settings', label: '設定・その他', icon: Lock,
     items: [
       { value: 'messages', label: 'メッセージ', icon: MessageCircle },
       { value: 'safety', label: '安全', icon: ShieldAlert },
@@ -101,10 +102,17 @@ export default function AdminDashboard() {
   const [finalsWaitMode, setFinalsWaitMode] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState("setup");
   const [isExpanded, setIsExpanded] = useState(false);
-  // サイドバーのグループ開閉状態（既定: 準備/進行/結果は開、設定・その他は閉）
+  // サイドバーのグループ開閉状態（既定: 全グループ閉じておく）
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    prep: true, progress: true, results: true, settings: false,
+    prep: false, progress: false, results: false, settings: false,
   });
+  // keep-alive: 一度開いたタブはアンマウントせず保持し、再表示を高速化
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(["setup"]));
+  const selectTab = (value: string) => {
+    setActiveTab(value);
+    setMountedTabs((prev) => (prev.has(value) ? prev : new Set(prev).add(value)));
+  };
+  const keepMounted = (value: string): true | undefined => (mountedTabs.has(value) ? true : undefined);
   const [isOnline, setIsOnline] = useState(true);
   const [authRetryCount, setAuthRetryCount] = useState(0);
   const [clearing, setClearing] = useState(false);
@@ -832,49 +840,65 @@ export default function AdminDashboard() {
           </button>
 
           <nav className="flex-1 overflow-y-auto py-2">
-            {NAV_GROUPS.map((group, gi) => {
-              // アクティブなタブを含むグループは常に開いて見せる
-              const groupHasActive = group.items.some((it) => it.value === activeTab);
-              const isOpen = openGroups[group.key] || groupHasActive;
-              return (
-                <div key={group.key} className={gi > 0 ? 'border-t border-slate-100 mt-1 pt-1' : ''}>
-                  {/* グループ見出し: サイドバー展開時のみ表示・クリックで開閉 */}
-                  {isExpanded ? (
+            {/* 折りたたみ時(バーガー閉): グループの代表アイコン4個のみ表示。クリックで展開＋そのグループを開く */}
+            {!isExpanded
+              ? NAV_GROUPS.map((group) => {
+                  const GroupIcon = group.icon;
+                  const groupHasActive = group.items.some((it) => it.value === activeTab);
+                  return (
                     <button
-                      onClick={() => setOpenGroups((s) => ({ ...s, [group.key]: !isOpen }))}
-                      className="w-full px-3 py-2 flex items-center justify-between text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wide"
+                      key={group.key}
+                      onClick={() => {
+                        setIsExpanded(true);
+                        setOpenGroups((s) => ({ ...s, [group.key]: true }));
+                      }}
+                      title={group.label}
+                      className={`w-full px-3 py-4 flex items-center justify-center transition-all ${groupHasActive
+                        ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                        : 'text-slate-600 hover:bg-slate-50'
+                        }`}
                     >
-                      <span>{group.label}</span>
-                      {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      <GroupIcon className={`w-5 h-5 shrink-0 ${groupHasActive ? 'text-indigo-600' : ''}`} />
                     </button>
-                  ) : (
-                    gi > 0 && <div className="h-px" />
-                  )}
-                  {/* 項目: 展開時は開いているグループのみ、折りたたみ時は全アイコン表示 */}
-                  {(isExpanded ? isOpen : true) &&
-                    group.items.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = activeTab === item.value;
-                      return (
-                        <button
-                          key={item.value}
-                          onClick={() => setActiveTab(item.value)}
-                          title={item.label}
-                          className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
-                            ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
-                            : 'text-slate-600 hover:bg-slate-50'
-                            }`}
-                        >
-                          <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
-                          <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100 pl-1' : 'hidden'}`}>
-                            {item.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-              );
-            })}
+                  );
+                })
+              : /* 展開時(バーガー開): グループ見出し4個。既定で閉。クリックで開閉 */
+                NAV_GROUPS.map((group, gi) => {
+                  const isOpen = openGroups[group.key];
+                  const groupHasActive = group.items.some((it) => it.value === activeTab);
+                  return (
+                    <div key={group.key} className={gi > 0 ? 'border-t border-slate-100 mt-1 pt-1' : ''}>
+                      <button
+                        onClick={() => setOpenGroups((s) => ({ ...s, [group.key]: !isOpen }))}
+                        className={`w-full px-3 py-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wide ${groupHasActive ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                        <span>{group.label}</span>
+                        {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </button>
+                      {isOpen &&
+                        group.items.map((item) => {
+                          const Icon = item.icon;
+                          const isActive = activeTab === item.value;
+                          return (
+                            <button
+                              key={item.value}
+                              onClick={() => selectTab(item.value)}
+                              title={item.label}
+                              className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
+                                ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                                : 'text-slate-600 hover:bg-slate-50'
+                                }`}
+                            >
+                              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
+                              <span className="text-sm font-medium whitespace-nowrap overflow-hidden pl-1">
+                                {item.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  );
+                })}
           </nav>
 
           {/* ヘルプボタン（サイドバー下部） */}
@@ -947,7 +971,7 @@ export default function AdminDashboard() {
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               {/* 各タブのコンテンツ */}
-              <TabsContent value="setup" className="space-y-6">
+              <TabsContent value="setup" className="space-y-6" forceMount={keepMounted("setup")}>
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-sky-400">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -992,7 +1016,7 @@ export default function AdminDashboard() {
                 <TournamentDebug />
               </TabsContent>
 
-              <TabsContent value="control" className="space-y-6">
+              <TabsContent value="control" className="space-y-6" forceMount={keepMounted("control")}>
                 <Card className="bg-white border-slate-200 shadow-sm">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1286,19 +1310,19 @@ export default function AdminDashboard() {
               </TabsContent>
 
               {/* 他のタブも背景色(bg-white)を確保しているため、既存コンポーネントの表示が改善されます */}
-              <TabsContent value="players" className="space-y-6">
+              <TabsContent value="players" className="space-y-6" forceMount={keepMounted("players")}>
                 <PlayerManager readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="groupranking" className="space-y-6">
+              <TabsContent value="groupranking" className="space-y-6" forceMount={keepMounted("groupranking")}>
                 <GroupRankingManager />
               </TabsContent>
 
-              <TabsContent value="results" className="space-y-6">
+              <TabsContent value="results" className="space-y-6" forceMount={keepMounted("results")}>
                 <ResultsTab />
               </TabsContent>
 
-              <TabsContent value="results-list" className="space-y-6">
+              <TabsContent value="results-list" className="space-y-6" forceMount={keepMounted("results-list")}>
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-sky-400">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1312,27 +1336,27 @@ export default function AdminDashboard() {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="bracket" className="space-y-6">
+              <TabsContent value="bracket" className="space-y-6" forceMount={keepMounted("bracket")}>
                 <VisualBracket />
               </TabsContent>
 
-              <TabsContent value="awards" className="space-y-6">
+              <TabsContent value="awards" className="space-y-6" forceMount={keepMounted("awards")}>
                 <AwardsTab />
               </TabsContent>
 
-              <TabsContent value="pairseed" className="space-y-6">
+              <TabsContent value="pairseed" className="space-y-6" forceMount={keepMounted("pairseed")}>
                 <PairSeedManager readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="groupedit" className="space-y-6">
+              <TabsContent value="groupedit" className="space-y-6" forceMount={keepMounted("groupedit")}>
                 <PreliminaryGroupEditor readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="messages" className="space-y-6">
+              <TabsContent value="messages" className="space-y-6" forceMount={keepMounted("messages")}>
                 <MessageManager readOnly={isArchived} />
               </TabsContent>
 
-              <TabsContent value="safety" className="space-y-6">
+              <TabsContent value="safety" className="space-y-6" forceMount={keepMounted("safety")}>
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-amber-400">
                   <CardHeader>
                     <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
@@ -1381,7 +1405,7 @@ export default function AdminDashboard() {
                 <SafetyTab />
               </TabsContent>
 
-              <TabsContent value="team_battle" className="space-y-6">
+              <TabsContent value="team_battle" className="space-y-6" forceMount={keepMounted("team_battle")}>
                 <Card className="bg-white border-slate-200 shadow-sm border-t-4 border-t-violet-400">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
@@ -1398,7 +1422,7 @@ export default function AdminDashboard() {
                 </Card>
               </TabsContent>
 
-<TabsContent value="advanced" className="space-y-6">
+<TabsContent value="advanced" className="space-y-6" forceMount={keepMounted("advanced")}>
                 <AdvancedAnalytics campId={camp.id} />
               </TabsContent>
             </Tabs>

@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { getFirestore, initializeFirestore, Firestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from "firebase/firestore";
 import { getAuth, signInAnonymously, Auth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -17,8 +17,14 @@ let db: Firestore;
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
   // Task 2: 通信の「超」安定化 - Long Polling
+  // 永続ローカルキャッシュ（IndexedDB）を有効化し、画面切り替え時の再取得を高速化＋オフライン対応。
+  // persistentMultipleTabManager で複数タブ（管理画面＋プレビュー等）でもキャッシュを共有。
+  // IndexedDB はブラウザ専用のため、SSR/ビルド時（window 不在）はキャッシュ設定を付けない。
   db = initializeFirestore(app, {
     experimentalForceLongPolling: true,
+    ...(typeof window !== "undefined"
+      ? { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }
+      : {}),
   });
 } else {
   app = getApp();
