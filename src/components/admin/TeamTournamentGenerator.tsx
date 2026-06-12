@@ -60,14 +60,6 @@ type FinalFormat = 'placement' | 'knockout';
 const LS_KEY = 'ttg_state_v1';
 const FS_COLLECTION = 'team_tournament_states';
 
-function loadFromLocalStorage(): Record<string, unknown> | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const s = localStorage.getItem(LS_KEY);
-    return s ? JSON.parse(s) : null;
-  } catch { return null; }
-}
-
 export default function TeamTournamentGenerator() {
   const { camp } = useCamp();
 
@@ -106,6 +98,23 @@ export default function TeamTournamentGenerator() {
     if (s.manualRanksByGroup) setManualRanksByGroup(s.manualRanksByGroup as Record<string, string[]>);
   };
 
+  // この合宿に団体戦の保存データが無いときの初期化（前の合宿の状態を引き継がない）
+  const resetState = () => {
+    setTeams(DEFAULT_TEAMS);
+    setConfig(DEFAULT_CONFIG);
+    setGroupCount(2);
+    setQualifiersPerGroup(2);
+    setFinalFormat('placement');
+    setPhase('setup');
+    setTeamGroupAssignments({});
+    setPrelimEncounters([]);
+    setPlacementEncounters([]);
+    setKnockoutEncounters([]);
+    setBronzeEncounter(null);
+    setJankenWinners({});
+    setManualRanksByGroup({});
+  };
+
   // Firestoreからロード（campが変わるたびに）
   useEffect(() => {
     if (!camp?.id) return;
@@ -116,13 +125,12 @@ export default function TeamTournamentGenerator() {
         if (saved) {
           applyState(saved);
         } else {
-          // localStorageからマイグレーション
-          const ls = loadFromLocalStorage();
-          if (ls) applyState(ls);
+          // この合宿には団体戦データが無い → 初期化（前合宿の localStorage を引き継がない）
+          resetState();
         }
       } catch {
-        const ls = loadFromLocalStorage();
-        if (ls) applyState(ls);
+        // 取得失敗時も前合宿の状態を表示しないよう初期化
+        resetState();
       }
       setStateLoaded(true);
     };
