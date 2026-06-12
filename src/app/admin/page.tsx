@@ -949,7 +949,6 @@ export default function AdminDashboard() {
                 >
                   <Menu className="w-5 h-5" />
                 </button>
-                <Shield className="w-6 h-6 text-sky-500 shrink-0" />
                 <div className="flex flex-col md:flex-row md:items-end md:gap-2 leading-none">
                   <h1 className="text-lg md:text-2xl font-bold text-slate-800">
                     Foc's Portal
