@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   collection,
   addDoc,
@@ -20,8 +21,8 @@ import {
   writeBatch
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Users, Trash2, UserMinus, UserPlus, Upload, Loader2 } from "lucide-react";
-import type { Player } from "@/types";
+import { Users, Trash2, UserMinus, UserPlus, Upload, Loader2, SlidersHorizontal } from "lucide-react";
+import type { Player, TournamentType, Division } from "@/types";
 import { useCamp } from "@/context/CampContext";
 import { parsePlayersCSV } from "@/lib/csv-parser"; // 👈 修正1: 複数形(Players)でインポート
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
@@ -38,6 +39,56 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
   const [newDivision, setNewDivision] = useState<"1" | "2">("1");
   const [loading, setLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  // 種目ごとの部の例外（division_overrides）編集用
+  const [overridePlayer, setOverridePlayer] = useState<Player | null>(null);
+  const [overrideDraft, setOverrideDraft] = useState<Partial<Record<TournamentType, Division>>>({});
+
+  // 性別に応じた対象種目（団体戦は対象外）
+  const eventsForGender = (gender: string): { type: TournamentType; label: string }[] =>
+    gender === 'female'
+      ? [
+          { type: 'womens_singles', label: '女子シングルス' },
+          { type: 'womens_doubles', label: '女子ダブルス' },
+          { type: 'mixed_doubles', label: '混合ダブルス' },
+        ]
+      : [
+          { type: 'mens_singles', label: '男子シングルス' },
+          { type: 'mens_doubles', label: '男子ダブルス' },
+          { type: 'mixed_doubles', label: '混合ダブルス' },
+        ];
+
+  const openOverride = (player: Player) => {
+    setOverridePlayer(player);
+    setOverrideDraft({ ...(player.division_overrides ?? {}) });
+  };
+
+  const handleSaveOverrides = async () => {
+    if (!overridePlayer) return;
+    // 既定の部と同じ値は例外として保存しない（クリーンに保つ）
+    const cleaned: Partial<Record<TournamentType, Division>> = {};
+    (Object.keys(overrideDraft) as TournamentType[]).forEach((t) => {
+      const v = overrideDraft[t];
+      if ((v === 1 || v === 2) && v !== overridePlayer.division) cleaned[t] = v;
+    });
+    try {
+      await updateDoc(doc(db, 'players', overridePlayer.id!), { division_overrides: cleaned });
+      toastSuccess(`${overridePlayer.name} の種目別の部を保存しました`);
+      setOverridePlayer(null);
+    } catch (e) {
+      console.error('Error saving division overrides:', e);
+      toastError('保存に失敗しました');
+    }
+  };
+
+  const overrideCount = (player: Player): number => {
+    const ov = player.division_overrides;
+    if (!ov) return 0;
+    return (Object.keys(ov) as TournamentType[]).filter((t) => {
+      const v = ov[t];
+      return (v === 1 || v === 2) && v !== player.division;
+    }).length;
+  };
 
   // 選手一覧をリアルタイム取得
   useEffect(() => {
@@ -322,7 +373,22 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
                           {player.is_active ? <span className="font-bold text-xs">参加中</span> : <UserMinus className="w-4 h-4" />}
                         </Button>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openOverride(player)}
+                          disabled={readOnly}
+                          className="relative text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                          title="種目別の部（例外）を設定"
+                        >
+                          <SlidersHorizontal className="w-4 h-4" />
+                          {overrideCount(player) > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 bg-indigo-500 text-white text-[10px] leading-none rounded-full w-4 h-4 flex items-center justify-center">
+                              {overrideCount(player)}
+                            </span>
+                          )}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -342,6 +408,60 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
         </CardContent>
       </Card>
       </div>
+
+      {/* 種目ごとの部の例外（division_overrides）設定ダイアログ */}
+      <Dialog open={!!overridePlayer} onOpenChange={(o) => { if (!o) setOverridePlayer(null); }}>
+        <DialogContent className="bg-white">
+          <DialogHeader>
+            <DialogTitle>
+              種目別の部（例外）— {overridePlayer?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {overridePlayer && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-500">
+                既定は <span className="font-bold text-slate-700">{overridePlayer.division}部</span>。
+                この選手だけ、種目ごとに部を変えたい場合に設定します（変更した種目だけ例外として保存）。
+              </p>
+              {eventsForGender(overridePlayer.gender).map((ev) => {
+                const current = overrideDraft[ev.type]; // 1 | 2 | undefined
+                const effective = (current === 1 || current === 2) ? current : overridePlayer.division;
+                return (
+                  <div key={ev.type} className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2">
+                    <span className="text-sm font-medium text-slate-700">{ev.label}</span>
+                    <div className="flex gap-1">
+                      {([['default', '既定'], ['1', '1部'], ['2', '2部']] as const).map(([val, label]) => {
+                        const isSel = val === 'default' ? !(current === 1 || current === 2) : Number(val) === current;
+                        return (
+                          <Button
+                            key={val}
+                            size="sm"
+                            variant={isSel ? 'default' : 'outline'}
+                            className={isSel ? 'bg-indigo-500 hover:bg-indigo-600 text-white h-8 px-3' : 'h-8 px-3'}
+                            onClick={() => setOverrideDraft((d) => {
+                              const next = { ...d };
+                              if (val === 'default') delete next[ev.type];
+                              else next[ev.type] = Number(val) as Division;
+                              return next;
+                            })}
+                          >
+                            {label}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <span className="text-xs text-slate-400 w-12 text-right">→ {effective}部</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverridePlayer(null)}>キャンセル</Button>
+            <Button className="bg-emerald-500 hover:bg-emerald-600 text-white" onClick={handleSaveOverrides} disabled={readOnly}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { collection, query, where, writeBatch, doc, serverTimestamp, Timestamp, updateDoc, setDoc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
-import { generateRandomPairs, generateMixedPairs, generateSinglesMatches } from "@/lib/tournament-generator";
+import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEffectiveDivision } from "@/lib/tournament-generator";
 import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-helpers";
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
@@ -360,8 +360,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           currentState.tournamentType.includes("mens") ? "male" :
             "mixed";
 
-      // レベルでフィルタリング
-      let targetPlayers = players.filter(p => p.division === division);
+      // レベルでフィルタリング（種目ごとの部の例外 division_overrides を考慮した「実効部」で判定）
+      let targetPlayers = players.filter(p => getEffectiveDivision(p, currentState.tournamentType) === division);
 
       console.log('[トーナメント生成] レベルフィルタ後:', {
         division,
