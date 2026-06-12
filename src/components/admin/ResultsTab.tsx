@@ -28,6 +28,7 @@ import type { Match, Court, MatchWithPlayers, Team, Player, Config } from '@/typ
 import { buildScoreContext, calcMatchScore, getGroupKey } from '@/lib/matchScoring';
 import { diagnoseWaitingMatches, type MatchDiagnostic } from '@/lib/dispatcher';
 import { getRoundName } from '@/lib/formatters';
+import { where } from 'firebase/firestore';
 import { useCamp } from '@/context/CampContext';
 import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp, Pencil, Check, X, ArrowLeftRight } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
@@ -81,14 +82,15 @@ export default function ResultsTab() {
     return () => clearInterval(timer);
   }, []);
 
-  // 団体戦チーム名を取得
+  // 団体戦チーム名を取得（この合宿のチームのみ。他合宿の団体戦データ混入を防ぐ）
   useEffect(() => {
-    getAllDocuments<Team>('teams').then(teams => {
+    if (!camp) return;
+    getAllDocuments<Team>('teams', [where('campId', '==', camp.id)]).then(teams => {
       const map: Record<string, string> = {};
       teams.forEach(t => { map[t.id] = t.name; });
       setTeamsMap(map);
     }).catch(() => {});
-  }, []);
+  }, [camp]);
 
   // 休憩中の試合を取得
   useEffect(() => {
