@@ -222,3 +222,11 @@
 - 影響範囲: 選手データ（任意フィールド追加・後方互換）／大会生成の選手選別／PlayerManager UI。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★Previewで「例外を設定→その種目だけ実効部が変わって生成されるか」を確認。team_battle は対象外。CSV では未対応（UIのみ）。マッチの division は種目の部のまま（実効部で選別された選手がその部の試合に入る）。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-12 — UI微修正: 管理ダッシュボードヘッダーの Shield アイコンを削除
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/remove-header-shield / #19
+- 変更内容: `app/admin/page.tsx` ダッシュボードヘッダーの「Foc's Portal」左にあった Shield（盾）アイコンを削除。合宿選択画面ヘッダーの Shield は維持（import も継続使用）。
+- 変更理由: 「Foc's Portal の左の縦みたいなアイコンを消して」との要望。
+- 影響範囲: 管理画面ヘッダーの見た目のみ。`npm run build` 成功。
+- オーナー承認: rikurun6v6-dot / 2026-06-12（即マージ）
