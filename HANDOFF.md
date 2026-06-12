@@ -230,3 +230,15 @@
 - 変更理由: 「Foc's Portal の左の縦みたいなアイコンを消して」との要望。
 - 影響範囲: 管理画面ヘッダーの見た目のみ。`npm run build` 成功。
 - オーナー承認: rikurun6v6-dot / 2026-06-12（即マージ）
+
+## 2026-06-12 — 修正: 団体戦チームの合宿分離＋管理ヘッダー盾削除(adminも)
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/team-camp-isolation / #20
+- 不具合: `teams` コレクションを campId 無しで全合宿取得していた3箇所（`ResultsTab`/`preview`/`AwardsTab`）があり、前の合宿の団体戦チームが現在の合宿に混入していた。
+- 変更内容:
+  - `components/admin/ResultsTab.tsx` / `app/preview/page.tsx` / `components/admin/AwardsTab.tsx`: teams 取得に `where('campId','==', camp.id/campId)` を追加し当該合宿のチームのみに限定。preview/ResultsTab は依存配列も campId/camp に修正＋ガード。
+  - `app/admin/page.tsx`: 合宿選択画面ヘッダー「Foc's Portal Admin」左の Shield アイコンも削除（未使用になった Shield import も除去）。
+- 変更理由: 「団体戦の結果が前の合宿のが入る」「adminの盾も消して」。
+- 影響範囲: 団体戦チーム名の取得スコープ／ヘッダー見た目。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: 団体戦タブ(TeamBattle)・team_battles は元々 campId 済み。今回は teams 名前マップの混入を解消。なお ResultsTab の maxRoundByType は全合宿 matches から算出している箇所が残る（ラベル用・別途検討）。
+- オーナー承認: rikurun6v6-dot / 2026-06-12（即マージ）

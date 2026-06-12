@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCamp } from "@/context/CampContext";
 import { getAllMatches, getAllPlayers, getAllDocuments } from "@/lib/firestore-helpers";
+import { where } from "firebase/firestore";
 import {
   computeAllPodiums,
   getCategoryLabel,
@@ -31,7 +32,7 @@ export default function AwardsTab() {
       const [matches, players, teams] = await Promise.all([
         getAllMatches(camp.id),
         getAllPlayers(camp.id),
-        getAllDocuments<Team>("teams"),
+        getAllDocuments<Team>("teams", [where("campId", "==", camp.id)]),
       ]);
       const playersMap = new Map<string, Player>(players.map((p) => [p.id, p]));
       const teamsMap = new Map<string, string>(teams.map((t) => [t.id, t.name]));

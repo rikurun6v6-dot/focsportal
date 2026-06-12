@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { where } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   subscribeToCourts,
@@ -87,12 +88,14 @@ function PreviewContent() {
 
   // ── teams ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    getAllDocuments<Team>('teams').then(teams => {
+    if (!campId) return;
+    // この合宿のチームのみ取得（他合宿の団体戦データが混ざらないように）
+    getAllDocuments<Team>('teams', [where('campId', '==', campId)]).then(teams => {
       const map = new Map<string, string>();
       teams.forEach(t => map.set(t.id, t.name));
       setTeamsMap(map);
     }).catch(() => {});
-  }, []);
+  }, [campId]);
 
   // ── Firestore subscriptions ───────────────────────────────────────────────
   useEffect(() => {

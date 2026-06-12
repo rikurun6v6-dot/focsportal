@@ -24,7 +24,7 @@ import dynamic from "next/dynamic";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 // 重い/低頻度のタブは [最適化D] 遅延読み込み（下部の dynamic() 定義を参照）
 import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Match, TournamentType, Division, TeamGroup } from "@/types";
-import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Shield, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight, Medal, ChevronDown, ChevronRight } from "lucide-react";
+import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Home, Menu, ArrowLeft, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, ArrowLeftRight, Medal, ChevronDown, ChevronRight } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
 import { Toaster } from "sonner";
@@ -776,7 +776,6 @@ export default function AdminDashboard() {
           <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
             <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Shield className="w-6 h-6 text-sky-500 shrink-0" />
                 <h1 className="text-lg md:text-2xl font-bold text-slate-800">Foc's Portal Admin</h1>
               </div>
               <Link href="/">
