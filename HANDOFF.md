@@ -242,3 +242,15 @@
 - 影響範囲: 団体戦チーム名の取得スコープ／ヘッダー見た目。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: 団体戦タブ(TeamBattle)・team_battles は元々 campId 済み。今回は teams 名前マップの混入を解消。なお ResultsTab の maxRoundByType は全合宿 matches から算出している箇所が残る（ラベル用・別途検討）。
 - オーナー承認: rikurun6v6-dot / 2026-06-12（即マージ）
+
+## 2026-06-12 — 修正(本命): 団体戦が前の合宿の結果を表示する不具合
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/team-tournament-camp-reset / #21
+- 不具合: `TeamTournamentGenerator`（団体戦タブ）が、新しい合宿に `team_tournament_states/{camp.id}` の保存が無いとき、**合宿スコープでない単一 localStorage キー `ttg_state_v1` から前合宿の状態（チーム/対戦/結果）を読み込んで表示**していた（クロス合宿リーク）。前回の teams 名前マップ修正(#20)とは別の真因。
+- 変更内容: `components/admin/TeamTournamentGenerator.tsx`:
+  - `resetState()` を追加（全 persist 状態をデフォルトに戻す）。
+  - ロード時、当該合宿の保存が無い（または取得失敗）の場合は `loadFromLocalStorage()` フォールバックを廃止し `resetState()` で初期化。未使用になった `loadFromLocalStorage` を削除。
+- 変更理由: 「団体戦の結果が前の合宿のが勝手に入ってる」。
+- 影響範囲: 団体戦タブの状態ロードのみ。保存は引き続き FS(`team_tournament_states/{camp.id}`) が真実。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: localStorage(`ttg_state_v1`)への保存処理自体は残置（読み込まないので無害）。永続キャッシュにより通常 getDocument は当該合宿のキャッシュを返すため、saved=null は「本当に未作成の合宿」を意味する。
+- オーナー承認: rikurun6v6-dot / 2026-06-12（即マージ）
