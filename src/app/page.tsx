@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { User } from "lucide-react";
+import { User, Lock } from "lucide-react";
 
 export default function HomePage() {
     return (
@@ -62,8 +62,18 @@ export default function HomePage() {
                     </Link>
                 </div>
 
+                {/* 運営者向けの小さな導線（目立たない・PIN保護あり） */}
+                <div className="text-center pt-1">
+                    <Link href="/admin">
+                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-600 text-xs gap-1.5">
+                            <Lock className="w-3 h-3" />
+                            運営者ログイン
+                        </Button>
+                    </Link>
+                </div>
+
                 {/* フッター */}
-                <div className="text-center text-sm text-slate-700 pt-5">
+                <div className="text-center text-sm text-slate-700 pt-2">
                     <p>© 2026 Foc's Portal | The 4th executive team</p>
                 </div>
             </div>
