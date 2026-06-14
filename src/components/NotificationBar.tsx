@@ -60,7 +60,7 @@ export default function NotificationBar({
       // 次フレームで visible=true にすることでスライドインが発火
       const mountTimer = setTimeout(() => {
         setVisible((prev) => ({ ...prev, [item.id]: true }));
-        // 到着直後は "fresh" 扱い → 5秒後に解除
+        // 到着直後は "fresh" 扱い（目立つアニメ）→ 10秒後に解除（見逃し防止で延長）
         setFreshIds((prev) => new Set(prev).add(item.id));
         setTimeout(() => {
           setFreshIds((prev) => {
@@ -68,17 +68,18 @@ export default function NotificationBar({
             next.delete(item.id);
             return next;
           });
-        }, 5000);
+        }, 10000);
       }, 16);
 
       if (item.status === 'playing') {
+        // 試合中通知: 10秒→30秒に延長（短くて見逃すため）
         const hideTimer = setTimeout(() => {
           setVisible((prev) => ({ ...prev, [item.id]: false }));
-        }, 10000);
+        }, 30000);
         const dismissTimer = setTimeout(() => {
           onDismiss(item.id);
           processedIdsRef.current.delete(item.id);
-        }, 10400);
+        }, 30400);
         timersRef.current[item.id] = [mountTimer, hideTimer, dismissTimer];
       } else if (item.status === 'info') {
         const hideTimer = setTimeout(() => {

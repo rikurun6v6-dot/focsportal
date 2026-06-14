@@ -271,3 +271,11 @@
 - 影響範囲: 団体戦タブの設定UIのみ。生成ロジックは既定構成を使用。`npm run build` 成功。
 - 注意点: TeamMatchConfigEditor.tsx ファイル自体は残置（参照無し）。既定構成を変えたい場合は DEFAULT_CONFIG を編集。
 - オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
+
+## 2026-06-14 — UI: 通知バーの表示時間を延長（見逃し防止）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/notif-longer / #24
+- 変更内容: `components/NotificationBar.tsx` の自動消去時間を延長。`playing`(試合中)通知 10秒→30秒、新着ハイライト(fresh) 5秒→10秒。`calling`(呼び出し)は従来どおり自動消去なし（手動Xまで残る）。`info` は30秒据え置き。
+- 変更理由: 「トップの通知バーが短くて見逃す」との要望。
+- 影響範囲: 通知バーの表示時間のみ。`npm run build` 成功。
+- オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
