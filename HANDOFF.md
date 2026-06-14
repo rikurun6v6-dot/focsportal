@@ -262,3 +262,12 @@
 - 変更理由: 管理者カードを以前消した(導線非表示)が、運営者用に控えめな導線を下部に出したいとの要望。
 - 影響範囲: トップページの見た目のみ。`npm run build` 成功。
 - オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
+
+## 2026-06-14 — 団体戦の「種目構成設定」UIを削除
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/remove-team-match-config / #23
+- 変更内容: `TeamTournamentGenerator` から `TeamMatchConfigEditor`（団体戦の種目構成=games 編集UI）を削除。構成は既定 `DEFAULT_CONFIG`（MD/WD/XD/MS/WS 各1＝5サブマッチ）で固定。`config`/`setConfig` 自体は buildGameSlots・保存ロードで継続使用。
+- 変更理由: 「団体戦の種目構成設定はいらない」との要望。
+- 影響範囲: 団体戦タブの設定UIのみ。生成ロジックは既定構成を使用。`npm run build` 成功。
+- 注意点: TeamMatchConfigEditor.tsx ファイル自体は残置（参照無し）。既定構成を変えたい場合は DEFAULT_CONFIG を編集。
+- オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
