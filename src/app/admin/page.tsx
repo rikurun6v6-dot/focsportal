@@ -76,8 +76,8 @@ const NAV_GROUPS: {
   {
     key: 'progress', label: '進行', icon: Play,
     items: [
+      { value: 'live', label: '進行中', icon: Activity },
       { value: 'control', label: '操作', icon: Play },
-      { value: 'results', label: 'コート結果', icon: Activity },
     ],
   },
   {
@@ -108,7 +108,7 @@ export default function AdminDashboard() {
   const [dispatching, setDispatching] = useState(false);
   const [isSequentialMode, setIsSequentialMode] = useState(false);
   const [finalsWaitMode, setFinalsWaitMode] = useState<{ [key: string]: boolean }>({});
-  const [activeTab, setActiveTab] = useState("setup");
+  const [activeTab, setActiveTab] = useState("live");
   const [isExpanded, setIsExpanded] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false); // スマホ用ドロワーの開閉
   // サイドバーのグループ開閉状態（既定: 全グループ閉じておく。アクティブなグループは自動で開く）
@@ -1344,7 +1344,31 @@ export default function AdminDashboard() {
                 <GroupRankingManager />
               </TabsContent>
 
-              <TabsContent value="results" className="space-y-6">
+              <TabsContent value="live" className="space-y-4">
+                {/* 進行中: 自動割り当てON/OFF ＋ コート結果（入力）を1画面に集約 */}
+                <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${autoDispatchEnabled ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      {autoDispatchEnabled && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>}
+                      <span className={`relative inline-flex rounded-full h-3 w-3 ${autoDispatchEnabled ? 'bg-sky-500' : 'bg-slate-300'}`}></span>
+                    </span>
+                    <div className="min-w-0">
+                      <p className={`font-bold text-sm md:text-base ${autoDispatchEnabled ? 'text-sky-700' : 'text-slate-600'}`}>
+                        自動割り当て: {autoDispatchEnabled ? 'ON（稼働中）' : 'OFF（停止中）'}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {autoDispatchEnabled ? '空きコートに自動で試合を割り当てています' : '自動割り当ては停止中です'}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={toggleAutoDispatch}
+                    disabled={isArchived}
+                    className={`shrink-0 ${autoDispatchEnabled ? 'bg-rose-500 hover:bg-rose-600' : 'bg-sky-500 hover:bg-sky-600'} text-white`}
+                  >
+                    {autoDispatchEnabled ? '停止' : '開始'}
+                  </Button>
+                </div>
                 <ResultsTab />
               </TabsContent>
 
