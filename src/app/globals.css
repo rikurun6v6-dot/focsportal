@@ -169,6 +169,15 @@ body {
   animation: card-pulse 2s ease-in-out 3;
 }
 
+/* コートに新しく試合が割り当てられた（calling）間、ふちをアンバーで点滅ハイライト */
+@keyframes court-assigned-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0.45); }
+}
+.court-assigned {
+  animation: court-assigned-pulse 1.4s ease-in-out infinite;
+}
+
 /* スクロールバー非表示 */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

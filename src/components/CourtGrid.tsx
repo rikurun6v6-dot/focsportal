@@ -227,6 +227,7 @@ export default function CourtGrid() {
       {courts.map((court) => {
         const isOccupied = !!court.current_match_id;
         const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
+        const isCalling = match?.status === 'calling'; // 新しく割り当てられた直後（選手待ち）
 
         const courtNumber = court.number || court.id.replace('court_', '');
 
@@ -235,9 +236,11 @@ export default function CourtGrid() {
             key={court.id}
             className={`
               relative flex flex-col items-center justify-between p-3 rounded-lg border transition-all duration-300 min-h-[180px]
-              ${isOccupied
-                ? "bg-sky-50 border-sky-200 shadow-sm"
-                : "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-300 border-dashed hover:shadow-md hover:border-emerald-200 hover:from-emerald-50 hover:to-white"
+              ${isCalling
+                ? "bg-amber-50 border-amber-400 ring-2 ring-amber-300 shadow-md court-assigned"
+                : isOccupied
+                  ? "bg-sky-50 border-sky-200 shadow-sm"
+                  : "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-300 border-dashed hover:shadow-md hover:border-emerald-200 hover:from-emerald-50 hover:to-white"
               }
             `}
           >

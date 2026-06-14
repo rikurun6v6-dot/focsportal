@@ -288,3 +288,11 @@
 - 影響範囲: 団体戦の対戦カード表示のみ。内部の slot id（MD_1等）や勝敗集計は不変。`npm run build` 成功。
 - 注意点: DEFAULT_CONFIG の games（5試合）はそのまま（type は slot id 用の内部値として残るが画面非表示）。試合数を変えたい場合は DEFAULT_CONFIG.games を編集。
 - オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
+
+## 2026-06-14 — UI: 新しく割り当てられたコートのふちをハイライト（管理/ユーザー両方）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/court-assigned-highlight / #26
+- 変更内容: コートの試合が `calling`（割り当て直後・選手待ち）の間、コートカードのふちをアンバーで点滅ハイライト。`globals.css` に `@keyframes court-assigned-pulse` ＋ `.court-assigned` を追加。`components/CourtGrid.tsx`（ユーザー画面）と `components/admin/ResultsTab.tsx`（コート別結果）の両方でカードに `isCalling` 時 `border-amber-400 ring-2 ring-amber-300 court-assigned` を付与。playing になると解除。
+- 変更理由: 「新しく試合が割り当てられたらコートのふちがハイライトして気づけるように」。
+- 影響範囲: コートカードの見た目のみ。`npm run build` 成功。
+- オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
