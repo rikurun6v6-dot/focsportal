@@ -322,3 +322,16 @@
 - 影響範囲: 管理ナビの構成と既定タブ。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★既定タブ変更＋集約のため Preview で確認後マージ。ResultsTab は live タブ内のみで描画（results タブは廃止）。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-14 — [検証中] トーナメント表から「次に優先してコート割り当て」
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/priority-dispatch / #31（★Previewで実データ確認後マージ）
+- 変更内容:
+  - `types/index.ts`: `Match.priority_dispatch?: boolean` を追加。
+  - `lib/dispatcher.ts`: `dispatchToEmptyCourt` で validMatches のうち priority_dispatch 付きを最優先で割り当て（ラウンド順・性別・部の制約を無視）。割り当て後にフラグをクリア。複数あればスコア最大を選択。
+  - `components/admin/KnockoutTree.tsx`: `priorityMode` / `onPrioritize` props を追加。優先モード時、待機中（両選手あり）の試合タップで onPrioritize 発火。優先指定済み(priority_dispatch)はアンバー枠表示。
+  - `components/admin/VisualBracket.tsx`: 「⚡ 優先割り当て」トグルを追加。`handlePrioritize`= 空きコートがあれば即割り当て（calling+court_id+push）、無ければ priority_dispatch=true を付与（dispatcherが次に空いたコートへ最優先で割当）。ヒントバナー表示。
+- 変更理由: 「トーナメント表から試合を選んで次に優先してコートに割り当て」の要望。空き無し時は予約して空き次第割当（ユーザー選択）。
+- 影響範囲: dispatcher の割当順とトーナメント表UI。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★dispatcher変更のため実データで Preview 検証後マージ。優先はラウンド/性別/部を無視するが、選手が出場中（busy）の場合は割り当てない（validMatchesに残らない）。enabled_tournaments で無効な種目は対象外。auto-dispatch OFF かつ空きコート無しの場合、空くまで保留（次のdispatch cycleで割当=auto-dispatch ON 前提）。
+- オーナー承認: （Preview検証→承認待ち）
