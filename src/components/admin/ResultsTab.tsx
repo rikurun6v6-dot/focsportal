@@ -1273,39 +1273,58 @@ export default function ResultsTab() {
                             </div>
                           ) : (
                             <div className="space-y-2 mt-2">
-                              <div className="grid grid-cols-4 gap-1.5">
-                                <Button
-                                  onClick={() => setShowInputFor(match.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="border-sky-300 text-sky-700 hover:bg-sky-50 text-xs px-1"
-                                >
-                                  結果入力
-                                </Button>
-                                <Button
-                                  onClick={() => handleShowCourtChange(match.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs px-1"
-                                >
-                                  コート変更
-                                </Button>
-                                <Button
-                                  onClick={() => setShowBreakFor(match.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="border-orange-300 text-orange-700 hover:bg-orange-50 text-xs px-1"
-                                >
-                                  休憩
-                                </Button>
-                                <Button
-                                  onClick={() => handleFreeCourt(court.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="border-slate-300 text-slate-600 hover:bg-slate-50 text-xs px-1"
-                                >
-                                  フリー
-                                </Button>
+                              {/* スコア入力（常時表示・点数を入力 → 確定 or Enter。展開タップ不要で最速化） */}
+                              {isTeamBattle(match) ? (
+                                <div className="flex gap-1.5 items-center">
+                                  <Input type="number" min="0" max="5" placeholder="0"
+                                    value={scores[match.id]?.p1 || ''}
+                                    onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
+                                    className="text-center text-base font-bold h-9" disabled={submitting === match.id} />
+                                  <span className="text-slate-400 font-bold text-sm">勝</span>
+                                  <Input type="number" min="0" max="5" placeholder="0"
+                                    value={scores[match.id]?.p2 || ''}
+                                    onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(match, court.id); }}
+                                    className="text-center text-base font-bold h-9" disabled={submitting === match.id} />
+                                  <span className="text-slate-400 font-bold text-sm">勝</span>
+                                </div>
+                              ) : (
+                                <div className="flex gap-1.5 items-center">
+                                  <Input type="number" min="0" placeholder="0"
+                                    value={scores[match.id]?.p1 || ''}
+                                    onChange={(e) => handleScoreChange(match.id, 'p1', e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') (document.getElementById(`score-p2-${match.id}`) as HTMLInputElement | null)?.focus(); }}
+                                    className="text-center text-lg font-bold h-9" disabled={submitting === match.id} />
+                                  <span className="text-slate-400 font-bold text-sm">-</span>
+                                  <Input id={`score-p2-${match.id}`} type="number" min="0" placeholder="0"
+                                    value={scores[match.id]?.p2 || ''}
+                                    onChange={(e) => handleScoreChange(match.id, 'p2', e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(match, court.id); }}
+                                    className="text-center text-lg font-bold h-9" disabled={submitting === match.id} />
+                                </div>
+                              )}
+                              <Button
+                                onClick={() => handleSubmit(match, court.id)}
+                                disabled={submitting === match.id}
+                                className="w-full bg-sky-500 hover:bg-sky-600 h-9 text-sm font-bold"
+                                size="sm"
+                              >
+                                {submitting === match.id ? '送信中...' : '結果を確定'}
+                              </Button>
+                              {/* 補助操作 */}
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <Button onClick={() => handleShowCourtChange(match.id)} variant="outline" size="sm"
+                                  className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs px-1 h-7">コート変更</Button>
+                                <Button onClick={() => setShowBreakFor(match.id)} variant="outline" size="sm"
+                                  className="border-orange-300 text-orange-700 hover:bg-orange-50 text-xs px-1 h-7">休憩</Button>
+                                <Button onClick={() => handleFreeCourt(court.id)} variant="outline" size="sm"
+                                  className="border-slate-300 text-slate-600 hover:bg-slate-50 text-xs px-1 h-7">フリー</Button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <Button onClick={() => handleWalkover(match, court.id, 1)} disabled={submitting === match.id}
+                                  variant="outline" size="sm" className="h-7 text-xs">上側 WO</Button>
+                                <Button onClick={() => handleWalkover(match, court.id, 2)} disabled={submitting === match.id}
+                                  variant="outline" size="sm" className="h-7 text-xs">下側 WO</Button>
                               </div>
 
                               {/* コート変更ダイアログ */}
