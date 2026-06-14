@@ -897,6 +897,7 @@ export default function ResultsTab() {
             const courtNumber = court.number || court.id.replace('court_', '');
             const isOccupied = !!court.current_match_id;
             const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
+            const isCalling = match?.status === 'calling'; // 新しく割り当てられた直後（選手待ち）
             const matchCourtCount = match ? (courtCountByMatch[match.id] || 1) : 1;
             const isPrimaryCourtForMatch = match ? primaryCourtByMatch[match.id] === court.id : true;
             const primaryCourtNumber = (!isPrimaryCourtForMatch && match)
@@ -904,8 +905,8 @@ export default function ResultsTab() {
               : null;
 
             return (
-              <Card key={court.id} className={`relative ${isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
-                <CardHeader className={`pb-2 ${isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}>
+              <Card key={court.id} className={`relative ${isCalling ? 'border-amber-400 ring-2 ring-amber-300 shadow-lg court-assigned' : isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
+                <CardHeader className={`pb-2 ${isCalling ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}>
                   <CardTitle className="flex items-center justify-between">
                     <span className={`text-xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
                       {courtNumber}コート
