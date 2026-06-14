@@ -22,7 +22,6 @@ import {
 } from '@/lib/tournament-logic';
 import { getDocument, setDocument, deleteDocument } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
-import TeamMatchConfigEditor from './TeamMatchConfigEditor';
 import TeamPreliminaryGroup from './TeamPreliminaryGroup';
 import TeamKnockoutTree from './TeamKnockoutTree';
 import TeamPlacementView from './TeamPlacementView';
@@ -393,8 +392,6 @@ export default function TeamTournamentGenerator() {
           <p className="text-xs text-slate-500">{teams.length}チーム</p>
         </CardContent>
       </Card>
-
-      <TeamMatchConfigEditor value={config} onChange={setConfig} />
 
       <Card>
         <CardHeader>
