@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,39 @@ export default function ResultsTab() {
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const [courts, setCourts] = useState<Court[]>([]);
   const [matchesCache, setMatchesCache] = useState<Record<string, MatchWithPlayers>>({});
+
+  // 新しく試合が割り当てられたコート（current_match_id が変化）を一定時間ハイライト
+  const prevMatchByCourt = useRef<Record<string, string | null>>({});
+  const courtInitedRef = useRef(false);
+  const [recentlyAssignedCourtIds, setRecentlyAssignedCourtIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (courts.length === 0) return;
+    const newlyAssigned: string[] = [];
+    courts.forEach((c) => {
+      const prev = prevMatchByCourt.current[c.id];
+      if (courtInitedRef.current && c.current_match_id && c.current_match_id !== prev) {
+        newlyAssigned.push(c.id);
+      }
+      prevMatchByCourt.current[c.id] = c.current_match_id ?? null;
+    });
+    courtInitedRef.current = true;
+    if (newlyAssigned.length > 0) {
+      setRecentlyAssignedCourtIds((prev) => {
+        const n = new Set(prev);
+        newlyAssigned.forEach((id) => n.add(id));
+        return n;
+      });
+      newlyAssigned.forEach((id) => {
+        setTimeout(() => {
+          setRecentlyAssignedCourtIds((prev) => {
+            const n = new Set(prev);
+            n.delete(id);
+            return n;
+          });
+        }, 8000); // 8秒ハイライト
+      });
+    }
+  }, [courts]);
   const [scores, setScores] = useState<Record<string, { p1: number; p2: number }>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -897,7 +930,7 @@ export default function ResultsTab() {
             const courtNumber = court.number || court.id.replace('court_', '');
             const isOccupied = !!court.current_match_id;
             const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
-            const isCalling = match?.status === 'calling'; // 新しく割り当てられた直後（選手待ち）
+            const isJustAssigned = recentlyAssignedCourtIds.has(court.id); // 新しく割り当てられた直後（数秒）
             const matchCourtCount = match ? (courtCountByMatch[match.id] || 1) : 1;
             const isPrimaryCourtForMatch = match ? primaryCourtByMatch[match.id] === court.id : true;
             const primaryCourtNumber = (!isPrimaryCourtForMatch && match)
@@ -905,8 +938,8 @@ export default function ResultsTab() {
               : null;
 
             return (
-              <Card key={court.id} className={`relative ${isCalling ? 'border-amber-400 ring-2 ring-amber-300 shadow-lg court-assigned' : isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
-                <CardHeader className={`pb-2 ${isCalling ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}>
+              <Card key={court.id} className={`relative ${isJustAssigned ? 'border-amber-400 ring-2 ring-amber-300 shadow-lg court-assigned' : isOccupied ? 'border-sky-300 shadow-lg' : 'border-slate-200'}`}>
+                <CardHeader className={`pb-2 ${isJustAssigned ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : isOccupied ? 'bg-gradient-to-r from-sky-50 to-blue-50' : 'bg-slate-50'}`}>
                   <CardTitle className="flex items-center justify-between">
                     <span className={`text-xl font-black ${isOccupied ? 'text-sky-600' : 'text-slate-400'}`}>
                       {courtNumber}コート

@@ -296,3 +296,11 @@
 - 変更理由: 「新しく試合が割り当てられたらコートのふちがハイライトして気づけるように」。
 - 影響範囲: コートカードの見た目のみ。`npm run build` 成功。
 - オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
+
+## 2026-06-14 — 改善: コート新規割り当てハイライトを「ステータス依存」→「current_match_id変化検知」に
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/court-highlight-transition / #27
+- 背景: 直前の #26 は match.status==='calling' で判定したが、matchesCache のステータスが即時更新されない（特に CourtGrid は取得1回キャッシュ）ためハイライトが正しく消えない懸念があった。
+- 変更内容: `CourtGrid.tsx`・`ResultsTab.tsx` の両方で、ライブな court データの `current_match_id` の変化を検知し、新規割り当てコートを **8秒間**だけ `.court-assigned`（アンバー点滅＋ring）でハイライト。初回ロード時の既存割り当ては「新規」として光らせない（courtInitedRef ガード）。
+- 影響範囲: コートカードの見た目のみ。`npm run build` 成功。
+- オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
