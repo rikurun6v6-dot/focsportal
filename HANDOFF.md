@@ -279,3 +279,12 @@
 - 変更理由: 「トップの通知バーが短くて見逃す」との要望。
 - 影響範囲: 通知バーの表示時間のみ。`npm run build` 成功。
 - オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）
+
+## 2026-06-14 — 団体戦の種目ラベルを汎用「第N試合」に変更（種目固定をやめる）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/team-generic-games / #25
+- 変更内容: `components/admin/TeamEncounterCard.tsx` のサブ試合ラベルを、種目（男D/女D/混D/男S/女S）から汎用「第N試合」に変更。`GAME_TYPE_LABEL` 定義を削除。点数入力の文言も「各種目」→「各試合」に。
+- 変更理由: 「種目とか固定しなくていい・なんでもいい」との要望。サブ試合の type は元々ラベル表示のみで選手の縛りではない（勝者1/2を記録するだけ）。
+- 影響範囲: 団体戦の対戦カード表示のみ。内部の slot id（MD_1等）や勝敗集計は不変。`npm run build` 成功。
+- 注意点: DEFAULT_CONFIG の games（5試合）はそのまま（type は slot id 用の内部値として残るが画面非表示）。試合数を変えたい場合は DEFAULT_CONFIG.games を編集。
+- オーナー承認: rikurun6v6-dot / 2026-06-14（即マージ）

@@ -15,14 +15,6 @@ interface TeamEncounterCardProps {
   readOnly?: boolean;
 }
 
-const GAME_TYPE_LABEL: Record<string, string> = {
-  MD: '男D',
-  WD: '女D',
-  XD: '混D',
-  MS: '男S',
-  WS: '女S',
-};
-
 export default function TeamEncounterCard({
   encounter,
   getTeamName,
@@ -75,10 +67,10 @@ export default function TeamEncounterCard({
           </div>
         )}
 
-        {/* 種目スロット */}
+        {/* 試合スロット（種目は固定せず「第N試合」表示） */}
         <div className="flex flex-wrap gap-1.5">
-          {encounter.games.map((game: TeamGame) => {
-            const label = GAME_TYPE_LABEL[game.type] ?? game.type;
+          {encounter.games.map((game: TeamGame, idx: number) => {
+            const label = `第${idx + 1}試合`;
             const isLocked = readOnly;
             return (
               <div key={game.id} className="flex flex-col items-center gap-0.5">
@@ -130,9 +122,9 @@ export default function TeamEncounterCard({
 
         {showScores && !readOnly && (
           <div className="space-y-1.5 pt-1 border-t border-slate-100">
-            <p className="text-[10px] text-slate-500">各種目の点数を入力してください（任意）</p>
-            {encounter.games.map(game => {
-              const label = GAME_TYPE_LABEL[game.type] ?? game.type;
+            <p className="text-[10px] text-slate-500">各試合の点数を入力してください（任意）</p>
+            {encounter.games.map((game, idx) => {
+              const label = `第${idx + 1}試合`;
               const s = scores[game.id] ?? { s1: '', s2: '' };
               return (
                 <div key={game.id} className="flex items-center gap-1.5">
