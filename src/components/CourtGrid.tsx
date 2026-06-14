@@ -16,6 +16,40 @@ export default function CourtGrid() {
 
   const fetchedMatchIds = useRef<Set<string>>(new Set());
 
+  // 新しく試合が割り当てられたコート（current_match_id が変化）を一定時間ハイライト
+  const prevMatchByCourt = useRef<Record<string, string | null>>({});
+  const courtInitedRef = useRef(false);
+  const [recentlyAssignedCourtIds, setRecentlyAssignedCourtIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (courts.length === 0) return;
+    const newlyAssigned: string[] = [];
+    courts.forEach((c) => {
+      const prev = prevMatchByCourt.current[c.id];
+      // 初回は記録のみ（既存の割り当てを「新規」として光らせない）
+      if (courtInitedRef.current && c.current_match_id && c.current_match_id !== prev) {
+        newlyAssigned.push(c.id);
+      }
+      prevMatchByCourt.current[c.id] = c.current_match_id ?? null;
+    });
+    courtInitedRef.current = true;
+    if (newlyAssigned.length > 0) {
+      setRecentlyAssignedCourtIds((prev) => {
+        const n = new Set(prev);
+        newlyAssigned.forEach((id) => n.add(id));
+        return n;
+      });
+      newlyAssigned.forEach((id) => {
+        setTimeout(() => {
+          setRecentlyAssignedCourtIds((prev) => {
+            const n = new Set(prev);
+            n.delete(id);
+            return n;
+          });
+        }, 8000); // 8秒ハイライト
+      });
+    }
+  }, [courts]);
+
   // 1分ごとに現在時刻を更新（予約情報のカウントダウン用）
   useEffect(() => {
     const timer = setInterval(() => {
@@ -227,7 +261,7 @@ export default function CourtGrid() {
       {courts.map((court) => {
         const isOccupied = !!court.current_match_id;
         const match = isOccupied && court.current_match_id ? matchesCache[court.current_match_id] : null;
-        const isCalling = match?.status === 'calling'; // 新しく割り当てられた直後（選手待ち）
+        const isJustAssigned = recentlyAssignedCourtIds.has(court.id); // 新しく割り当てられた直後（数秒）
 
         const courtNumber = court.number || court.id.replace('court_', '');
 
@@ -236,7 +270,7 @@ export default function CourtGrid() {
             key={court.id}
             className={`
               relative flex flex-col items-center justify-between p-3 rounded-lg border transition-all duration-300 min-h-[180px]
-              ${isCalling
+              ${isJustAssigned
                 ? "bg-amber-50 border-amber-400 ring-2 ring-amber-300 shadow-md court-assigned"
                 : isOccupied
                   ? "bg-sky-50 border-sky-200 shadow-sm"
