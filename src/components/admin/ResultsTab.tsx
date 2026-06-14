@@ -68,7 +68,7 @@ export default function ResultsTab() {
             n.delete(id);
             return n;
           });
-        }, 8000); // 8秒ハイライト
+        }, 30000); // 30秒ハイライト
       });
     }
   }, [courts]);
