@@ -285,6 +285,36 @@ export async function dispatchToEmptyCourt(
 
   if (validMatches.length === 0) return null;
 
+  // ── 「次に優先して割り当て」: priority_dispatch 付きの試合を最優先で割り当てる ──
+  // 管理者がトーナメント表から明示指定したものなので、ラウンド順・性別・部の制約を無視して
+  // この空きコートに即割り当てる（選手が出場中でない＝validMatches に残っている前提）。
+  // 複数ある場合はスコア最大を選ぶ。割り当て後にフラグをクリア。
+  const priorityCandidates = validMatches.filter(m => (m as Match & { priority_dispatch?: boolean }).priority_dispatch);
+  if (priorityCandidates.length > 0) {
+    const chosen = priorityCandidates
+      .map(m => ({ m, score: calcMatchScore(m, scoreCtx) }))
+      .sort((a, b) => b.score - a.score)[0].m;
+    try {
+      await updateDocument('matches', chosen.id, {
+        status: 'calling',
+        court_id: court.id,
+        available_at: null,
+        reserved_court_id: null,
+        priority_dispatch: false,
+      });
+      await updateDocument('courts', court.id, { current_match_id: chosen.id });
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId: chosen.id }),
+      }).catch(() => {});
+      return chosen;
+    } catch (error) {
+      console.error('Error dispatching priority match:', error);
+      // 失敗時は通常ロジックにフォールバック
+    }
+  }
+
   // ── 休息モデル（2概念）───────────────────────────────────────────────
   //  (1) match.available_at … 試合単位の明示スケジュール（手動休憩 setMatchBreak / 予約）。
   //       上の validMatches で「now < available_at なら除外」のハードゲートとして既に適用済み。
