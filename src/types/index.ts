@@ -97,6 +97,7 @@ export interface Match {
   subtitle?: string; // 👈 試合カードの補足情報（例：「敗者復活戦」「1部」）
   bracket_order?: number;       // 👈 決勝T: 同一ラウンド内の自然な出場順（0始まり, 上→下＝左上→左下→右上→右下）
   bracket_order_count?: number; // 👈 決勝T: そのラウンド内の試合数（bracket_order の正規化に使用）
+  priority_dispatch?: boolean;  // 👈 「次に優先して割り当て」指定。dispatcher が最優先で割り当て、割当後にクリア
 }
 
 /**

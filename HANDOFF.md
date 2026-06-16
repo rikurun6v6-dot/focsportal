@@ -323,9 +323,22 @@
 - 注意点 / 引き継ぎ事項: ★既定タブ変更＋集約のため Preview で確認後マージ。ResultsTab は live タブ内のみで描画（results タブは廃止）。
 - オーナー承認: （Preview検証→承認待ち）
 
+## 2026-06-14 — [検証中] トーナメント表から「次に優先してコート割り当て」
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/priority-dispatch / #31（★Previewで実データ確認後マージ）
+- 変更内容:
+  - `types/index.ts`: `Match.priority_dispatch?: boolean` を追加。
+  - `lib/dispatcher.ts`: `dispatchToEmptyCourt` で validMatches のうち priority_dispatch 付きを最優先で割り当て（ラウンド順・性別・部の制約を無視）。割り当て後にフラグをクリア。複数あればスコア最大を選択。
+  - `components/admin/KnockoutTree.tsx`: `priorityMode` / `onPrioritize` props を追加。優先モード時、待機中（両選手あり）の試合タップで onPrioritize 発火。優先指定済み(priority_dispatch)はアンバー枠表示。
+  - `components/admin/VisualBracket.tsx`: 「⚡ 優先割り当て」トグルを追加。`handlePrioritize`= 空きコートがあれば即割り当て（calling+court_id+push）、無ければ priority_dispatch=true を付与（dispatcherが次に空いたコートへ最優先で割当）。ヒントバナー表示。
+- 変更理由: 「トーナメント表から試合を選んで次に優先してコートに割り当て」の要望。空き無し時は予約して空き次第割当（ユーザー選択）。
+- 影響範囲: dispatcher の割当順とトーナメント表UI。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★dispatcher変更のため実データで Preview 検証後マージ。優先はラウンド/性別/部を無視するが、選手が出場中（busy）の場合は割り当てない（validMatchesに残らない）。enabled_tournaments で無効な種目は対象外。auto-dispatch OFF かつ空きコート無しの場合、空くまで保留（次のdispatch cycleで割当=auto-dispatch ON 前提）。
+- オーナー承認: rikurun6v6-dot / 2026-06-16
+
 ## 2026-06-16 — 進行制御の拡充＋通知の合宿スコープ修正＋結果訂正の2モード化
 - 担当者: rikurun6v6-dot（Claude Code 経由）
-- ブランチ / PR: feat/admin-run-control-and-result-fix / #（PR作成後に記入）
+- ブランチ / PR: feat/admin-run-control-and-result-fix / #32
 - 変更内容:
   - 通知の合宿切替リセット（`app/admin/page.tsx`）: 試合アナウンス監視 useEffect の先頭で `matchAnnouncements` と `prevMatchStatusesRef`/`completedPrelimDivisionsRef` をリセット。別の終わった合宿の「予選ブロック完了」等の通知が残り続ける不具合を修正。
   - 全コート中断（時間指定なし）: `types/index.ts` に `Config.dispatch_suspended?` を追加。`AutoDispatchEngine.tsx` が立っている間は新規割り当てをスキップ（進行中の試合はそのまま）。`app/admin/page.tsx` の一時中断カード上部に「全コート中断/再開」トグルを追加（状態・ハンドラ `toggleDispatchSuspend`）。
@@ -335,4 +348,4 @@
 - 変更理由: ①他合宿の通知混入の修正、②昼休憩以外の時間指定なし中断や特定コートだけ止めたい要望、③スコア誤記で誤った進出が起きた際に「再試合」か「名前だけ修正」を選べるようにするため。
 - 影響範囲: `Config` に任意フィールド `dispatch_suspended` を追加（後方互換）。`Court` の既存 `manually_freed` を流用（スキーマ変更なし）。結果訂正系は既存フィールドのみ使用。`tsc --noEmit` 通過・`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★`types/index.ts`（Config）への追加は保護対象のためオーナー承認必須。結果訂正の「名前だけ修正」は“実際に正しい人が対戦済み”である前提（誤選択すると結果が誤ラベルになる）。再試合・取り消しは進行中の下流があるとブロック。本番は master マージ＝自動デプロイのため Preview 検証推奨。
-- オーナー承認: （承認待ち）
+- オーナー承認: rikurun6v6-dot / 2026-06-16
