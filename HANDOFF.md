@@ -322,3 +322,17 @@
 - 影響範囲: 管理ナビの構成と既定タブ。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★既定タブ変更＋集約のため Preview で確認後マージ。ResultsTab は live タブ内のみで描画（results タブは廃止）。
 - オーナー承認: （Preview検証→承認待ち）
+
+## 2026-06-16 — 進行制御の拡充＋通知の合宿スコープ修正＋結果訂正の2モード化
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/admin-run-control-and-result-fix / #（PR作成後に記入）
+- 変更内容:
+  - 通知の合宿切替リセット（`app/admin/page.tsx`）: 試合アナウンス監視 useEffect の先頭で `matchAnnouncements` と `prevMatchStatusesRef`/`completedPrelimDivisionsRef` をリセット。別の終わった合宿の「予選ブロック完了」等の通知が残り続ける不具合を修正。
+  - 全コート中断（時間指定なし）: `types/index.ts` に `Config.dispatch_suspended?` を追加。`AutoDispatchEngine.tsx` が立っている間は新規割り当てをスキップ（進行中の試合はそのまま）。`app/admin/page.tsx` の一時中断カード上部に「全コート中断/再開」トグルを追加（状態・ハンドラ `toggleDispatchSuspend`）。
+  - コート別「次から割り当て停止」: `firestore-helpers.ts` に `stopCourtAfterCurrent`（現在の試合を残したまま `manually_freed=true`）。`ResultsTab.tsx` の進行中コートに「次から割り当て停止（今の試合は継続）」ボタン＋停止中表示＋解除（既存 `unfreeCourtManually` 再利用）。
+  - 編集アイコン統一: `CampManager.tsx` の合宿名・コート数編集アイコンを常に鉛筆（Pencil）に。
+  - 結果訂正の2モード化（`firestore-helpers.ts` + `VisualBracket.tsx`）: `analyzeCorrectionImpact`（影響分析・プレビュー用）、`applyRenameChain`（モードB=名前だけ修正・下流結果は保持）、`applyCorrectionWithReplay`（モードA=訂正＋次戦以降を再試合に戻す）、`cancelMatchResultChain`（取り消しを下流チェーン全体リセットに強化）。VisualBracketの結果編集で進出側が入れ替わり下流が消化/進行中のとき、影響プレビュー付きモード選択ダイアログを表示。進行中の下流があるとき再試合/取り消しはブロック、名前修正は許可。
+- 変更理由: ①他合宿の通知混入の修正、②昼休憩以外の時間指定なし中断や特定コートだけ止めたい要望、③スコア誤記で誤った進出が起きた際に「再試合」か「名前だけ修正」を選べるようにするため。
+- 影響範囲: `Config` に任意フィールド `dispatch_suspended` を追加（後方互換）。`Court` の既存 `manually_freed` を流用（スキーマ変更なし）。結果訂正系は既存フィールドのみ使用。`tsc --noEmit` 通過・`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★`types/index.ts`（Config）への追加は保護対象のためオーナー承認必須。結果訂正の「名前だけ修正」は“実際に正しい人が対戦済み”である前提（誤選択すると結果が誤ラベルになる）。再試合・取り消しは進行中の下流があるとブロック。本番は master マージ＝自動デプロイのため Preview 検証推奨。
+- オーナー承認: （承認待ち）

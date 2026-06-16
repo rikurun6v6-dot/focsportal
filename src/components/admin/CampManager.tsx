@@ -501,7 +501,7 @@ export default function CampManager() {
                                                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                                                                 title="名前・コート数を編集"
                                                             >
-                                                                {isUnlocked ? <Pencil className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                                                                <Pencil className="w-3.5 h-3.5" />
                                                             </button>
                                                         )}
                                                     </div>

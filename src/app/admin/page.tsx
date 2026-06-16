@@ -128,6 +128,7 @@ export default function AdminDashboard() {
   const [defaultRestMinutes, setDefaultRestMinutes] = useState<number>(10);
   const [pauseUntil, setPauseUntil] = useState<Date | null>(null);
   const [pauseLabel, setPauseLabel] = useState<string>('');
+  const [dispatchSuspended, setDispatchSuspended] = useState<boolean>(false);
   const [customPauseMinutes, setCustomPauseMinutes] = useState<string>('');
   const [customPauseLabel, setCustomPauseLabel] = useState<string>('');
   const [remainingPauseSeconds, setRemainingPauseSeconds] = useState<number>(0);
@@ -276,6 +277,7 @@ export default function AdminDashboard() {
         setIsSequentialMode(config.is_sequential_mode || false);
         setFinalsWaitMode(config.finals_wait_mode || {});
         setDefaultRestMinutes(config.default_rest_minutes || 10);
+        setDispatchSuspended(config.dispatch_suspended || false);
         if (config.pause_until) {
           const until = (config.pause_until as any).toDate?.() as Date;
           if (until && until > new Date()) {
@@ -291,6 +293,12 @@ export default function AdminDashboard() {
   // 試合アナウンスの監視と生成
   useEffect(() => {
     if (!camp) return;
+
+    // 合宿切り替え時に、前の合宿の通知・状態を必ずリセットする
+    // （これをしないと、別の終わった合宿の「予選ブロック完了」等の通知が残り続ける）
+    setMatchAnnouncements([]);
+    prevMatchStatusesRef.current = new Map();
+    completedPrelimDivisionsRef.current = new Set();
 
     const unsubscribe = subscribeToCollection<Match>(
       'matches',
@@ -476,6 +484,21 @@ export default function AdminDashboard() {
     setPauseUntil(until);
     setPauseLabel(label);
     toastSuccess(`「${label}」を開始しました（${minutes}分間）`);
+  };
+
+  const toggleDispatchSuspend = async () => {
+    try {
+      const newValue = !dispatchSuspended;
+      await updateDocument('config', camp!.id, { dispatch_suspended: newValue });
+      setDispatchSuspended(newValue);
+      toastSuccess(
+        newValue
+          ? '全コートの新規割り当てを中断しました（進行中の試合はそのまま続きます）'
+          : '全コートの割り当てを再開しました'
+      );
+    } catch (error) {
+      toastError('エラーが発生しました');
+    }
   };
 
   const handleEndPause = async () => {
@@ -1168,6 +1191,24 @@ export default function AdminDashboard() {
                     <CardDescription>昼休憩・コート使用不可など、試合の自動割り当てを一時停止します（進行中の試合はそのまま続きます）</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {/* 全コート中断（時間指定なし） */}
+                    <div className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${dispatchSuspended ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-semibold ${dispatchSuspended ? 'text-rose-700' : 'text-slate-700'}`}>
+                          全コート中断{dispatchSuspended ? '中' : ''}
+                        </p>
+                        <p className="text-xs text-slate-500">時間指定なしで新規割り当てを停止（進行中の試合はそのまま）</p>
+                      </div>
+                      <Button
+                        onClick={toggleDispatchSuspend}
+                        disabled={isArchived}
+                        className={dispatchSuspended
+                          ? 'bg-rose-500 hover:bg-rose-600 text-white shrink-0'
+                          : 'bg-slate-700 hover:bg-slate-800 text-white shrink-0'}
+                      >
+                        {dispatchSuspended ? '再開する' : '全コート中断'}
+                      </Button>
+                    </div>
                     {pauseUntil && pauseUntil > new Date() ? (
                       <div className="space-y-4">
                         <div className="bg-amber-100 border border-amber-300 rounded-lg p-4 text-center space-y-2">

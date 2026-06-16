@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, cancelMatchResultSafe, editMatchResultSafe } from "@/lib/firestore-helpers";
+import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, editMatchResultSafe, analyzeCorrectionImpact, applyRenameChain, applyCorrectionWithReplay, cancelMatchResultChain, type CorrectionImpact } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
 import { writeBatch, doc } from "firebase/firestore";
 import { useCamp } from "@/context/CampContext";
@@ -61,6 +61,10 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     const [resultEditScoreP2, setResultEditScoreP2] = useState(0);
     const [resultEditSaving, setResultEditSaving] = useState(false);
     const [resultCancelling, setResultCancelling] = useState(false);
+    // 結果訂正の影響（次戦以降に波及するときのモード選択）
+    const [correctionImpact, setCorrectionImpact] = useState<CorrectionImpact | null>(null);
+    const [correctionPending, setCorrectionPending] = useState<{ matchId: string; winnerId: string; scoreP1: number; scoreP2: number } | null>(null);
+    const [correctionMode, setCorrectionMode] = useState<'rename' | 'replay' | null>(null);
     const bracketRef = useRef<HTMLDivElement>(null);
     const bracketContentRef = useRef<HTMLDivElement>(null);
 
@@ -226,6 +230,14 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         }
         const winnerId = p1 > p2 ? resultEditMatch.player1_id : resultEditMatch.player2_id;
         setResultEditSaving(true);
+        // 進出する側が入れ替わり、次戦以降が既に消化/進行中なら → モード選択へ
+        const impact = await analyzeCorrectionImpact(resultEditMatch.id, winnerId);
+        if (impact.changed && impact.hasPlayedDownstream) {
+            setCorrectionImpact(impact);
+            setCorrectionPending({ matchId: resultEditMatch.id, winnerId, scoreP1: p1, scoreP2: p2 });
+            setResultEditSaving(false);
+            return;
+        }
         const result = await editMatchResultSafe(resultEditMatch.id, p1, p2, winnerId);
         setResultEditSaving(false);
         if (result.success) {
@@ -236,16 +248,50 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         }
     };
 
+    const closeCorrection = () => {
+        setCorrectionImpact(null);
+        setCorrectionPending(null);
+        setResultEditMatch(null);
+    };
+
+    /** モードB: 名前だけ修正（試合結果は保持） */
+    const handleApplyRename = async () => {
+        if (!correctionPending) return;
+        setCorrectionMode('rename');
+        const r = await applyRenameChain(correctionPending.matchId, correctionPending.winnerId, correctionPending.scoreP1, correctionPending.scoreP2);
+        setCorrectionMode(null);
+        if (r.success) {
+            toastSuccess('名前を修正しました（次戦以降の試合結果は保持）');
+            closeCorrection();
+        } else {
+            toastError(r.error || '修正に失敗しました');
+        }
+    };
+
+    /** モードA: 訂正して次戦以降を再試合に戻す */
+    const handleApplyReplay = async () => {
+        if (!correctionPending) return;
+        setCorrectionMode('replay');
+        const r = await applyCorrectionWithReplay(correctionPending.matchId, correctionPending.winnerId, correctionPending.scoreP1, correctionPending.scoreP2);
+        setCorrectionMode(null);
+        if (r.success) {
+            toastSuccess('結果を訂正し、次戦以降を再試合（待機）に戻しました');
+            closeCorrection();
+        } else {
+            toastError(r.error || '再試合の設定に失敗しました');
+        }
+    };
+
     /**
-     * 結果を取り消して待機状態に戻す
+     * 結果を取り消して待機状態に戻す（下流チェーン全体をリセット）
      */
     const handleResultCancel = async () => {
         if (!resultEditMatch) return;
         setResultCancelling(true);
-        const result = await cancelMatchResultSafe(resultEditMatch.id);
+        const result = await cancelMatchResultChain(resultEditMatch.id);
         setResultCancelling(false);
         if (result.success) {
-            toastSuccess('結果を取り消しました。試合は待機状態に戻りました');
+            toastSuccess('結果を取り消しました。次戦以降も含めて待機状態に戻りました');
             setResultEditMatch(null);
         } else {
             toastError(result.error || '取り消しに失敗しました');
@@ -909,6 +955,89 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                         {resultEditSaving ? '保存中...' : '保存'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        {/* 結果訂正の影響モード選択ダイアログ */}
+        <Dialog open={!!correctionImpact} onOpenChange={(open) => { if (!open && !correctionMode) { setCorrectionImpact(null); setCorrectionPending(null); } }}>
+            <DialogContent className="bg-white max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <ArrowLeftRight className="w-4 h-4 text-amber-600" />
+                        この訂正は次戦以降に影響します
+                    </DialogTitle>
+                </DialogHeader>
+                {correctionImpact && (
+                    <div className="space-y-3">
+                        <p className="text-xs text-slate-600">
+                            進出する側が入れ替わります。実際にコートで対戦したのが「正しい組み合わせ」なら<b>名前だけ修正</b>、
+                            「間違った人が対戦してしまった」なら<b>再試合</b>を選んでください。
+                        </p>
+
+                        {/* 影響する次戦以降のプレビュー */}
+                        <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-56 overflow-auto">
+                            {correctionImpact.items.map((it) => {
+                                const sideName = (s: { main: string; partner: string | null; third: string | null }) =>
+                                    [s.main, s.partner, s.third].filter(Boolean).map(id => getPlayerName(id as string)).join(' / ');
+                                const statusLabel = it.status === 'completed' ? '完了'
+                                    : it.status === 'playing' ? '進行中'
+                                    : it.status === 'calling' ? '呼出中' : '待機';
+                                return (
+                                    <div key={it.matchId} className="p-2 text-xs">
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <span className="font-semibold text-slate-700">
+                                                {it.matchNumber != null ? `第${it.matchNumber}試合` : `${it.round}回戦`}
+                                            </span>
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${it.status === 'completed' ? 'bg-slate-100 text-slate-600' : 'bg-rose-100 text-rose-700'}`}>
+                                                {statusLabel}
+                                            </span>
+                                        </div>
+                                        <div className="text-slate-500">
+                                            <span className="line-through">{sideName(it.oldSide)}</span>
+                                            <span className="mx-1 text-amber-600">→</span>
+                                            <span className="font-semibold text-slate-800">{sideName(it.newSide)}</span>
+                                            {it.winnerFlips && <span className="ml-1 text-[10px] text-amber-600">(勝者も修正)</span>}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {correctionImpact.blockedByActive && (
+                            <p className="text-[11px] text-rose-600">
+                                ※ 進行中の試合が含まれるため「再試合」はできません。進行中の試合を先に処理してください。
+                            </p>
+                        )}
+
+                        {/* モード選択ボタン */}
+                        <div className="space-y-2">
+                            <Button
+                                onClick={handleApplyRename}
+                                disabled={!!correctionMode}
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                                {correctionMode === 'rename' ? '修正中...' : '① 名前だけ修正（正しい人が対戦済み）'}
+                            </Button>
+                            <Button
+                                onClick={handleApplyReplay}
+                                disabled={!!correctionMode || correctionImpact.blockedByActive}
+                                variant="outline"
+                                className="w-full border-amber-400 text-amber-700 hover:bg-amber-50"
+                            >
+                                {correctionMode === 'replay' ? '設定中...' : '② 再試合する（間違った人が対戦した）'}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                <DialogFooter>
+                    <Button
+                        variant="ghost"
+                        onClick={() => { setCorrectionImpact(null); setCorrectionPending(null); }}
+                        disabled={!!correctionMode}
+                    >
+                        戻る
                     </Button>
                 </DialogFooter>
             </DialogContent>
