@@ -32,6 +32,10 @@ interface KnockoutTreeProps {
   onSlotEditClick?: (matchId: string, position: 1 | 2) => void;
   /** 完了済み試合タップ時のコールバック（結果編集用） */
   onMatchTap?: (match: Match) => void;
+  /** 優先割り当てモード: ONのとき待機中の試合タップで onPrioritize を発火 */
+  priorityMode?: boolean;
+  /** 待機中の試合を「次に優先して割り当て」するコールバック */
+  onPrioritize?: (match: Match) => void;
 }
 
 /**
@@ -290,6 +294,8 @@ export default function KnockoutTree({
   onSlotClick,
   onSlotEditClick,
   onMatchTap,
+  priorityMode = false,
+  onPrioritize,
 }: KnockoutTreeProps) {
   const { camp } = useCamp();
   const totalRounds = rounds.length;
@@ -448,7 +454,14 @@ export default function KnockoutTree({
                       <div key={match.id} style={{ position: 'absolute', top: `${cardTop}px`, width: '100%', minWidth: '220px', flexShrink: 0 }}>
                       <Card
                         key={match.id}
-                        onClick={() => !editMode && !isBye && match.status === 'completed' && onMatchTap?.(match)}
+                        onClick={() => {
+                          // 優先割り当てモード: 待機中（両選手あり）の試合タップで「次に優先」
+                          if (priorityMode && !isBye && match.status === 'waiting' && match.player1_id && match.player2_id) {
+                            onPrioritize?.(match);
+                            return;
+                          }
+                          if (!editMode && !isBye && match.status === 'completed') onMatchTap?.(match);
+                        }}
                         className={`rounded-lg shadow-md transition-all ${
                           isBye
                             ? 'bg-slate-100/50 border-2 border-dashed border-slate-300'
@@ -456,6 +469,10 @@ export default function KnockoutTree({
                             ? `bg-white border-2 border-emerald-500${!editMode && onMatchTap ? ' cursor-pointer hover:border-emerald-400 hover:shadow-lg' : ''}`
                             : match.status === 'playing'
                             ? 'bg-white border-2 border-blue-500 ring-2 ring-blue-200'
+                            : (match as Match & { priority_dispatch?: boolean }).priority_dispatch
+                            ? 'bg-amber-50 border-2 border-amber-400 ring-2 ring-amber-300'
+                            : priorityMode && match.status === 'waiting' && !isBye && match.player1_id && match.player2_id
+                            ? 'bg-white border-2 border-slate-200 cursor-pointer hover:border-amber-400 hover:ring-2 hover:ring-amber-200'
                             : 'bg-white border-2 border-slate-200'
                         } ${isUpdated ? 'animate-pulse' : ''}`}
                       >

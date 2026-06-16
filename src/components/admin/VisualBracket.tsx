@@ -7,19 +7,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, cancelMatchResultSafe, editMatchResultSafe } from "@/lib/firestore-helpers";
+import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, cancelMatchResultSafe, editMatchResultSafe, getAllDocuments } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
-import { writeBatch, doc } from "firebase/firestore";
+import { writeBatch, doc, where } from "firebase/firestore";
 import { useCamp } from "@/context/CampContext";
-import type { Match, Player, TournamentType, Division } from "@/types";
-import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut, ArrowLeftRight, RotateCcw } from "lucide-react";
+import type { Match, Player, TournamentType, Division, Court } from "@/types";
+import { Trophy, Users, Search, X, Camera, Download, Pencil, Check, ZoomIn, ZoomOut, ArrowLeftRight, RotateCcw, Zap } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import PreliminaryGroup from "./PreliminaryGroup";
 import KnockoutTree from "./KnockoutTree";
 import { getUnifiedRoundName, getTournamentTypeName } from "@/lib/tournament-logic";
 import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
-import { toastSuccess, toastError } from "@/lib/toast";
+import { toastSuccess, toastInfo, toastError } from "@/lib/toast";
 
 const LS_KEY_TYPE = 'vb_tournamentType';
 const LS_KEY_DIV = 'vb_division';
@@ -46,6 +46,31 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     const [zoom, setZoom] = useState(1.0);
     const [editMode, setEditMode] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<{ matchId: string; position: 1 | 2 } | null>(null);
+    const [priorityMode, setPriorityMode] = useState(false);
+
+    // 「次に優先して割り当て」: 空きコートがあれば即割り当て、無ければ優先フラグを付与
+    const handlePrioritize = async (match: Match) => {
+        if (!camp) return;
+        try {
+            const allCourts = await getAllDocuments<Court>('courts', [where('campId', '==', camp.id)]);
+            const emptyCourt = allCourts
+                .filter(c => c.is_active && !c.current_match_id && !c.manually_freed)
+                .sort((a, b) => (a.number || 0) - (b.number || 0))[0];
+            if (emptyCourt) {
+                await updateDocument('matches', match.id, {
+                    status: 'calling', court_id: emptyCourt.id, available_at: null, reserved_court_id: null, priority_dispatch: false,
+                });
+                await updateDocument('courts', emptyCourt.id, { current_match_id: match.id });
+                fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matchId: match.id }) }).catch(() => {});
+                toastSuccess(`第${emptyCourt.number}コートに割り当てました`);
+            } else {
+                await updateDocument('matches', match.id, { priority_dispatch: true });
+                toastInfo('「次に優先」に設定しました。コートが空き次第、最優先で割り当てます');
+            }
+        } catch {
+            toastError('割り当てに失敗しました');
+        }
+    };
     const [editingSlot, setEditingSlot] = useState<{ matchId: string; position: 1 | 2 } | null>(null);
     const [editMain, setEditMain] = useState('');
     const [editPartner, setEditPartner] = useState('');
@@ -550,12 +575,23 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                 {/* 決勝トーナメント編集ボタン */}
                                 {hasKnockout && (
                                     <Button
-                                        onClick={() => { setEditMode(e => !e); setSelectedSlot(null); setPrelimEditMode(false); setSelectedPrelimPair(null); }}
+                                        onClick={() => { setEditMode(e => !e); setSelectedSlot(null); setPrelimEditMode(false); setSelectedPrelimPair(null); setPriorityMode(false); }}
                                         variant={editMode ? "default" : "outline"}
                                         size="sm"
                                         className={`${editMode ? "bg-blue-500 text-white" : "border-blue-200 text-blue-700 hover:bg-blue-50"}`}
                                     >
                                         {editMode ? <><Check className="w-4 h-4 mr-1" />編集完了</> : <><Pencil className="w-4 h-4 mr-1" />ペア入替</>}
+                                    </Button>
+                                )}
+                                {/* 優先割り当てモード（待機中の試合をタップ→次に優先してコートへ） */}
+                                {hasKnockout && !readOnly && (
+                                    <Button
+                                        onClick={() => { setPriorityMode(p => !p); setEditMode(false); setSelectedSlot(null); setPrelimEditMode(false); setSelectedPrelimPair(null); }}
+                                        variant={priorityMode ? "default" : "outline"}
+                                        size="sm"
+                                        className={`${priorityMode ? "bg-amber-500 text-white hover:bg-amber-600" : "border-amber-300 text-amber-700 hover:bg-amber-50"}`}
+                                    >
+                                        {priorityMode ? <><Check className="w-4 h-4 mr-1" />優先指定を終了</> : <><Zap className="w-4 h-4 mr-1" />優先割り当て</>}
                                     </Button>
                                 )}
                             </div>
@@ -793,6 +829,14 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                 </>
                             )}
 
+                            {/* 優先割り当てモードのヒント */}
+                            {priorityMode && (
+                                <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 mb-2">
+                                    <Zap className="w-4 h-4 shrink-0 text-amber-600" />
+                                    <span><strong>優先割り当て:</strong> 待機中の試合（白カード）をタップ → 空きコートがあれば即割り当て、無ければ「次に優先」予約します。</span>
+                                </div>
+                            )}
+
                             {/* 決勝トーナメント */}
                             {hasKnockout && (
                                 <KnockoutTree
@@ -808,6 +852,8 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                     onSlotClick={handleSlotClick}
                                     onSlotEditClick={handleSlotEditOpen}
                                     onMatchTap={!readOnly ? handleMatchTap : undefined}
+                                    priorityMode={priorityMode}
+                                    onPrioritize={handlePrioritize}
                                 />
                             )}
                         </div>
