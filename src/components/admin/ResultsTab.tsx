@@ -12,6 +12,7 @@ import {
   updateDocument,
   recordWalkover,
   freeCourtManually,
+  stopCourtAfterCurrent,
   unfreeCourtManually,
   moveMatchToCourt,
   getAllDocuments,
@@ -390,6 +391,28 @@ export default function ResultsTab() {
         toastSuccess('コートをフリーにしました（試合は待機リストの先頭に戻りました）');
       } else {
         toastError('コートのフリー化に失敗しました');
+      }
+    } catch (error) {
+      toastError('エラーが発生しました');
+    }
+  };
+
+  const handleStopAfterCurrent = async (courtId: string) => {
+    const confirmed = await confirm({
+      title: '⏹ 次から割り当て停止',
+      message: '今の試合はそのまま続行します。\n試合終了後、このコートには新しい試合を自動割り当てしません。\n\n※「割り当て再開」を押すまで停止状態を維持します。',
+      confirmText: '停止する',
+      cancelText: 'キャンセル',
+      type: 'info',
+    });
+    if (!confirmed) return;
+
+    try {
+      const success = await stopCourtAfterCurrent(courtId);
+      if (success) {
+        toastSuccess('このコートは試合終了後に割り当てを停止します');
+      } else {
+        toastError('操作に失敗しました');
       }
     } catch (error) {
       toastError('エラーが発生しました');
@@ -1326,6 +1349,17 @@ export default function ResultsTab() {
                                 <Button onClick={() => handleWalkover(match, court.id, 2)} disabled={submitting === match.id}
                                   variant="outline" size="sm" className="h-7 text-xs">下側 WO</Button>
                               </div>
+                              {/* 次から割り当て停止（今の試合は継続） */}
+                              {court.manually_freed ? (
+                                <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                  <span className="text-[10px] text-amber-700 font-medium">⏹ 試合終了後、割り当て停止</span>
+                                  <Button onClick={() => handleResumeAllocation(court.id)} variant="outline" size="sm"
+                                    className="border-amber-400 text-amber-700 hover:bg-amber-100 text-[10px] h-6 px-2">解除</Button>
+                                </div>
+                              ) : (
+                                <Button onClick={() => handleStopAfterCurrent(court.id)} variant="outline" size="sm"
+                                  className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 text-xs h-7">次から割り当て停止（今の試合は継続）</Button>
+                              )}
 
                               {/* コート変更ダイアログ */}
                               {showCourtChangeFor === match.id && (

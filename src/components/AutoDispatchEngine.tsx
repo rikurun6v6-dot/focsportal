@@ -24,6 +24,9 @@ export default function AutoDispatchEngine() {
       const config = await getDocument<Config>('config', campId);
       if (!config?.auto_dispatch_enabled) return;
 
+      // 全コート中断チェック（時間指定なし・進行中の試合はそのまま）
+      if (config.dispatch_suspended) return;
+
       // 一時中断チェック
       if (config.pause_until) {
         const pauseMs = (config.pause_until as Timestamp).toMillis?.() ?? 0;
