@@ -349,3 +349,15 @@
 - 影響範囲: `Config` に任意フィールド `dispatch_suspended` を追加（後方互換）。`Court` の既存 `manually_freed` を流用（スキーマ変更なし）。結果訂正系は既存フィールドのみ使用。`tsc --noEmit` 通過・`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: ★`types/index.ts`（Config）への追加は保護対象のためオーナー承認必須。結果訂正の「名前だけ修正」は“実際に正しい人が対戦済み”である前提（誤選択すると結果が誤ラベルになる）。再試合・取り消しは進行中の下流があるとブロック。本番は master マージ＝自動デプロイのため Preview 検証推奨。
 - オーナー承認: rikurun6v6-dot / 2026-06-16
+
+## 2026-06-16 — [hotfix] スマホで合宿カードのボタン/タイトルが右にはみ出して見切れる不具合
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/mobile-camp-card-layout / #（PR作成後）
+- 変更内容: `components/admin/CampManager.tsx`。合宿カードの操作ボタン群がスマホ幅で横並びのまま縮まず（Buttonは whitespace-nowrap）画面外に見切れていた問題を修正。
+  - 操作ボタンの2行（開催/アーカイブ/管理画面へ、削除/完全削除）を `grid grid-cols-1 sm:grid-cols-2 md:flex` に変更（スマホ=全幅1列、sm=2列、md以上=従来の横並び）。
+  - タイトル行を `flex flex-wrap` に、合宿名 `<h3>` に `break-words`、情報コンテナに `min-w-0` を付与して折り返し可能に。
+  - 開催日トグル行も `flex-wrap` 付与。
+- 変更理由: スマホ実機で「合宿が消えた」ように見えるとの報告（実際はデータ正常・PCでは正常表示。ボタン/バッジが右端で見切れる横はみ出しが原因）。
+- 影響範囲: CampManager の表示（レイアウトのみ・ロジック/データ変更なし）。`npm run build` 成功。デスクトップ(md+)の見た目は不変。
+- 注意点 / 引き継ぎ事項: 既存の `flex` を `grid ... md:flex` に変えたためボタンは md 未満でグリッドセル幅に整列。Button の whitespace-nowrap は維持。
+- オーナー承認: rikurun6v6-dot / 2026-06-16

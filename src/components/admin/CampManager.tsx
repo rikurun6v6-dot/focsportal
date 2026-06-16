@@ -433,7 +433,7 @@ export default function CampManager() {
                                     <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
 
                                         {/* 情報部分 */}
-                                        <div className="space-y-1 flex-1">
+                                        <div className="space-y-1 flex-1 min-w-0">
                                             {editingCampId === camp.id ? (
                                                 <div className="flex flex-col gap-2">
                                                     <div className="flex flex-wrap gap-2 items-center">
@@ -486,8 +486,8 @@ export default function CampManager() {
                                                 </div>
                                             ) : (
                                                 <>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="text-lg font-bold text-slate-900">{camp.title}</h3>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <h3 className="text-lg font-bold text-slate-900 break-words">{camp.title}</h3>
                                                         {camp.status === 'active' ? (
                                                             <Badge className="bg-emerald-500 hover:bg-emerald-600">開催中</Badge>
                                                         ) : camp.status === 'archived' ? (
@@ -509,7 +509,7 @@ export default function CampManager() {
                                                         コート数: 1日目 {getCampCourtCountForDay(camp, 1)}面 / 2日目 {getCampCourtCountForDay(camp, 2)}面 | ID: {camp.id.slice(0, 8)}...
                                                     </p>
                                                     {camp.status === 'active' && (
-                                                        <div className="flex items-center gap-2 mt-1">
+                                                        <div className="flex flex-wrap items-center gap-2 mt-1">
                                                             <span className="text-xs text-slate-500 whitespace-nowrap flex items-center gap-1">
                                                                 <Calendar className="w-3.5 h-3.5" />開催日:
                                                             </span>
@@ -538,8 +538,8 @@ export default function CampManager() {
                                         </div>
 
                                         {/* ボタン部分 */}
-                                        <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-                                            <div className="flex gap-2">
+                                        <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto min-w-0">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:flex gap-2">
                                                 {/* Activeにするボタン */}
                                                 {camp.status === 'setup' && (
                                                     <Button
@@ -589,7 +589,7 @@ export default function CampManager() {
 
                                             {/* 削除ボタン（アクティブでない場合のみ） */}
                                             {camp.status !== 'active' && (
-                                                <div className="flex gap-2">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:flex gap-2">
                                                     <Button
                                                         variant="outline"
                                                         onClick={() => handleDelete(camp.id)}
