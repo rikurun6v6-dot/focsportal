@@ -15,6 +15,7 @@ import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEff
 import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-helpers";
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import type { Player, TournamentType, Division, TournamentFormat, TeamGroup } from "@/types";
 
 type TournamentGeneratorState = {
@@ -193,6 +194,7 @@ function generateGroupStageMatches(
 
 export default function TournamentGenerator({ readOnly = false }: { readOnly?: boolean }) {
   const { camp } = useCamp();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
@@ -265,7 +267,51 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
     }
 
     try {
-      // 0. トーナメント設定を作成・保存
+      // 1. ★削除より前に参加選手を取得して検証（選手不足時にデータを消さない）
+      const playersRef = collection(db, "players");
+      const q = query(
+        playersRef,
+        where("campId", "==", camp.id), // 👈 合宿IDによるフィルタリング
+        where("is_active", "==", true)  // 棄権していない選手のみ
+      );
+      const snapshot = await safeGetDocs(q);
+      const players = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
+
+      if (players.length < 4) {
+        throw new Error("選手が足りません（最低4名必要です）");
+      }
+
+      // 2. ★既存試合を確認（削除はまだ行わない）
+      const cleanupQuery = query(
+        collection(db, "matches"),
+        where("campId", "==", camp.id),
+        where("tournament_type", "==", currentState.tournamentType),
+        where("division", "==", division)
+      );
+      const cleanupSnapshot = await safeGetDocs(cleanupQuery);
+      const existingCount = cleanupSnapshot.size;
+      const completedCount = cleanupSnapshot.docs.filter(d => {
+        const data = d.data() as { status?: string; winner_id?: string | null };
+        return data.status === 'completed' || !!data.winner_id;
+      }).length;
+
+      // ★既存試合がある場合は削除前に確認（誤生成による結果消失を防ぐ）
+      //   一括生成(stateOverride あり)は別途まとめて確認するためここではスキップ
+      if (!stateOverride && existingCount > 0) {
+        const ok = await confirm({
+          title: '⚠️ 既存のトーナメントを作り直す',
+          message: `この種目・部には既に ${existingCount} 試合があります${completedCount > 0 ? `（うち ${completedCount} 試合は結果入力済み）` : ''}。\n生成すると、これらは結果ごと全て削除されて作り直されます。\n\n本当に作り直しますか？`,
+          confirmText: '削除して作り直す',
+          cancelText: 'キャンセル',
+          type: 'warning',
+        });
+        if (!ok) {
+          setState(prev => ({ ...prev, loading: false }));
+          return;
+        }
+      }
+
+      // 3. トーナメント設定を作成・保存（確認後）
       await createTournamentConfig({
         campId: camp.id,
         event_type: getTournamentEventType(currentState.tournamentType),
@@ -278,13 +324,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         qualifiers_per_group: currentState.qualifiersPerGroup,
       });
 
-      // 0.1. AI予測の基準値をconfig/systemに保存
-      console.log('[トーナメント生成] AI予測基準値を保存:', {
-        baselineDuration11: currentState.baselineDuration11,
-        baselineDuration15: currentState.baselineDuration15,
-        baselineDuration21: currentState.baselineDuration21,
-      });
-
+      // 3.1. AI予測の基準値を保存
       const configRef = doc(db, 'config', camp.id);
       await setDoc(configRef, {
         avg_match_duration_11: currentState.baselineDuration11,
@@ -292,65 +332,15 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         avg_match_duration_21: currentState.baselineDuration21,
       }, { merge: true });
 
-      // 0.5. 破壊的クリーンアップ（現在の合宿・部の試合を「物理的に全削除」）
-      console.log('[トーナメント生成] 破壊的クリーンアップ開始:', {
-        campId: camp.id,
-        tournamentType: currentState.tournamentType,
-        division: division
-      });
-
-      // 種目に関係なく、現在の合宿・部の全試合を削除（古いランダムIDも含む）
-      const cleanupQuery = query(
-        collection(db, "matches"),
-        where("campId", "==", camp.id),
-        where("tournament_type", "==", currentState.tournamentType),
-        where("division", "==", division)
-      );
-      const cleanupSnapshot = await safeGetDocs(cleanupQuery);
-
+      // 4. 破壊的クリーンアップ（確認済みの既存試合を物理削除）
       if (!cleanupSnapshot.empty) {
-        console.log(`[トーナメント生成] 削除対象: ${cleanupSnapshot.size}件`);
         const CLEANUP_BATCH_SIZE = 500;
-
-        // 500件ごとにバッチ削除
         for (let i = 0; i < cleanupSnapshot.docs.length; i += CLEANUP_BATCH_SIZE) {
           const cleanupBatch = writeBatch(db);
           const chunk = cleanupSnapshot.docs.slice(i, i + CLEANUP_BATCH_SIZE);
-
-          chunk.forEach(docSnapshot => {
-            console.log(`[トーナメント生成] 削除: ${docSnapshot.id}`);
-            cleanupBatch.delete(docSnapshot.ref);
-          });
-
+          chunk.forEach(docSnapshot => cleanupBatch.delete(docSnapshot.ref));
           await cleanupBatch.commit();
-          console.log(`[トーナメント生成] バッチ削除完了 (${chunk.length}件) ✅`);
         }
-
-        console.log(`[トーナメント生成] 全削除完了: ${cleanupSnapshot.size}件 ✅`);
-      } else {
-        console.log('[トーナメント生成] 削除対象データなし');
-      }
-
-      // 1. 現在の合宿に参加している選手のみを取得
-      const playersRef = collection(db, "players");
-      const q = query(
-        playersRef,
-        where("campId", "==", camp.id), // 👈 ここで合宿IDによるフィルタリング
-        where("is_active", "==", true)  // 棄権していない選手のみ
-      );
-
-      const snapshot = await safeGetDocs(q);
-      const players = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
-
-      console.log('[トーナメント生成] 選手データ取得:', {
-        total: players.length,
-        campId: camp.id,
-        players: players.map(p => ({ name: p.name, gender: p.gender, division: p.division }))
-      });
-
-      if (players.length < 4) {
-        console.error('[トーナメント生成] エラー: 選手不足', players.length);
-        throw new Error("選手が足りません（最低4名必要です）");
       }
 
       // 2. 性別・レベルでフィルタリング
@@ -984,6 +974,15 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
 
   const handleBulkGenerate = async () => {
     if (bulkSelected.size === 0) return;
+    // ★一括生成も破壊的（各種目の既存試合を結果ごと削除）。開始前に1回だけ確認する。
+    const ok = await confirm({
+      title: '⚠️ 一括生成',
+      message: `選択した ${bulkSelected.size} 種目を生成します。\n各種目に既存の試合（結果を含む）があれば、それらは全て削除されて作り直されます。\n\n続行しますか？`,
+      confirmText: '生成する',
+      cancelText: 'キャンセル',
+      type: 'warning',
+    });
+    if (!ok) return;
     setBulkLoading(true);
     setBulkLog([]);
     const results: { key: string; status: 'ok' | 'error'; message: string }[] = [];
@@ -1291,6 +1290,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       {/* 一括生成 */}
       <Card className="border-t-4 border-t-emerald-400">
         <CardHeader>
