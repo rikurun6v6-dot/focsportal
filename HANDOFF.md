@@ -370,3 +370,21 @@
 - 影響範囲: 操作タブの該当2カードの表示のみ。grid系（コート結果の3/4列）はモバイルで court カードが grid-cols-1（全幅1列）のため内側グリッドは収まり変更不要。StatusBar ピルも text-xs で収まるため変更なし。`npm run build` 成功。
 - 注意点 / 引き継ぎ事項: なし。
 - オーナー承認: rikurun6v6-dot / 2026-06-29
+
+## 2026-06-29 — [security] App Check の土台を導入（休眠状態・現状維持）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/appcheck-foundation / #（PR作成後）
+- 変更内容:
+  - `src/lib/firebase.ts`: Firebase App Check（reCAPTCHA v3）の初期化を追加。`NEXT_PUBLIC_RECAPTCHA_SITE_KEY` が設定されている時のみ有効化（未設定なら何もしない＝現状どおり動作）。開発時はデバッグトークンを発行。
+  - `firestore.rules`（新規・バージョン管理化）: 内容は現状維持（read: if true / write: if true）。書き込み制限の実体は Console 側の App Check enforcement で行う。
+  - `firebase.json`（新規）: firestore の rules / indexes を指定（`firebase deploy --only firestore` 用）。
+- 変更理由: 現状ルールが `write: if true` で全世界から書き込み・削除可能（公開リポジトリ＋公開Firebase設定）。大会データ破壊を防ぐため、ログインを増やさず「本物のアプリからの書き込みのみ許可」する App Check を導入する。
+- 影響範囲: サイトキー未設定なら挙動不変。`tsc --noEmit` 通過・`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★有効化手順（順守必須・順番を誤ると全書き込み停止）:
+  1) このコードを配信（休眠）
+  2) reCAPTCHA v3 サイトキー取得 → Vercel と .env.local に `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` を設定 → 再デプロイ
+  3) Firebase Console → App Check でアプリ登録、Console指標で「検証済みリクエスト」が流れているか確認
+  4) reCAPTCHA に本番ドメイン＋Vercel Preview ドメインを登録
+  5) 最後に App Check の enforcement（Firestore）を有効化。まず Preview で書き込み可否を検証してから本番。
+  - App Check は「本物のアプリか否か」を見るだけで「誰か」は区別しない（サークルメンバー本人の書込は防げない）。
+- オーナー承認: rikurun6v6-dot / 2026-06-29

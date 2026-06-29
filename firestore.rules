@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      // 閲覧は全員可（サークルメンバー用）
+      allow read: if true;
+
+      // 書き込みは Firebase Console 側の「App Check の enforcement 有効化」で
+      // “本物のこのアプリからのリクエスト”のみに制限する。
+      // ルール自体は true のまま（App Check 未設定時にアプリが壊れないようにするため）。
+      // ※ enforcement を有効化するのは、クライアントに App Check トークンが流れていることを
+      //    Console の指標で確認し、対象ドメイン（本番＋Vercel Preview）を登録した後にすること。
+      allow write: if true;
+    }
+  }
+}
