@@ -43,6 +43,9 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
     const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
 
     useEffect(() => {
+        // 安全策: 取得が何らかの理由で固まっても、一定時間で必ずローディングを解除して画面を出す
+        // （無限「読み込み中...」で開けない不具合の防止）
+        const safety = setTimeout(() => setLoading(false), 8000);
         const fetchCamps = async () => {
             try {
                 // 'active' に加えて 'setup' 状態のキャンプも表示（開催中ならステータスに関わらず表示）
@@ -66,10 +69,12 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
             } catch (error) {
                 console.error("Failed to fetch camps", error);
             } finally {
+                clearTimeout(safety);
                 setLoading(false);
             }
         };
         fetchCamps();
+        return () => clearTimeout(safety);
     }, []);
 
     useEffect(() => {

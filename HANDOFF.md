@@ -388,3 +388,14 @@
   5) 最後に App Check の enforcement（Firestore）を有効化。まず Preview で書き込み可否を検証してから本番。
   - App Check は「本物のアプリか否か」を見るだけで「誰か」は区別しない（サークルメンバー本人の書込は防げない）。
 - オーナー承認: rikurun6v6-dot / 2026-06-29
+
+## 2026-06-29 — [fix] ユーザー画面が無限「読み込み中...」で開けない不具合
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/user-infinite-loading / #（PR作成後）
+- 変更内容:
+  - `src/lib/firestore-helpers.ts` `safeGetDocs`: 最終フォールバックの `getDocs(q)` にタイムアウトが無く、オフライン＋キャッシュ無し等で解決も拒否もせず固まる→呼び出し元が無限待ちになっていた。`Promise.race([getDocs(q), 5秒タイムアウト])` を追加し、固まらず空結果にフォールバックするように。
+  - `src/app/user/page.tsx`: 初回の合宿取得 useEffect に安全タイマー（8秒）を追加。取得が固まっても必ずローディングを解除して画面を表示（finally で clearTimeout＋クリーンアップ）。
+- 変更理由: 「ユーザー画面がずっとロードして開けないときがある」報告。`loading` が true のまま固定される（fetchCamps の await が settle しない）のが原因。
+- 影響範囲: `safeGetDocs`（全画面の取得に影響するが、変更は既に失敗しているパスに上限を足すだけで安全）／ユーザー画面のローディング解除。`tsc`・`npm run build` 通過。
+- 注意点 / 引き継ぎ事項: 8秒経過で表示した場合、合宿が空表示になることがある（その場合は再読み込みで回復）。根本のオフライン耐性は別途改善余地。
+- オーナー承認: rikurun6v6-dot / 2026-06-29
