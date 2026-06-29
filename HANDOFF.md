@@ -388,3 +388,16 @@
   5) 最後に App Check の enforcement（Firestore）を有効化。まず Preview で書き込み可否を検証してから本番。
   - App Check は「本物のアプリか否か」を見るだけで「誰か」は区別しない（サークルメンバー本人の書込は防げない）。
 - オーナー承認: rikurun6v6-dot / 2026-06-29
+
+## 2026-06-29 — [test] 結果訂正ロジックを純粋関数化＋Vitest単体テスト追加
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: test/correction-logic / #（PR作成後）
+- 変更内容:
+  - `src/lib/correction-logic.ts`（新規）: 結果訂正の純粋ロジックを Firebase 非依存で分離（`traceAdvancementChain`/`findNextMatchInList`/`buildCorrectionImpact`/`slotUpdateFor`/`clearSlotUpdate`/`WAITING_RESET`/型）。
+  - `src/lib/firestore-helpers.ts`: 上記を import して使う薄いラッパーに変更。旧 async `walkAdvancementChain`（次戦ごとに getDocument）を `loadChain`（合宿の試合を1回読んでメモリ上で辿る）に置換。挙動は同一・読み取り効率向上。`analyzeCorrectionImpact` も `buildCorrectionImpact` に委譲。`CorrectionImpact`/`CorrectionImpactItem` は re-export して既存 import を維持。
+  - `src/lib/correction-logic.test.ts`（新規）: Vitest で15ケース（findNextMatchInList/nextPositionOf/traceAdvancementChain＝ユーザーのバグ事例・勝ち上がり継続/buildCorrectionImpact＝changed・block・winnerFlips/slot更新）。
+  - `package.json`: devDependency `vitest` 追加、`"test": "vitest run"` 追加。`vitest.config.ts`（新規・`@`エイリアス）。
+- 変更理由: ④テスト導入。複雑な結果訂正チェーンに回帰検知のテストを入れ、同時に Firebase 非依存化でテスト可能に。
+- 影響範囲: 訂正系（applyRenameChain/applyCorrectionWithReplay/cancelMatchResultChain/analyzeCorrectionImpact）の内部実装を純粋関数へ委譲（出力は同一）。`tsc`・`npm run build`・`vitest run`(15 passed) 通過。
+- 注意点 / 引き継ぎ事項: ★訂正経路に触れるため、マージ前に Preview で「名前だけ修正/再試合/取り消し」が従来どおり動くか確認推奨。devDependency 追加は保護対象（package.json）。
+- オーナー承認: （Preview検証→承認待ち）
