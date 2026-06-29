@@ -361,3 +361,12 @@
 - 影響範囲: CampManager の表示（レイアウトのみ・ロジック/データ変更なし）。`npm run build` 成功。デスクトップ(md+)の見た目は不変。
 - 注意点 / 引き継ぎ事項: 既存の `flex` を `grid ... md:flex` に変えたためボタンは md 未満でグリッドセル幅に整列。Button の whitespace-nowrap は維持。
 - オーナー承認: rikurun6v6-dot / 2026-06-16
+
+## 2026-06-29 — [mobile] 操作タブの長文ボタン行がスマホで横はみ出す箇所を修正
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/mobile-admin-button-rows / #（PR作成後）
+- 変更内容: `app/admin/page.tsx`。「3位決定戦を作成」「決勝戦の開始タイミング(待機中/通常通り)」の各 `flex gap-2` ボタン2個並びを `flex flex-col sm:flex-row gap-2` に変更（スマホ=縦積み、sm+=横並び）。Button は whitespace-nowrap で長文（"1部 - 3位決定戦を作成"）が縮まず横にはみ出していたため。
+- 変更理由: スマホ幅でボタンが画面外に見切れる（CampManager と同種の flex 非折り返し問題）。
+- 影響範囲: 操作タブの該当2カードの表示のみ。grid系（コート結果の3/4列）はモバイルで court カードが grid-cols-1（全幅1列）のため内側グリッドは収まり変更不要。StatusBar ピルも text-xs で収まるため変更なし。`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: なし。
+- オーナー承認: rikurun6v6-dot / 2026-06-29

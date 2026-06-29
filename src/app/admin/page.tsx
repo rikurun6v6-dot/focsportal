@@ -1312,7 +1312,7 @@ export default function AdminDashboard() {
                     ].map(({ type, label }) => (
                       <div key={type} className="flex flex-col gap-2">
                         <p className="font-semibold text-slate-700">{label}</p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           {[1, 2].map(div => (
                             <Button
                               key={div}
@@ -1350,7 +1350,7 @@ export default function AdminDashboard() {
                     ].map(({ type, label }) => (
                       <div key={type} className="flex flex-col gap-2">
                         <p className="font-semibold text-slate-700">{label}</p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           {[1, 2].map(div => {
                             const key = `${type}_${div}`;
                             const isWaiting = finalsWaitMode[key] || false;
