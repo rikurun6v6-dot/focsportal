@@ -64,9 +64,14 @@ export async function safeGetDocs<T = DocumentData>(q: Query<T>): Promise<QueryS
     console.log('[safeGetDocs] キャッシュなし、空結果を返却');
   }
 
-  // 最終フォールバック: 通常のgetDocs（エラーは握りつぶす）
+  // 最終フォールバック: 通常のgetDocs（5秒タイムアウト付き・エラーは握りつぶす）
+  // ※ タイムアウトが無いと、オフライン＋キャッシュ無し等で getDocs が解決も拒否もせず固まり、
+  //   呼び出し元（ユーザー画面のローディング等）が無限待ちになるため必ず上限を設ける。
   try {
-    return await getDocs(q);
+    const finalTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Final getDocs timeout after 5s')), 5000)
+    );
+    return await Promise.race([getDocs(q), finalTimeout]);
   } catch (finalError: any) {
     // 最終的なエラーのみ警告を出す
     console.warn('[safeGetDocs] 全ての取得方法が失敗、空結果を返却:', finalError?.code || finalError?.message);
