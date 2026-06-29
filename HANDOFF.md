@@ -388,3 +388,13 @@
   5) 最後に App Check の enforcement（Firestore）を有効化。まず Preview で書き込み可否を検証してから本番。
   - App Check は「本物のアプリか否か」を見るだけで「誰か」は区別しない（サークルメンバー本人の書込は防げない）。
 - オーナー承認: rikurun6v6-dot / 2026-06-29
+
+## 2026-06-29 — [perf] ディスパッチャの全件読みを campId で絞る（挙動不変）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: perf/dispatcher-scoped-reads / #（PR作成後）
+- 変更内容: `src/lib/dispatcher.ts`。5秒ごとに全合宿の courts/matches を全件読みしていた箇所を `getAllDocuments('...', [where('campId','==',campId)])` で Firestore 側に絞り込み（4箇所: autoDispatchAll の courts/matches、dispatchToEmptyCourt の matches/courts）。
+- 変更理由: 自動割り当ては5秒間隔で動き、空きコート数だけ dispatchToEmptyCourt 内の全件読みが反復されるため読み取りが増幅（最悪1サイクル約20読み取り）。クロス合宿の無駄読みを削減。
+- 安全性: 既存コードは campId 指定時に「m.campId === campId」の厳密一致でJSフィルタ済み → スコープ化しても結果は同一（挙動不変）。単一フィールド `where` のため複合インデックス不要・クエリ例外リスクなし。campId 未指定/未設定(court.campId なし)の場合は従来通り全件読み（フォールバック維持）。
+- 影響範囲: dispatcher の読み取り量のみ。players の読み取りは将来の campId 欠落リスク回避のため据え置き（find by id がヒットしなくなる恐れ）。`tsc --noEmit` 通過・`npm run build` 成功。
+- 注意点 / 引き継ぎ事項: ★核心の割り当て経路のため、マージ前に Vercel Preview で「待機試合が想定どおりコートに割り当たる」ことを実データで確認すること。
+- オーナー承認: （Preview検証→承認待ち）

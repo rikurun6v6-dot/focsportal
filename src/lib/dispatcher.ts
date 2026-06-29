@@ -1,18 +1,19 @@
 import type { Match, Court, Config, Camp, Player, TournamentType } from '@/types';
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, where } from 'firebase/firestore';
 import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase } from './matchScoring';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
-  const allCourts = await getAllDocuments<Court>('courts');
+  // 読み取り最適化: campId 指定時は Firestore 側で絞る（既存の厳密一致フィルタと同結果・単一フィールドのため複合インデックス不要）
+  const allCourts = await getAllDocuments<Court>('courts', campId ? [where('campId', '==', campId)] : []);
   const courts = campId ? allCourts.filter(c => c.campId === campId) : allCourts;
   // 手動でフリーに設定されたコート（manually_freed=true）は自動割り当て対象外
   const emptyCourts = courts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
 
   if (emptyCourts.length === 0) return 0;
 
-  const allMatches = await getAllDocuments<Match>('matches');
+  const allMatches = await getAllDocuments<Match>('matches', campId ? [where('campId', '==', campId)] : []);
   const matches = campId ? allMatches.filter(m => m.campId === campId) : allMatches;
   const allWaitingMatches = matches.filter(m => m.status === 'waiting');
 
@@ -147,7 +148,7 @@ export async function dispatchToEmptyCourt(
     }
   }
 
-  const allMatches = await getAllDocuments<Match>('matches');
+  const allMatches = await getAllDocuments<Match>('matches', court.campId ? [where('campId', '==', court.campId)] : []);
   const activeMatches = allMatches.filter(m =>
     (court.campId ? m.campId === court.campId : true) &&
     (m.status === 'calling' || m.status === 'playing')
@@ -374,7 +375,7 @@ export async function dispatchToEmptyCourt(
   // Firestore 再取得（awaited write 反映済み）が唯一の真実なので、これだけを使う。
   // ※ 以前は batchAssignedDivisions をマージしていたが、バッチで割り当て済みのコートが
   //   「再取得分」と「batch分」で二重計上され、ペナルティが過剰に効くバグがあったため撤去。
-  const allCourts = await getAllDocuments<Court>('courts');
+  const allCourts = await getAllDocuments<Court>('courts', court.campId ? [where('campId', '==', court.campId)] : []);
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
   const adjacentCourtDivisions = getActiveCourtDivisions(campCourts, allMatches);
 
