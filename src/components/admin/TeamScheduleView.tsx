@@ -43,7 +43,8 @@ export default function TeamScheduleView({
   getTeamName,
   startTime,
 }: TeamScheduleViewProps) {
-  const [open, setOpen] = useState(true);
+  // 進行表は既定で閉じておく。普段見るのは順位表と対戦カードなので、まず場所を空ける
+  const [open, setOpen] = useState(false);
 
   const schedule = buildTeamSchedule({
     encounters,
