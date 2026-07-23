@@ -61,8 +61,7 @@ export default function TeamStandingsTable({
               <th className="py-2 px-2 text-left text-xs font-bold">チーム</th>
               <th className="py-2 px-1.5 text-center text-xs font-bold w-9">勝</th>
               <th className="py-2 px-1.5 text-center text-xs font-bold w-9">負</th>
-              <th className="py-2 px-1.5 text-center text-xs font-bold w-9">得</th>
-              <th className="py-2 px-1.5 text-center text-xs font-bold w-10">差</th>
+              <th className="py-2 px-1.5 text-center text-xs font-bold w-14">ゲーム</th>
               {editable && <th className="py-2 px-1 text-center text-xs font-bold w-9">移動</th>}
             </tr>
           </thead>
@@ -76,10 +75,7 @@ export default function TeamStandingsTable({
                 <td className="py-2 px-2 font-medium text-slate-800 truncate max-w-[8rem]">{getTeamName(r.teamId)}</td>
                 <td className="py-2 px-1.5 text-center font-bold text-emerald-700 tabular-nums">{r.wins}</td>
                 <td className="py-2 px-1.5 text-center text-red-600 tabular-nums">{r.losses}</td>
-                <td className="py-2 px-1.5 text-center text-slate-700 tabular-nums">{r.gamesWon}</td>
-                <td className={`py-2 px-1.5 text-center font-medium tabular-nums ${r.gameDiff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  {r.gameDiff > 0 ? `+${r.gameDiff}` : r.gameDiff}
-                </td>
+                <td className="py-2 px-1.5 text-center font-medium text-slate-700 tabular-nums">{r.gamesWon}</td>
                 {editable && (
                   <td className="py-1 px-1 text-center">
                     <div className="flex flex-col items-center">
@@ -110,7 +106,7 @@ export default function TeamStandingsTable({
 
       {showLegend && (
         <div className="mt-1.5 space-y-0.5">
-          <p className="text-xs text-slate-500 leading-snug">得＝取ったゲーム数 / 差＝得失ゲーム差</p>
+          <p className="text-xs text-slate-500 leading-snug">ゲーム＝取ったゲーム数の合計</p>
           {rankOrder && (
             <p className="text-xs text-slate-500 leading-snug">
               順位: {rankOrder.map(c => TEAM_RANK_CRITERION_LABEL[c]).join(' → ')}

@@ -525,21 +525,22 @@ export function generateRoundRobinRounds(teamIds: string[]): RoundRobinRound[] {
  * 予選順位の判定基準。並び順は大会ごとに設定できる（TeamTournamentGenerator の「順位の決め方」）。
  * - wins:        対戦の勝ち数（決着した対戦のみ）
  * - headToHead:  直接対決の勝敗
- * - gameDiff:    得失ゲーム差（取ったゲーム − 取られたゲーム）
- * - gamesWon:    得ゲーム数（取ったゲームの合計）
+ * - gamesWon:    取ったゲーム数の合計
+ *
+ * 得失ゲーム差は入れていない。1対戦は必ず同じ試合数なので、消化数が揃った時点では
+ * 得失差 = 2×取ったゲーム数 − (1対戦の試合数 × 対戦数) となり、取ったゲーム数と並び順が完全に一致する。
  * - janken:      じゃんけん（手入力）
  */
-export type TeamRankCriterion = 'wins' | 'headToHead' | 'gameDiff' | 'gamesWon' | 'janken';
+export type TeamRankCriterion = 'wins' | 'headToHead' | 'gamesWon' | 'janken';
 
 export const DEFAULT_TEAM_RANK_ORDER: TeamRankCriterion[] = [
-  'wins', 'headToHead', 'gameDiff', 'gamesWon', 'janken',
+  'wins', 'headToHead', 'gamesWon', 'janken',
 ];
 
 export const TEAM_RANK_CRITERION_LABEL: Record<TeamRankCriterion, string> = {
   wins: '勝利数',
   headToHead: '直接対決',
-  gameDiff: '得失ゲーム差',
-  gamesWon: '得ゲーム数',
+  gamesWon: '取ったゲーム数',
   janken: 'じゃんけん',
 };
 
@@ -554,9 +555,8 @@ export function normalizeTeamRankOrder(order?: TeamRankCriterion[] | null): Team
 }
 
 /** 数値で比べられる基準は、その値を取り出すだけで済む */
-const NUMERIC_CRITERION_VALUE: Record<'wins' | 'gameDiff' | 'gamesWon', (e: TeamRankEntry) => number> = {
+const NUMERIC_CRITERION_VALUE: Record<'wins' | 'gamesWon', (e: TeamRankEntry) => number> = {
   wins: e => e.wins,
-  gameDiff: e => e.gameDiff,
   gamesWon: e => e.gamesWon,
 };
 
@@ -633,7 +633,7 @@ export function rankTeamGroup(
   const completed = prelim.filter(e => e.completed);
   const map = new Map<string, TeamRankEntry>();
   const getOrCreate = (id: string): TeamRankEntry => {
-    if (!map.has(id)) map.set(id, { teamId: id, wins: 0, losses: 0, gamesWon: 0, gamesLost: 0, gameDiff: 0 });
+    if (!map.has(id)) map.set(id, { teamId: id, wins: 0, losses: 0, gamesWon: 0, gamesLost: 0 });
     return map.get(id)!;
   };
   for (const enc of prelim) {
@@ -651,8 +651,6 @@ export function rankTeamGroup(
     const t2 = enc.games.filter(g => g.winner === 2).length;
     e1.gamesWon += t1; e1.gamesLost += t2;
     e2.gamesWon += t2; e2.gamesLost += t1;
-    e1.gameDiff += t1 - t2;
-    e2.gameDiff += t2 - t1;
   }
   // 全チームを1つの同順位ブロックとして、基準を上から当てて割っていく
   return splitIntoRankBlocks(Array.from(map.values()), order, 0, completed, jankenWinners).flat();
