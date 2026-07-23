@@ -65,6 +65,16 @@ export default function HomePage() {
                     </Link>
                 </div>
 
+                {/* 結果発表ページ（誰でも見られる） */}
+                <div className="max-w-md mx-auto">
+                    <Link href="/results">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-center transition-colors hover:bg-amber-100 hover:border-amber-300 cursor-pointer">
+                            <span className="block text-base font-bold text-amber-900">結果発表</span>
+                            <span className="block text-xs text-amber-800 mt-1">各種目の1〜3位と団体戦の順位をまとめて見られます</span>
+                        </div>
+                    </Link>
+                </div>
+
                 {/* 運営者向けの小さな導線（目立たない・PIN保護あり） */}
                 <div className="text-center pt-1">
                     <Link href="/admin">
