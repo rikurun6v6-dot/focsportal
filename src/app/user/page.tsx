@@ -1348,10 +1348,11 @@ export default function UserDashboard() {
             {/* ヘルプボタン（左下固定） */}
             <button
                 onClick={handleOpenGuide}
-                className="fixed bottom-4 left-4 z-50 bg-sky-500 hover:bg-sky-600 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-110 active:scale-95"
+                className="fixed bottom-4 left-4 z-50 bg-sky-500 hover:bg-sky-600 text-white rounded-full h-12 px-4 flex items-center gap-1.5 shadow-lg hover:shadow-xl transition-all active:scale-95"
                 aria-label="使い方ガイドを表示"
             >
-                <HelpCircle className="w-6 h-6" />
+                <HelpCircle className="w-5 h-5" />
+                <span className="text-sm font-bold">ヘルプ</span>
             </button>
 
             {/* ステータスバー（右下固定） */}
