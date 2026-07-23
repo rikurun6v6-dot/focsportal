@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Trophy, Users, Plus, Trash2, AlertTriangle, ListOrdered } from 'lucide-react';
+import { Trophy, Users, Plus, Trash2, AlertTriangle, ListOrdered, CalendarClock } from 'lucide-react';
 import TeamRankOrderEditor from './TeamRankOrderEditor';
 import type { TeamRankCriterion } from '@/lib/tournament-logic';
+import { listConcurrencyOptions } from '@/lib/team-schedule';
 
 export interface SimpleTeam {
   id: string;
@@ -23,6 +24,10 @@ interface TeamSetupPanelProps {
   finalFormat: FinalFormat;
   teamGroupAssignments: Record<string, number>;
   rankOrder: TeamRankCriterion[];
+  courtCount: number;
+  concurrentPerGroup: number;
+  /** 1対戦あたりの試合数（男子D・女子D・混合D・男子S・女子S なら5） */
+  gamesPerEncounter: number;
   /** 進行中に設定を開いているか。開始ボタンの文言と注意書きを変える */
   isRunning: boolean;
   onNewTeamNameChange: (v: string) => void;
@@ -33,6 +38,8 @@ interface TeamSetupPanelProps {
   onFinalFormatChange: (f: FinalFormat) => void;
   onAssignGroup: (teamId: string, group: number) => void;
   onRankOrderChange: (order: TeamRankCriterion[]) => void;
+  onCourtCountChange: (n: number) => void;
+  onConcurrentPerGroupChange: (n: number) => void;
   onStartPreliminary: () => void;
 }
 
@@ -59,6 +66,9 @@ export default function TeamSetupPanel({
   finalFormat,
   teamGroupAssignments,
   rankOrder,
+  courtCount,
+  concurrentPerGroup,
+  gamesPerEncounter,
   isRunning,
   onNewTeamNameChange,
   onAddTeam,
@@ -68,6 +78,8 @@ export default function TeamSetupPanel({
   onFinalFormatChange,
   onAssignGroup,
   onRankOrderChange,
+  onCourtCountChange,
+  onConcurrentPerGroupChange,
   onStartPreliminary,
 }: TeamSetupPanelProps) {
   // 開始前のチェック: 空のグループがあると対戦が作られない
@@ -80,8 +92,32 @@ export default function TeamSetupPanel({
     .map((list, g) => ({ g, count: list.length }))
     .filter(x => x.count === 1);
 
+  // 同時進行の選択肢。1グループの最大同時数は「そのグループで同時に成立する対戦数」
+  const minGroupTeams = Math.min(...teamsPerGroup.map(l => l.length));
+  const maxConcurrentPerGroup = Math.max(1, Math.floor(minGroupTeams / 2));
+  const concurrencyOptions = listConcurrencyOptions(
+    Math.max(1, groupCount), maxConcurrentPerGroup, courtCount, gamesPerEncounter);
+
+  // 順位決定戦のラベル例（1位決定戦・3位決定戦・…）を出して、何が起きるか先に見せる
+  const placementPairCount = groupCount === 2 ? Math.min(...teamsPerGroup.map(l => l.length)) : 0;
+  const placementLabels = placementPairCount > 0
+    ? Array.from({ length: placementPairCount }, (_, i) => `${i * 2 + 1}位決定戦`).join('・')
+    : '';
+  // グループのチーム数が違うと、多い側の下位チームは相手がいない
+  const unevenGroupWarning = (() => {
+    if (groupCount !== 2) return '';
+    const [a, b] = teamsPerGroup.map(l => l.length);
+    if (a === b) return '';
+    const diff = Math.abs(a - b);
+    const bigger = a > b ? 'グループ1' : 'グループ2';
+    return `グループのチーム数が違います（${a}対${b}）。${bigger}の下位${diff}チームは相手がいないため順位決定戦に出られません。`;
+  })();
+
   const blockingReasons: string[] = [];
   if (teams.length < 2) blockingReasons.push('チームが2つ以上必要です');
+  if (finalFormat === 'placement' && groupCount !== 2) {
+    blockingReasons.push('順位決定戦を選ぶ場合、グループ数はちょうど2つにしてください');
+  }
   if (groupCount > 1 && emptyGroups.length > 0) {
     blockingReasons.push(`${emptyGroups.map(x => GROUP_LABELS[x.g]).join('・')} にチームが入っていません`);
   }
@@ -207,12 +243,98 @@ export default function TeamSetupPanel({
 
           <div className="text-xs text-slate-600 bg-slate-50 rounded p-2">
             {finalFormat === 'placement'
-              ? '予選終了後、同順位チーム同士で順位決定戦を行います（1位同士、2位同士、…）'
+              ? `予選終了後、両グループの同じ順位同士で対戦します（1位決定戦・3位決定戦・5位決定戦…）。${teams.length}チームなら ${placementLabels}`
               : `各グループ上位${qualifiersPerGroup}チームが決勝トーナメントに進出します`}
           </div>
+          {finalFormat === 'placement' && groupCount !== 2 && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+              順位決定戦は「グループAの1位 vs グループBの1位」の形なので、グループ数はちょうど2つ必要です。
+              {groupCount === 1
+                ? '1グループなら総当たりの結果がそのまま最終順位になるので、順位決定戦は要りません。'
+                : `現在は${groupCount}グループです。`}
+            </p>
+          )}
+          {finalFormat === 'placement' && groupCount === 2 && unevenGroupWarning && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+              {unevenGroupWarning}
+            </p>
+          )}
           <p className="text-xs text-slate-500">
             1対戦は 男子D・女子D・混合D・男子S・女子S の5試合、3本先取で決着します
           </p>
+        </CardContent>
+      </Card>
+
+      {/* コートと同時進行 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <CalendarClock className="w-4 h-4 text-sky-600" />
+            コートと同時進行
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-sm w-28">使えるコート面数</label>
+            <div className="flex gap-1 flex-wrap">
+              {[4, 6, 8, 10, 12, 16].map(n => (
+                <Button
+                  key={n}
+                  size="sm"
+                  variant={courtCount === n ? 'default' : 'outline'}
+                  className="h-9 w-11 p-0 text-xs"
+                  onClick={() => onCourtCountChange(n)}
+                >
+                  {n}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm block mb-2">同時に進める対戦数（1グループあたり）</label>
+            <div className="space-y-1.5">
+              {concurrencyOptions.map(opt => {
+                const selected = concurrentPerGroup === opt.concurrentPerGroup;
+                return (
+                  <button
+                    key={opt.concurrentPerGroup}
+                    onClick={() => onConcurrentPerGroupChange(opt.concurrentPerGroup)}
+                    disabled={!opt.enoughCourts}
+                    className={`w-full text-left rounded-lg border p-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${selected
+                      ? 'border-sky-500 bg-sky-50 ring-1 ring-sky-300'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    aria-pressed={selected}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-bold text-slate-800">
+                        1グループ {opt.concurrentPerGroup}対戦
+                      </span>
+                      <span className="text-xs font-bold text-sky-700">
+                        {opt.teamsOnCourt}チームが同時にコートへ
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      {opt.enoughCourts
+                        ? `全体で${opt.concurrentEncounters}対戦を並行。1対戦あたり${opt.courtsPerEncounter}面（${opt.courtsUsed}/${courtCount}面を使用）、5試合を${opt.waves}波で消化`
+                        : `${opt.concurrentEncounters}面以上必要です（現在${courtCount}面）`}
+                    </p>
+                    {opt.enoughCourts && (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        1チームが同時に出す試合は最大{opt.simultaneousGamesPerTeam}試合
+                        {opt.simultaneousGamesPerTeam >= 5
+                          ? '（男女それぞれ4人以上必要）'
+                          : opt.simultaneousGamesPerTeam >= 3
+                            ? '（男女それぞれ3人以上必要）'
+                            : ''}
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
