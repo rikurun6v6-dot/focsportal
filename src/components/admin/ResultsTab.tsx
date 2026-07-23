@@ -579,7 +579,7 @@ export default function ResultsTab() {
         const campConfig = await getDocument<Config>('config', camp?.id || '');
         const enabled = campConfig?.enabled_tournaments;
         if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type as any)) {
-          toastError(`「${match.tournament_type}」は進行制御でロック中です。操作タブで種目を有効にしてから割り当ててください。`);
+          toastError(`「${match.tournament_type}」は進行制御でロック中です。「種目設定」タブで種目を有効にしてから割り当ててください。`);
           setShowForceAssignFor(null);
           return;
         }
@@ -691,7 +691,7 @@ export default function ResultsTab() {
         const campConfig = await getDocument<Config>('config', camp?.id || '');
         const enabled = campConfig?.enabled_tournaments;
         if (enabled && enabled.length > 0 && !enabled.includes(match.tournament_type as any)) {
-          toastError(`「${match.tournament_type}」は進行制御でロック中です。操作タブで種目を有効にしてから開始してください。`);
+          toastError(`「${match.tournament_type}」は進行制御でロック中です。「種目設定」タブで種目を有効にしてから開始してください。`);
           return;
         }
       } catch { /* config取得失敗時はスルー */ }
