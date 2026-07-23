@@ -56,6 +56,19 @@ export default function TeamPreliminaryGroup({
   const handleResetManual = (group: string) => {
     onManualRankChange?.(group, []);
   };
+
+  /** 対戦をラウンド（巡）ごとにまとめる。round が無い古いデータは1つにまとまる */
+  const roundsOf = (list: TeamEncounter[]) => {
+    const byRound = new Map<number, TeamEncounter[]>();
+    for (const e of list) {
+      const r = e.round ?? 0;
+      if (!byRound.has(r)) byRound.set(r, []);
+      byRound.get(r)!.push(e);
+    }
+    return [...byRound.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([round, l]) => ({ round, list: l }));
+  };
   return (
     <div>
       <h2 className="text-lg font-bold text-violet-700 mb-4 flex items-center gap-2">
@@ -71,27 +84,14 @@ export default function TeamPreliminaryGroup({
             const jankenPairs = jankenPairsByGroup?.[group] ?? [];
 
             return (
-              <div key={group} className="flex flex-col gap-3 w-64">
+              <div key={group} className="flex flex-col gap-3 w-72">
                 <h3 className="text-center font-bold text-violet-700 text-xs bg-violet-100 rounded-md py-1.5 px-2 shadow-sm">
                   グループ {group}
                 </h3>
 
-                {/* 対戦カード一覧 */}
-                <div className="flex flex-col gap-2">
-                  {encounters.map(enc => (
-                    <TeamEncounterCard
-                      key={enc.id}
-                      encounter={enc}
-                      getTeamName={getTeamName}
-                      onGameResult={onGameResult}
-                      readOnly={readOnly}
-                    />
-                  ))}
-                </div>
-
-                {/* 順位表 */}
+                {/* 順位表を最上部に。入力しながら順位の変化を追えるようにする */}
                 {rankings.length > 0 && (
-                  <div className="mt-2">
+                  <div>
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] font-semibold text-slate-500">現在の順位</p>
                       {!readOnly && (manualRanksByGroup?.[group] ?? []).length > 0 && (
@@ -164,9 +164,9 @@ export default function TeamPreliminaryGroup({
                   </div>
                 )}
 
-                {/* じゃんけん入力 */}
+                {/* じゃんけん入力（順位が並んだときだけ出る。順位表の直下が自然） */}
                 {!readOnly && jankenPairs.length > 0 && (
-                  <div className="mt-2 space-y-2">
+                  <div className="space-y-2">
                     <p className="text-[10px] font-semibold text-amber-600 flex items-center gap-1">
                       <Scissors className="w-3 h-3" />
                       じゃんけん決定が必要
@@ -198,6 +198,33 @@ export default function TeamPreliminaryGroup({
                     ))}
                   </div>
                 )}
+
+                {/* 対戦一覧: ラウンドごとにまとめ、カードは折りたたむ。
+                    決着済みと未着手は畳み、入力途中のものだけ開いた状態で出す。 */}
+                <div className="space-y-2">
+                  {roundsOf(encounters).map(({ round, list }) => (
+                    <div key={round} className="space-y-1.5">
+                      <div className="flex items-center justify-between px-0.5">
+                        <p className="text-[11px] font-bold text-slate-600">
+                          {round > 0 ? `第${round}巡` : '対戦'}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          {list.filter(e => e.completed).length}/{list.length} 決着
+                        </p>
+                      </div>
+                      {list.map(enc => (
+                        <TeamEncounterCard
+                          key={enc.id}
+                          encounter={enc}
+                          getTeamName={getTeamName}
+                          onGameResult={onGameResult}
+                          readOnly={readOnly}
+                          collapsible
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })}
