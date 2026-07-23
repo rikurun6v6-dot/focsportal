@@ -379,7 +379,6 @@ export interface TeamRankEntry {
   teamId: string;
   wins: number;      // 対戦の勝ち数（決着した対戦のみ）
   losses: number;    // 対戦の負け数（決着した対戦のみ）
-  gamesWon: number;  // 取得本数（入力済みの試合を集計。未決着の対戦も含む）
-  gamesLost: number; // 被取得本数（同上）
-  gameDiff: number;  // 得失試合数差 = gamesWon - gamesLost
+  gamesWon: number;  // 取ったゲーム数（入力済みの試合を集計。未決着の対戦も含む）
+  gamesLost: number; // 取られたゲーム数（同上）
 }

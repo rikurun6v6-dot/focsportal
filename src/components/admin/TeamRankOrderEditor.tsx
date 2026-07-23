@@ -18,8 +18,7 @@ interface TeamRankOrderEditorProps {
 const CRITERION_NOTE: Record<TeamRankCriterion, string> = {
   wins: '対戦の勝ち数。決着した対戦のみ数える',
   headToHead: '2チームが並んだときだけ有効。3チーム以上が並んだ場合は飛ばす',
-  gameDiff: '取ったゲーム − 取られたゲーム',
-  gamesWon: '取ったゲームの合計',
+  gamesWon: '取ったゲームの合計。1対戦の試合数が同じなので得失差と並び順は同じになる',
   janken: '手入力。上の基準で決まらなかったペアにだけ入力欄が出る',
 };
 
