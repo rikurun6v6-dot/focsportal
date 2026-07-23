@@ -179,19 +179,18 @@ function LoginScreen({ onLogin, onSpectate }: {
                                 利用を開始する
                             </Button>
 
-                            {/* 名前を選ばずに入る道。結果や誰が出ているかを見たいだけの人向け */}
-                            <div className="pt-2 border-t border-slate-200">
-                                <button
-                                    onClick={handleSpectate}
-                                    disabled={!selectedCampId}
-                                    className="w-full py-3 text-sm text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                                >
-                                    <span className="font-bold">名前を選ばずに見る</span>
-                                    <span className="block text-xs text-slate-500 mt-0.5">
-                                        コート状況・トーナメント表・結果を見られます（呼び出し通知はつきません）
-                                    </span>
-                                </button>
-                            </div>
+                            {/* 名前を選ばずに入る道。結果や誰が出ているかを見たいだけの人向け。
+                                「利用を開始する」と並ぶもう一つの入口なので、面として見えるようにする */}
+                            <button
+                                onClick={handleSpectate}
+                                disabled={!selectedCampId}
+                                className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3.5 text-left transition-colors hover:bg-sky-100 hover:border-sky-300 active:bg-sky-200 disabled:opacity-40 disabled:pointer-events-none"
+                            >
+                                <span className="block text-base font-bold text-sky-900">名前を選ばずに見る</span>
+                                <span className="block text-xs text-sky-800 mt-1 leading-relaxed">
+                                    コート状況・トーナメント表・結果を見られます（呼び出し通知はつきません）
+                                </span>
+                            </button>
                         </>
                     )}
                 </CardContent>
