@@ -57,6 +57,9 @@ export default function HomePage() {
                                     <span className="text-sky-500 font-bold">✓</span>
                                     <span>他の選手の待ち時間検索</span>
                                 </div>
+                                <p className="pt-2 mt-1 border-t border-slate-100 text-xs text-slate-500">
+                                    結果や試合状況を見るだけなら、名前を選ばずに入れます
+                                </p>
                             </CardContent>
                         </Card>
                     </Link>

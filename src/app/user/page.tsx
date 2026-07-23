@@ -36,7 +36,10 @@ const isPlayerInMatch = (match: Match, playerId: string) => {
     );
 };
 
-function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => void }) {
+function LoginScreen({ onLogin, onSpectate }: {
+    onLogin: (player: Player, camp: Camp) => void;
+    onSpectate: (camp: Camp) => void;
+}) {
     const [loading, setLoading] = useState(true);
     const [camps, setCamps] = useState<Camp[]>([]);
     const [selectedCampId, setSelectedCampId] = useState<string>("");
@@ -99,6 +102,11 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
         if (player && camp) {
             onLogin(player, camp);
         }
+    };
+
+    const handleSpectate = () => {
+        const camp = camps.find(c => c.id === selectedCampId);
+        if (camp) onSpectate(camp);
     };
 
     if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500 bg-slate-50">読み込み中...</div>;
@@ -167,6 +175,20 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
                             >
                                 利用を開始する
                             </Button>
+
+                            {/* 名前を選ばずに入る道。結果や誰が出ているかを見たいだけの人向け */}
+                            <div className="pt-2 border-t border-slate-200">
+                                <button
+                                    onClick={handleSpectate}
+                                    disabled={!selectedCampId}
+                                    className="w-full py-3 text-sm text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                                >
+                                    <span className="font-bold">名前を選ばずに見る</span>
+                                    <span className="block text-xs text-slate-500 mt-0.5">
+                                        コート状況・トーナメント表・結果を見られます（呼び出し通知はつきません）
+                                    </span>
+                                </button>
+                            </div>
                         </>
                     )}
                 </CardContent>
@@ -186,6 +208,8 @@ export default function UserDashboard() {
     const { camp, setManualCamp } = useCamp();
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const [myPlayer, setMyPlayer] = useState<Player | null>(null);
+    // 名前を選ばずに見ているモード。呼び出し通知が要らない人のための入口
+    const [isSpectator, setIsSpectator] = useState(false);
     const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
     const [searchName, setSearchName] = useState("");
     const [etaResult, setEtaResult] = useState<ETAResult | null>(null);
@@ -220,6 +244,7 @@ export default function UserDashboard() {
 
     const USER_GUIDE_KEY = 'user_guide_completed';
     const NOTIF_KEY = 'focs_notifications';
+    const SPECTATOR_KEY = 'focs_spectator';
 
     // 選手IDから選手情報を取得するヘルパー関数
     const getPlayerById = (playerId: string | undefined): Player | null => {
@@ -365,6 +390,12 @@ export default function UserDashboard() {
             if (!guideCompleted) {
                 setIsGuideOpen(true);
             }
+        } else if (localStorage.getItem(SPECTATOR_KEY) === 'true' && storedCamp) {
+            // 名前を選ばずに見ていた人も、次回そのまま入れるようにする
+            const campData = JSON.parse(storedCamp);
+            setIsSpectator(true);
+            setManualCamp(campData);
+            setCampStatus(campData.status ?? null);
         }
     }, [setManualCamp]);
 
@@ -655,12 +686,39 @@ export default function UserDashboard() {
     const handleLogin = (player: Player, camp: Camp) => {
         localStorage.setItem("focs_user", JSON.stringify(player));
         localStorage.setItem("focs_camp", JSON.stringify(camp));
+        localStorage.removeItem(SPECTATOR_KEY);
         setMyPlayer(player);
+        setIsSpectator(false);
         setManualCamp(camp);
+    };
+
+    // 名前を選ばずに入る
+    const handleSpectate = (camp: Camp) => {
+        localStorage.setItem("focs_camp", JSON.stringify(camp));
+        localStorage.setItem(SPECTATOR_KEY, 'true');
+        setIsSpectator(true);
+        setManualCamp(camp);
+        setCampStatus(camp.status ?? null);
+    };
+
+    // 観戦モードから名前を選び直す（入り直しをさせない）
+    const handleChooseName = () => {
+        localStorage.removeItem(SPECTATOR_KEY);
+        localStorage.removeItem("focs_camp");
+        setIsSpectator(false);
+        setManualCamp(null);
     };
 
     // 退出は取り消せない（もう一度大会と名前を選び直すことになる）ので、必ず確認を挟む
     const handleLogout = async () => {
+        // 観戦モードは失うものが無いので確認を挟まない
+        if (!myPlayer) {
+            localStorage.removeItem("focs_camp");
+            localStorage.removeItem(SPECTATOR_KEY);
+            setIsSpectator(false);
+            setManualCamp(null);
+            return;
+        }
         const confirmed = await confirm({
             title: '退出しますか？',
             message: '退出すると、もう一度「大会」と「あなたの名前」を選び直すことになります。試合の呼び出し通知も届かなくなります。',
@@ -671,7 +729,9 @@ export default function UserDashboard() {
         if (!confirmed) return;
         localStorage.removeItem("focs_user");
         localStorage.removeItem("focs_camp");
+        localStorage.removeItem(SPECTATOR_KEY);
         setMyPlayer(null);
+        setIsSpectator(false);
         window.location.reload();
     };
 
@@ -710,8 +770,8 @@ export default function UserDashboard() {
         setSearching(false);
     };
 
-    if (!myPlayer) {
-        return <LoginScreen onLogin={handleLogin} />;
+    if (!myPlayer && !isSpectator) {
+        return <LoginScreen onLogin={handleLogin} onSpectate={handleSpectate} />;
     }
 
     let statusColor = "emerald";
@@ -814,7 +874,16 @@ export default function UserDashboard() {
                         />
                         <div className="min-w-0">
                             <h1 className="text-[10px] font-bold text-slate-400 leading-none mb-0.5 whitespace-nowrap">Foc's Portal</h1>
-                            <p className="text-xs font-bold text-slate-800 leading-none whitespace-nowrap overflow-hidden text-ellipsis max-w-[110px] sm:max-w-none">{myPlayer.name} さん</p>
+                            {myPlayer ? (
+                                <p className="text-xs font-bold text-slate-800 leading-none whitespace-nowrap overflow-hidden text-ellipsis max-w-[110px] sm:max-w-none">{myPlayer.name} さん</p>
+                            ) : (
+                                <button
+                                    onClick={handleChooseName}
+                                    className="text-xs font-bold text-sky-600 underline leading-none whitespace-nowrap"
+                                >
+                                    名前を選ぶ
+                                </button>
+                            )}
                         </div>
                     </div>
                     {/* 右: アイコン群（1行固定）
@@ -832,7 +901,8 @@ export default function UserDashboard() {
                             </button>
                         </Link>
 
-                        {/* 通知トグル */}
+                        {/* 通知トグル（名前を選んだ人だけ。観戦モードでは呼び出しが無いので出さない） */}
+                        {myPlayer && (
                         <button
                             onClick={() => {
                                 if (isIOSNotPWA) {
@@ -863,9 +933,10 @@ export default function UserDashboard() {
                                 {isIOSNotPWA || notifPermission === 'denied' ? '通知' : notifEnabled ? '通知ON' : '通知OFF'}
                             </span>
                         </button>
+                        )}
 
-                        {/* チャットボタン */}
-                        {isChatEnabled && (
+                        {/* チャットボタン（名前を選んだ人だけ） */}
+                        {isChatEnabled && myPlayer && (
                             <button
                                 onClick={() => setIsChatOpen(true)}
                                 className="relative flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
@@ -891,10 +962,10 @@ export default function UserDashboard() {
                         <button
                             onClick={handleLogout}
                             className="flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
-                            aria-label="この大会から退出する"
+                            aria-label={myPlayer ? 'この大会から退出する' : '大会の選択に戻る'}
                         >
                             <LogOut className="w-4 h-4 text-slate-400" />
-                            <span className="text-[11px] text-slate-500 leading-none font-medium">退出</span>
+                            <span className="text-[11px] text-slate-500 leading-none font-medium">{myPlayer ? '退出' : '戻る'}</span>
                         </button>
                     </div>
                 </div>
@@ -992,7 +1063,8 @@ export default function UserDashboard() {
                     </Card>
                 ) : (
                     <>
-                        {/* ステータス ヒーローカード */}
+                        {/* ステータス ヒーローカード（名前を選んだ人だけ） */}
+                        {myPlayer && (
                         <div className={`rounded-2xl shadow-lg overflow-hidden relative ${
                             currentMatch?.status === 'calling'
                                 ? 'bg-gradient-to-br from-orange-500 via-red-500 to-rose-600'
@@ -1050,21 +1122,41 @@ export default function UserDashboard() {
                                 </div>
                             )}
                         </div>
+                        )}
+
+                        {/* 観戦モードの案内。名前を選べば呼び出しが受け取れることを常に伝える */}
+                        {!myPlayer && (
+                            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                                <p className="text-sm font-bold text-sky-900">名前を選ばずに見ています</p>
+                                <p className="text-xs text-sky-800 mt-1 leading-relaxed">
+                                    コート状況・トーナメント表・結果は今のまま見られます。
+                                    自分の試合の呼び出しを受け取りたいときは、名前を選んでください。
+                                </p>
+                                <Button
+                                    onClick={handleChooseName}
+                                    className="mt-3 h-11 bg-sky-600 hover:bg-sky-700 text-white font-bold"
+                                >
+                                    名前を選ぶ
+                                </Button>
+                            </div>
+                        )}
 
                         <Tabs defaultValue="courts" className="w-full">
-                            <TabsList className="w-full grid grid-cols-3 bg-slate-200/80 rounded-xl p-1 gap-0.5 h-auto">
+                            <TabsList className={`w-full grid ${myPlayer ? 'grid-cols-3' : 'grid-cols-2'} bg-slate-200/80 rounded-xl p-1 gap-0.5 h-auto`}>
                                 <TabsTrigger
                                     value="courts"
                                     className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
                                 >
                                     コート状況
                                 </TabsTrigger>
+                                {myPlayer && (
                                 <TabsTrigger
                                     value="my-matches"
                                     className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
                                 >
                                     自分の試合
                                 </TabsTrigger>
+                                )}
                                 <TabsTrigger
                                     value="bracket"
                                     className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
@@ -1082,6 +1174,7 @@ export default function UserDashboard() {
                                 </div>
                             </TabsContent>
 
+                            {myPlayer && (
                             <TabsContent value="my-matches" className="mt-4">
                                 <div className="space-y-2">
                                     <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
@@ -1090,6 +1183,7 @@ export default function UserDashboard() {
                                     {camp && <MyMatchesView playerId={myPlayer.id!} campId={camp.id} />}
                                 </div>
                             </TabsContent>
+                            )}
 
                             <TabsContent value="bracket" className="mt-4">
                                 <div className="space-y-2">
@@ -1297,11 +1391,13 @@ export default function UserDashboard() {
             <UserGuide isOpen={isGuideOpen} onClose={handleCloseGuide} />
 
             {/* チャットウィンドウ */}
-            <ChatWindow
-                isOpen={isChatOpen}
-                onClose={() => setIsChatOpen(false)}
-                player={myPlayer}
-            />
+            {myPlayer && (
+                <ChatWindow
+                    isOpen={isChatOpen}
+                    onClose={() => setIsChatOpen(false)}
+                    player={myPlayer}
+                />
+            )}
 
             {/* チャット通知 */}
             {isChatEnabled && myPlayer && (
