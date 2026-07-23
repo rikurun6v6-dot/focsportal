@@ -933,6 +933,17 @@ export default function UserDashboard() {
                         タップ目標は 44px 角を確保し、間隔も 4px 空ける。
                         「退出」は取り消しの効かない操作なので、区切り線と余白で他のボタンから離す。 */}
                     <div className="flex flex-nowrap items-center gap-1 flex-shrink-0">
+                        {/* 結果発表ページ */}
+                        <Link href="/results">
+                            <button
+                                className="flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
+                                aria-label="結果発表を見る"
+                            >
+                                <Trophy className="w-4 h-4 text-amber-500" />
+                                <span className="text-[11px] text-slate-500 leading-none font-medium">結果</span>
+                            </button>
+                        </Link>
+
                         {/* ホームボタン */}
                         <Link href="/">
                             <button
