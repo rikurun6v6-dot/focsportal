@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loading } from '@/components/ui/loading';
-import type { TeamMatchConfig, TeamEncounter, TeamRankEntry } from '@/types';
+import type { TeamMatchConfig, TeamEncounter, TeamRankEntry, Court } from '@/types';
 import {
   buildGameSlots,
   generateTeamPlacementEncounters,
@@ -22,7 +22,7 @@ import {
   TEAM_RANK_CRITERION_LABEL,
   type TeamRankCriterion,
 } from '@/lib/tournament-logic';
-import { getDocument, setDocument, deleteDocument } from '@/lib/firestore-helpers';
+import { getDocument, setDocument, deleteDocument, subscribeToCourts } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastError } from '@/lib/toast';
@@ -85,6 +85,8 @@ export default function TeamTournamentGenerator() {
   // 進行の設定。合宿ごとに保存する（面数も同時対戦数も大会によって変わる）
   const [courtCount, setCourtCount] = useState<number>(DEFAULT_COURT_COUNT);
   const [concurrentPerGroup, setConcurrentPerGroup] = useState<number>(1);
+  // 面数は既定で「今の使用コート数」から自動。手動指定にも切り替えられる
+  const [courtCountMode, setCourtCountMode] = useState<'auto' | 'manual'>('auto');
   // グループ・ラウンドごとの休みチーム: `${group}_${round}` -> teamId
   const [prelimByes, setPrelimByes] = useState<Record<string, string | null>>({});
   // 「予選結果を確定」を押したか。押すまではじゃんけん入力を出さない
@@ -112,6 +114,7 @@ export default function TeamTournamentGenerator() {
     setRankOrder(normalizeTeamRankOrder(s.rankOrder as TeamRankCriterion[] | undefined));
     if (typeof s.courtCount === 'number') setCourtCount(s.courtCount);
     if (typeof s.concurrentPerGroup === 'number') setConcurrentPerGroup(s.concurrentPerGroup);
+    if (s.courtCountMode === 'auto' || s.courtCountMode === 'manual') setCourtCountMode(s.courtCountMode);
     setPrelimByes((s.prelimByes as Record<string, string | null>) ?? {});
     setPrelimFinalized(s.prelimFinalized === true);
   };
@@ -133,6 +136,7 @@ export default function TeamTournamentGenerator() {
     setRankOrder([...DEFAULT_TEAM_RANK_ORDER]);
     setCourtCount(DEFAULT_COURT_COUNT);
     setConcurrentPerGroup(1);
+    setCourtCountMode('auto');
     setPrelimByes({});
     setPrelimFinalized(false);
   };
@@ -175,7 +179,7 @@ export default function TeamTournamentGenerator() {
       teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
       teamGroupAssignments, prelimEncounters, placementEncounters,
       knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
-      courtCount, concurrentPerGroup, prelimByes, prelimFinalized,
+      courtCount, concurrentPerGroup, courtCountMode, prelimByes, prelimFinalized,
     };
     // localStorageに即時保存（合宿ごとのキー）
     try { localStorage.setItem(lsKey(camp.id), JSON.stringify(state)); } catch { /* ignore */ }
@@ -194,7 +198,22 @@ export default function TeamTournamentGenerator() {
   }, [stateLoaded, camp?.id, teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
     teamGroupAssignments, prelimEncounters, placementEncounters,
     knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
-    courtCount, concurrentPerGroup, prelimByes, prelimFinalized]);
+    courtCount, concurrentPerGroup, courtCountMode, prelimByes, prelimFinalized]);
+
+  // 合宿のコートを購読して、使える面数を数える。
+  // is_active = その日使う面 / manually_freed = 運営が手動で止めている面
+  const [courts, setCourts] = useState<Court[]>([]);
+  useEffect(() => {
+    if (!camp?.id) return;
+    const unsubscribe = subscribeToCourts(setCourts, camp.id);
+    return () => unsubscribe();
+  }, [camp?.id]);
+
+  const activeCourts = courts.filter(c => c.is_active).length;
+  const stoppedCourts = courts.filter(c => c.is_active && c.manually_freed).length;
+  const autoCourtCount = Math.max(0, activeCourts - stoppedCourts);
+  // コートが未初期化なら自動では決められないので、手動の値を使う
+  const effectiveCourtCount = courtCountMode === 'auto' && autoCourtCount > 0 ? autoCourtCount : courtCount;
 
   const getTeamName = useCallback((id: string) => {
     if (id === 'BYE') return 'BYE';
@@ -481,7 +500,12 @@ export default function TeamTournamentGenerator() {
       finalFormat={finalFormat}
       teamGroupAssignments={teamGroupAssignments}
       rankOrder={rankOrder}
-      courtCount={courtCount}
+      courtCount={effectiveCourtCount}
+      manualCourtCount={courtCount}
+      courtCountMode={courtCountMode}
+      autoCourtCount={autoCourtCount}
+      activeCourts={activeCourts}
+      stoppedCourts={stoppedCourts}
       concurrentPerGroup={concurrentPerGroup}
       gamesPerEncounter={gamesPerEncounter}
       isRunning={phase !== 'setup'}
@@ -494,6 +518,7 @@ export default function TeamTournamentGenerator() {
       onAssignGroup={(teamId, group) => setTeamGroupAssignments(prev => ({ ...prev, [teamId]: group }))}
       onRankOrderChange={setRankOrder}
       onCourtCountChange={setCourtCount}
+      onCourtCountModeChange={setCourtCountMode}
       onConcurrentPerGroupChange={setConcurrentPerGroup}
       onStartPreliminary={handleStartPreliminary}
     />
@@ -510,7 +535,7 @@ export default function TeamTournamentGenerator() {
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-800">団体戦進行中</p>
               <p className="text-xs text-slate-500 mt-0.5">
-                {teams.length}チーム / {groupCount}グループ / {phaseLabel}
+                {teams.length}チーム / {groupCount}グループ / {phaseLabel} / {effectiveCourtCount}面
               </p>
               <p className="text-xs text-slate-400 mt-0.5">
                 順位: {rankOrder.map(c => TEAM_RANK_CRITERION_LABEL[c]).join(' → ')}
@@ -585,7 +610,7 @@ export default function TeamTournamentGenerator() {
             encounters={prelimEncounters}
             byeByGroupRound={prelimByes}
             concurrentPerGroup={concurrentPerGroup}
-            courtCount={courtCount}
+            courtCount={effectiveCourtCount}
             gamesPerEncounter={gamesPerEncounter}
             getTeamName={getTeamName}
           />

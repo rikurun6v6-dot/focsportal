@@ -24,7 +24,15 @@ interface TeamSetupPanelProps {
   finalFormat: FinalFormat;
   teamGroupAssignments: Record<string, number>;
   rankOrder: TeamRankCriterion[];
+  /** 実際に計算に使う面数（自動なら自動値、手動なら手動値） */
   courtCount: number;
+  /** 手動指定の値 */
+  manualCourtCount: number;
+  courtCountMode: 'auto' | 'manual';
+  /** コート設定から数えた使用可能面数 */
+  autoCourtCount: number;
+  activeCourts: number;
+  stoppedCourts: number;
   concurrentPerGroup: number;
   /** 1対戦あたりの試合数（第1試合〜第5試合の5試合） */
   gamesPerEncounter: number;
@@ -39,6 +47,7 @@ interface TeamSetupPanelProps {
   onAssignGroup: (teamId: string, group: number) => void;
   onRankOrderChange: (order: TeamRankCriterion[]) => void;
   onCourtCountChange: (n: number) => void;
+  onCourtCountModeChange: (m: 'auto' | 'manual') => void;
   onConcurrentPerGroupChange: (n: number) => void;
   onStartPreliminary: () => void;
 }
@@ -67,6 +76,11 @@ export default function TeamSetupPanel({
   teamGroupAssignments,
   rankOrder,
   courtCount,
+  manualCourtCount,
+  courtCountMode,
+  autoCourtCount,
+  activeCourts,
+  stoppedCourts,
   concurrentPerGroup,
   gamesPerEncounter,
   isRunning,
@@ -79,6 +93,7 @@ export default function TeamSetupPanel({
   onAssignGroup,
   onRankOrderChange,
   onCourtCountChange,
+  onCourtCountModeChange,
   onConcurrentPerGroupChange,
   onStartPreliminary,
 }: TeamSetupPanelProps) {
@@ -274,21 +289,64 @@ export default function TeamSetupPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-sm w-28">使えるコート面数</label>
-            <div className="flex gap-1 flex-wrap">
-              {[4, 6, 8, 10, 12, 16].map(n => (
-                <Button
-                  key={n}
-                  size="sm"
-                  variant={courtCount === n ? 'default' : 'outline'}
-                  className="h-9 w-11 p-0 text-xs"
-                  onClick={() => onCourtCountChange(n)}
-                >
-                  {n}
-                </Button>
-              ))}
-            </div>
+          <div className="space-y-2">
+            <label className="text-sm block">使えるコート面数</label>
+
+            {/* 既定は合宿のコート設定から自動で数える */}
+            <button
+              onClick={() => onCourtCountModeChange('auto')}
+              disabled={autoCourtCount === 0}
+              className={`w-full text-left rounded-lg border p-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${courtCountMode === 'auto' && autoCourtCount > 0
+                ? 'border-sky-500 bg-sky-50 ring-1 ring-sky-300'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              aria-pressed={courtCountMode === 'auto'}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-bold text-slate-800">今の使用コートから自動</span>
+                <span className="text-sm font-bold text-sky-700 tabular-nums">
+                  {autoCourtCount > 0 ? `${autoCourtCount}面` : '—'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {autoCourtCount > 0
+                  ? `使用中 ${activeCourts}面${stoppedCourts > 0 ? ` − 停止中 ${stoppedCourts}面` : ''}`
+                  : 'コートが初期化されていないため自動では数えられません'}
+              </p>
+            </button>
+
+            {/* 団体戦だけ別の面数で回したいときは手動 */}
+            <button
+              onClick={() => onCourtCountModeChange('manual')}
+              className={`w-full text-left rounded-lg border p-2.5 transition-colors ${courtCountMode === 'manual' || autoCourtCount === 0
+                ? 'border-sky-500 bg-sky-50 ring-1 ring-sky-300'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              aria-pressed={courtCountMode === 'manual'}
+            >
+              <span className="text-sm font-bold text-slate-800">手動で指定</span>
+              <p className="text-xs text-slate-600 mt-0.5">団体戦だけ別の面数で回すとき</p>
+            </button>
+
+            {(courtCountMode === 'manual' || autoCourtCount === 0) && (
+              <div className="flex gap-1 flex-wrap pl-1">
+                {[4, 6, 8, 10, 12, 16].map(n => (
+                  <Button
+                    key={n}
+                    size="sm"
+                    variant={manualCourtCount === n ? 'default' : 'outline'}
+                    className="h-9 w-11 p-0 text-xs"
+                    onClick={() => onCourtCountChange(n)}
+                  >
+                    {n}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            <p className="text-xs text-slate-500">
+              以下の計算には <span className="font-bold text-slate-700">{courtCount}面</span> を使います
+            </p>
           </div>
 
           <div>
