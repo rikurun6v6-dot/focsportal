@@ -26,7 +26,7 @@ interface TeamSetupPanelProps {
   rankOrder: TeamRankCriterion[];
   courtCount: number;
   concurrentPerGroup: number;
-  /** 1対戦あたりの試合数（男子D・女子D・混合D・男子S・女子S なら5） */
+  /** 1対戦あたりの試合数（第1試合〜第5試合の5試合） */
   gamesPerEncounter: number;
   /** 進行中に設定を開いているか。開始ボタンの文言と注意書きを変える */
   isRunning: boolean;
@@ -260,7 +260,7 @@ export default function TeamSetupPanel({
             </p>
           )}
           <p className="text-xs text-slate-500">
-            1対戦は 男子D・女子D・混合D・男子S・女子S の5試合、3本先取で決着します
+            1対戦は5試合。全5試合を入力すると決着し、勝ち数の多いチームの勝ちになります
           </p>
         </CardContent>
       </Card>

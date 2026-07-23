@@ -14,7 +14,8 @@ import {
   advanceTeamWinnerToNextRound,
   generateTeamBronzeEncounter,
   resolveTeamBronzeEncounter,
-  recordTeamGameResult,
+  recordTeamEncounterScore,
+  clearTeamEncounterScore,
   generateRoundRobinRounds,
   normalizeTeamRankOrder,
   DEFAULT_TEAM_RANK_ORDER,
@@ -86,6 +87,8 @@ export default function TeamTournamentGenerator() {
   const [concurrentPerGroup, setConcurrentPerGroup] = useState<number>(1);
   // グループ・ラウンドごとの休みチーム: `${group}_${round}` -> teamId
   const [prelimByes, setPrelimByes] = useState<Record<string, string | null>>({});
+  // 「予選結果を確定」を押したか。押すまではじゃんけん入力を出さない
+  const [prelimFinalized, setPrelimFinalized] = useState(false);
 
   // UI state (not persisted)
   const [showSetupEdit, setShowSetupEdit] = useState(false);
@@ -110,6 +113,7 @@ export default function TeamTournamentGenerator() {
     if (typeof s.courtCount === 'number') setCourtCount(s.courtCount);
     if (typeof s.concurrentPerGroup === 'number') setConcurrentPerGroup(s.concurrentPerGroup);
     setPrelimByes((s.prelimByes as Record<string, string | null>) ?? {});
+    setPrelimFinalized(s.prelimFinalized === true);
   };
 
   // この合宿に団体戦の保存データが無いときの初期化（前の合宿の状態を引き継がない）
@@ -130,6 +134,7 @@ export default function TeamTournamentGenerator() {
     setCourtCount(DEFAULT_COURT_COUNT);
     setConcurrentPerGroup(1);
     setPrelimByes({});
+    setPrelimFinalized(false);
   };
 
   // Firestoreからロード（campが変わるたびに）。失敗時は同じ合宿のlocalStorageで復帰を試みる
@@ -170,7 +175,7 @@ export default function TeamTournamentGenerator() {
       teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
       teamGroupAssignments, prelimEncounters, placementEncounters,
       knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
-      courtCount, concurrentPerGroup, prelimByes,
+      courtCount, concurrentPerGroup, prelimByes, prelimFinalized,
     };
     // localStorageに即時保存（合宿ごとのキー）
     try { localStorage.setItem(lsKey(camp.id), JSON.stringify(state)); } catch { /* ignore */ }
@@ -189,7 +194,7 @@ export default function TeamTournamentGenerator() {
   }, [stateLoaded, camp?.id, teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
     teamGroupAssignments, prelimEncounters, placementEncounters,
     knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
-    courtCount, concurrentPerGroup, prelimByes]);
+    courtCount, concurrentPerGroup, prelimByes, prelimFinalized]);
 
   const getTeamName = useCallback((id: string) => {
     if (id === 'BYE') return 'BYE';
@@ -225,7 +230,8 @@ export default function TeamTournamentGenerator() {
 
   const allPrelimDone = prelimEncounters.length > 0 && prelimEncounters.every(e => e.completed);
   const needJanken = allPrelimDone && groups.some(g => (jankenPairsByGroup[g] ?? []).length > 0);
-  const canAdvance = allPrelimDone && !needJanken;
+  // 確定を押して、じゃんけんも片付いて初めて次フェーズへ進める
+  const canAdvance = allPrelimDone && prelimFinalized && !needJanken;
   const prelimHasResults = prelimEncounters.some(e => e.games.some(g => g.winner !== null));
 
   const handleAddTeam = () => {
@@ -357,31 +363,38 @@ export default function TeamTournamentGenerator() {
     setPhase('knockout');
   };
 
-  const handlePrelimGameResult = (encounterId: string, slotId: string, winner: 1 | 2 | null) => {
-    setPrelimEncounters(prev => {
-      const enc = prev.find(e => e.id === encounterId);
-      if (!enc) return prev;
-      return prev.map(e => e.id === encounterId ? recordTeamGameResult(enc, slotId, winner) : e);
-    });
+  const handlePrelimScore = (encounterId: string, winnerSide: 1 | 2, winnerGames: number) => {
+    setPrelimEncounters(prev => prev.map(e =>
+      e.id === encounterId ? recordTeamEncounterScore(e, winnerSide, winnerGames) : e));
+    // 結果が変われば順位も変わるので、確定はやり直してもらう
+    setPrelimFinalized(false);
   };
 
-  const handlePlacementGameResult = (encounterId: string, slotId: string, winner: 1 | 2 | null) => {
-    setPlacementEncounters(prev => {
-      const enc = prev.find(e => e.id === encounterId);
-      if (!enc) return prev;
-      return prev.map(e => e.id === encounterId ? recordTeamGameResult(enc, slotId, winner) : e);
-    });
+  const handlePrelimClear = (encounterId: string) => {
+    setPrelimEncounters(prev => prev.map(e =>
+      e.id === encounterId ? clearTeamEncounterScore(e) : e));
+    setPrelimFinalized(false);
   };
 
-  const handleKnockoutGameResult = (encounterId: string, slotId: string, winner: 1 | 2 | null) => {
+  const handlePlacementScore = (encounterId: string, winnerSide: 1 | 2, winnerGames: number) => {
+    setPlacementEncounters(prev => prev.map(e =>
+      e.id === encounterId ? recordTeamEncounterScore(e, winnerSide, winnerGames) : e));
+  };
+
+  const handlePlacementClear = (encounterId: string) => {
+    setPlacementEncounters(prev => prev.map(e =>
+      e.id === encounterId ? clearTeamEncounterScore(e) : e));
+  };
+
+  const handleKnockoutScore = (encounterId: string, winnerSide: 1 | 2, winnerGames: number) => {
     if (bronzeEncounter && bronzeEncounter.id === encounterId) {
-      setBronzeEncounter(prev => prev ? recordTeamGameResult(prev, slotId, winner) : prev);
+      setBronzeEncounter(prev => prev ? recordTeamEncounterScore(prev, winnerSide, winnerGames) : prev);
       return;
     }
     setKnockoutEncounters(prev => {
       const enc = prev.find(e => e.id === encounterId);
       if (!enc) return prev;
-      const updated = recordTeamGameResult(enc, slotId, winner);
+      const updated = recordTeamEncounterScore(enc, winnerSide, winnerGames);
       let next = prev.map(e => e.id === encounterId ? updated : e);
       if (updated.completed) {
         next = advanceTeamWinnerToNextRound(next, encounterId);
@@ -397,6 +410,15 @@ export default function TeamTournamentGenerator() {
       }
       return next;
     });
+  };
+
+  const handleKnockoutClear = (encounterId: string) => {
+    if (bronzeEncounter && bronzeEncounter.id === encounterId) {
+      setBronzeEncounter(prev => prev ? clearTeamEncounterScore(prev) : prev);
+      return;
+    }
+    setKnockoutEncounters(prev => prev.map(e =>
+      e.id === encounterId ? clearTeamEncounterScore(e) : e));
   };
 
   const handleJanken = (team1Id: string, team2Id: string, winnerId: string) => {
@@ -575,16 +597,43 @@ export default function TeamTournamentGenerator() {
             jankenPairsByGroup={jankenPairsByGroup}
             manualRanksByGroup={manualRanksByGroup}
             rankOrder={rankOrder}
+            showJanken={prelimFinalized}
             getTeamName={getTeamName}
-            onGameResult={handlePrelimGameResult}
+            onScore={handlePrelimScore}
+            onClearScore={handlePrelimClear}
             onJanken={handleJanken}
             onManualRankChange={handleManualRankChange}
           />
 
-          {needJanken && (
-            <div className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-              順位が並んだチームがあります。じゃんけんの結果を入力してください
-            </div>
+          {/* 予選結果の確定。押すまではじゃんけん入力を出さない */}
+          {!prelimFinalized && (
+            <>
+              <Button
+                onClick={() => setPrelimFinalized(true)}
+                disabled={!allPrelimDone}
+                className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Check className="w-4 h-4" />
+                予選結果を確定
+              </Button>
+              <p className="text-xs text-center text-slate-500">
+                {allPrelimDone
+                  ? '確定すると順位が決まります。同着で決まらないチームがあれば、じゃんけんの入力欄が出ます'
+                  : `全${prelimEncounters.length}対戦の結果を入れると確定できます（残り${prelimEncounters.filter(e => !e.completed).length}対戦）`}
+              </p>
+            </>
+          )}
+
+          {prelimFinalized && needJanken && (
+            <p className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              同着で順位が決まらないチームがあります。上のじゃんけん入力を済ませてください
+            </p>
+          )}
+
+          {prelimFinalized && !needJanken && (
+            <p className="text-xs text-center text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2">
+              予選順位が確定しました
+            </p>
           )}
 
           <Button
@@ -595,9 +644,6 @@ export default function TeamTournamentGenerator() {
             <ArrowRight className="w-4 h-4" />
             {finalFormat === 'placement' ? '順位決定戦へ進む' : '決勝トーナメントへ進む'}
           </Button>
-          {!allPrelimDone && (
-            <p className="text-xs text-center text-slate-500">全予選対戦が決着すると次のフェーズに進めます</p>
-          )}
 
           {/* 作成済みの次フェーズがあるなら、作り直さずに開けるようにする */}
           {placementEncounters.length > 0 && (
@@ -619,7 +665,8 @@ export default function TeamTournamentGenerator() {
           <TeamPlacementView
             encounters={placementEncounters}
             getTeamName={getTeamName}
-            onGameResult={handlePlacementGameResult}
+            onScore={handlePlacementScore}
+            onClearScore={handlePlacementClear}
           />
           {/* 予選を見に行くだけ。結果は保持する */}
           <Button variant="outline" size="sm" onClick={() => setPhase('preliminary')} className="text-xs gap-1">
@@ -635,7 +682,8 @@ export default function TeamTournamentGenerator() {
             encounters={knockoutEncounters}
             bronzeEncounter={bronzeEncounter}
             getTeamName={getTeamName}
-            onGameResult={handleKnockoutGameResult}
+            onScore={handleKnockoutScore}
+            onClearScore={handleKnockoutClear}
           />
           <Button variant="outline" size="sm" onClick={() => setPhase('preliminary')} className="text-xs gap-1">
             <ArrowLeft className="w-3 h-3" />予選を見る（決勝トーナメントの結果は残ります）

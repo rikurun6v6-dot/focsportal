@@ -327,13 +327,84 @@ export function buildGameSlots(config: TeamMatchConfig): TeamGame[] {
   return slots;
 }
 
+/**
+ * 対戦の勝者を返す。決まっていなければ null。
+ *
+ * 先取制ではなく、**全試合を消化してから勝ち数の多い方**を勝ちとする運用に合わせている。
+ * 3-0 になっても残りを必ず消化するため、途中で決着扱いにすると
+ * 残りの入力欄が畳まれてしまい、得ゲーム数（順位の判定に使う）も取りこぼす。
+ *
+ * 試合数が偶数で同数になった場合は決着しない（null）。順位表の手動並べ替えで対応する。
+ */
 export function computeEncounterWinner(games: TeamGame[], total: number): 1 | 2 | null {
-  const majority = Math.floor(total / 2) + 1;
+  const entered = games.filter(g => g.winner !== null).length;
+  if (entered < total) return null;
   const t1 = games.filter(g => g.winner === 1).length;
   const t2 = games.filter(g => g.winner === 2).length;
-  if (t1 >= majority) return 1;
-  if (t2 >= majority) return 2;
+  if (t1 > t2) return 1;
+  if (t2 > t1) return 2;
   return null;
+}
+
+/**
+ * 対戦の結果を「勝者と本数」だけで記録する。
+ *
+ * 運営は 5-0 / 4-1 / 3-2 のどれかと勝ったチームを選ぶだけで、
+ * どの試合を誰が取ったかは追わない（種目を固定していないため）。
+ * 内部の games 配列は本数に合わせて機械的に埋める。順位判定は本数しか見ないので
+ * これで足りるが、「第N試合を誰が取ったか」は意味を持たない点に注意。
+ *
+ * @param winnerSide 1 = team1 の勝ち, 2 = team2 の勝ち
+ * @param winnerGames 勝った側が取った本数（5試合なら 3〜5）
+ */
+export function recordTeamEncounterScore(
+  enc: TeamEncounter,
+  winnerSide: 1 | 2,
+  winnerGames: number,
+): TeamEncounter {
+  const total = enc.games.length;
+  const loserGames = Math.max(0, total - winnerGames);
+  const loserSide: 1 | 2 = winnerSide === 1 ? 2 : 1;
+
+  const games = enc.games.map((g, i) => ({
+    ...g,
+    winner: (i < winnerGames ? winnerSide : i < winnerGames + loserGames ? loserSide : null) as 1 | 2 | null,
+  }));
+
+  const team1Wins = games.filter(g => g.winner === 1).length;
+  const team2Wins = games.filter(g => g.winner === 2).length;
+
+  return {
+    ...enc,
+    games,
+    team1_wins: team1Wins,
+    team2_wins: team2Wins,
+    winner_id: winnerSide === 1 ? enc.team1_id : enc.team2_id,
+    completed: true,
+  };
+}
+
+/** 対戦の結果を未入力に戻す */
+export function clearTeamEncounterScore(enc: TeamEncounter): TeamEncounter {
+  return {
+    ...enc,
+    games: enc.games.map(g => ({ ...g, winner: null })),
+    team1_wins: 0,
+    team2_wins: 0,
+    winner_id: null,
+    completed: false,
+  };
+}
+
+/**
+ * 勝者側が取りうる本数の一覧を返す（5試合なら [5, 4, 3]）。
+ * 過半数を取らないと勝ちにならないので、下限は floor(total/2)+1。
+ */
+export function listWinnerGameCounts(total: number): number[] {
+  const min = Math.floor(total / 2) + 1;
+  const counts: number[] = [];
+  for (let n = total; n >= min; n--) counts.push(n);
+  return counts;
 }
 
 /**

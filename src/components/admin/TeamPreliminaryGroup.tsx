@@ -1,14 +1,11 @@
 'use client';
 
-import { Trophy, Scissors, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
+import { Trophy, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TeamEncounter, TeamRankEntry } from '@/types';
 import TeamEncounterCard from './TeamEncounterCard';
-import {
-  DEFAULT_TEAM_RANK_ORDER,
-  TEAM_RANK_CRITERION_LABEL,
-  type TeamRankCriterion,
-} from '@/lib/tournament-logic';
+import TeamStandingsTable from '../TeamStandingsTable';
+import { DEFAULT_TEAM_RANK_ORDER, type TeamRankCriterion } from '@/lib/tournament-logic';
 
 interface TeamPreliminaryGroupProps {
   groups: string[];
@@ -17,8 +14,11 @@ interface TeamPreliminaryGroupProps {
   jankenPairsByGroup?: Record<string, [string, string][]>;
   manualRanksByGroup?: Record<string, string[]>;
   rankOrder?: TeamRankCriterion[];
+  /** 「予選結果を確定」を押した後だけ、じゃんけん入力を出す */
+  showJanken?: boolean;
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2 | null) => void;
+  onScore?: (encounterId: string, winnerSide: 1 | 2, winnerGames: number) => void;
+  onClearScore?: (encounterId: string) => void;
   onJanken?: (team1Id: string, team2Id: string, winnerId: string) => void;
   onManualRankChange?: (group: string, orderedTeamIds: string[]) => void;
   readOnly?: boolean;
@@ -31,30 +31,21 @@ export default function TeamPreliminaryGroup({
   jankenPairsByGroup,
   manualRanksByGroup,
   rankOrder = DEFAULT_TEAM_RANK_ORDER,
+  showJanken = false,
   getTeamName,
-  onGameResult,
+  onScore,
+  onClearScore,
   onJanken,
   onManualRankChange,
   readOnly = false,
 }: TeamPreliminaryGroupProps) {
-  const handleMoveUp = (group: string, idx: number) => {
-    if (idx === 0) return;
+  const move = (group: string, idx: number, dir: -1 | 1) => {
     const rankings = rankingsByGroup[group] ?? [];
+    const target = idx + dir;
+    if (target < 0 || target >= rankings.length) return;
     const newOrder = rankings.map(r => r.teamId);
-    [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
+    [newOrder[idx], newOrder[target]] = [newOrder[target], newOrder[idx]];
     onManualRankChange?.(group, newOrder);
-  };
-
-  const handleMoveDown = (group: string, idx: number) => {
-    const rankings = rankingsByGroup[group] ?? [];
-    if (idx >= rankings.length - 1) return;
-    const newOrder = rankings.map(r => r.teamId);
-    [newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
-    onManualRankChange?.(group, newOrder);
-  };
-
-  const handleResetManual = (group: string) => {
-    onManualRankChange?.(group, []);
   };
 
   /** 対戦をラウンド（巡）ごとにまとめる。round が無い古いデータは1つにまとまる */
@@ -69,6 +60,14 @@ export default function TeamPreliminaryGroup({
       .sort((a, b) => a[0] - b[0])
       .map(([round, l]) => ({ round, list: l }));
   };
+
+  // 3グループまでは画面幅で割り付ける。Tailwind は動的なクラス名を拾えないので固定文字列で持つ
+  const useGrid = groups.length > 0 && groups.length <= 3;
+  const gridColsClass =
+    groups.length === 1 ? 'grid-cols-1'
+      : groups.length === 2 ? 'grid-cols-1 md:grid-cols-2'
+        : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3';
+
   return (
     <div>
       <h2 className="text-lg font-bold text-violet-700 mb-4 flex items-center gap-2">
@@ -76,122 +75,61 @@ export default function TeamPreliminaryGroup({
         予選グループ
       </h2>
 
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-4 min-w-max p-2">
+      {/* グループが3つまでなら画面幅いっぱいに並べる（横スクロールさせない）。
+          4つ以上は幅が足りないので従来どおり横スクロール。 */}
+      <div className={useGrid ? 'pb-4' : 'overflow-x-auto pb-4'}>
+        <div className={useGrid ? `grid gap-5 ${gridColsClass}` : 'flex gap-4 min-w-max p-2'}>
           {groups.map(group => {
             const encounters = encountersByGroup[group] ?? [];
             const rankings = rankingsByGroup[group] ?? [];
             const jankenPairs = jankenPairsByGroup?.[group] ?? [];
+            const isManual = (manualRanksByGroup?.[group] ?? []).length > 0;
 
             return (
-              <div key={group} className="flex flex-col gap-3 w-72">
-                <h3 className="text-center font-bold text-violet-700 text-xs bg-violet-100 rounded-md py-1.5 px-2 shadow-sm">
+              <div key={group} className={`flex flex-col gap-3 ${useGrid ? 'min-w-0' : 'w-80'}`}>
+                <h3 className="text-center font-bold text-violet-700 text-sm bg-violet-100 rounded-md py-2 px-2 shadow-sm">
                   グループ {group}
                 </h3>
 
                 {/* 順位表を最上部に。入力しながら順位の変化を追えるようにする */}
-                {rankings.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-[10px] font-semibold text-slate-500">現在の順位</p>
-                      {!readOnly && (manualRanksByGroup?.[group] ?? []).length > 0 && (
-                        <button
-                          onClick={() => handleResetManual(group)}
-                          className="flex items-center gap-0.5 text-[11px] text-amber-600 hover:text-amber-800"
-                          title="自動順位に戻す"
-                        >
-                          <RotateCcw className="w-2.5 h-2.5" />
-                          手動設定中
-                        </button>
-                      )}
-                    </div>
-                    <div className="bg-slate-50 rounded-md overflow-hidden border border-slate-200">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-100 text-slate-600">
-                            <th className="py-1 px-1.5 text-left">順</th>
-                            <th className="py-1 px-1.5 text-left">チーム</th>
-                            <th className="py-1 px-1 text-center">勝</th>
-                            <th className="py-1 px-1 text-center">負</th>
-                            <th className="py-1 px-1 text-center">得</th>
-                            <th className="py-1 px-1 text-center">差</th>
-                            {!readOnly && onManualRankChange && <th className="py-1 px-1 text-center">移動</th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rankings.map((r, i) => (
-                            <tr key={r.teamId} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                              <td className="py-1 px-1.5 font-bold text-slate-700">{i + 1}</td>
-                              <td className="py-1 px-1.5 truncate max-w-[72px]">{getTeamName(r.teamId)}</td>
-                              <td className="py-1 px-1 text-center text-emerald-700">{r.wins}</td>
-                              <td className="py-1 px-1 text-center text-red-600">{r.losses}</td>
-                              <td className="py-1 px-1 text-center text-slate-700">{r.gamesWon}</td>
-                              <td className={`py-1 px-1 text-center ${r.gameDiff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                                {r.gameDiff > 0 ? `+${r.gameDiff}` : r.gameDiff}
-                              </td>
-                              {!readOnly && onManualRankChange && (
-                                <td className="py-1 px-1 text-center">
-                                  <div className="flex flex-col items-center gap-0">
-                                    <button
-                                      onClick={() => handleMoveUp(group, i)}
-                                      disabled={i === 0}
-                                      className="text-slate-400 hover:text-slate-700 disabled:opacity-20"
-                                    >
-                                      <ChevronUp className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleMoveDown(group, i)}
-                                      disabled={i === rankings.length - 1}
-                                      className="text-slate-400 hover:text-slate-700 disabled:opacity-20"
-                                    >
-                                      <ChevronDown className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                      得＝取ったゲーム数 / 差＝得失ゲーム差
-                    </p>
-                    <p className="text-[11px] text-slate-500 leading-snug">
-                      順位: {rankOrder.map(c => TEAM_RANK_CRITERION_LABEL[c]).join(' → ')}
-                      {!readOnly && onManualRankChange && '（▲▼で手動変更可）'}
-                    </p>
-                  </div>
-                )}
+                <TeamStandingsTable
+                  rankings={rankings}
+                  getTeamName={getTeamName}
+                  rankOrder={rankOrder}
+                  isManual={isManual}
+                  onResetManual={!readOnly ? () => onManualRankChange?.(group, []) : undefined}
+                  onMoveUp={!readOnly && onManualRankChange ? (i) => move(group, i, -1) : undefined}
+                  onMoveDown={!readOnly && onManualRankChange ? (i) => move(group, i, 1) : undefined}
+                />
 
-                {/* じゃんけん入力（順位が並んだときだけ出る。順位表の直下が自然） */}
-                {!readOnly && jankenPairs.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-semibold text-amber-600 flex items-center gap-1">
-                      <Scissors className="w-3 h-3" />
-                      じゃんけん決定が必要
+                {/* じゃんけん入力: 「予選結果を確定」を押して、それでも並んだままのときだけ出す */}
+                {!readOnly && showJanken && jankenPairs.length > 0 && (
+                  <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                    <p className="text-xs font-bold text-amber-800 flex items-center gap-1">
+                      <Scissors className="w-3.5 h-3.5" />
+                      順位が決まらないのでじゃんけんで決めてください
                     </p>
                     {jankenPairs.map(([t1, t2]) => (
-                      <div key={`${t1}_${t2}`} className="bg-amber-50 border border-amber-200 rounded-md p-2 space-y-1">
-                        <p className="text-[10px] text-amber-700 font-medium">
-                          {getTeamName(t1)} vs {getTeamName(t2)}
+                      <div key={`${t1}_${t2}`} className="bg-white border border-amber-200 rounded-md p-2 space-y-1.5">
+                        <p className="text-xs text-slate-700 font-medium text-center">
+                          {getTeamName(t1)} と {getTeamName(t2)}
                         </p>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1.5">
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 h-6 text-[10px] border-blue-300 text-blue-700 hover:bg-blue-50"
+                            className="flex-1 h-10 text-xs font-bold border-blue-200 text-blue-700 hover:bg-blue-50"
                             onClick={() => onJanken?.(t1, t2, t1)}
                           >
-                            {getTeamName(t1)} 勝
+                            {getTeamName(t1)} 勝ち
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 h-6 text-[10px] border-red-300 text-red-700 hover:bg-red-50"
+                            className="flex-1 h-10 text-xs font-bold border-red-200 text-red-700 hover:bg-red-50"
                             onClick={() => onJanken?.(t1, t2, t2)}
                           >
-                            {getTeamName(t2)} 勝
+                            {getTeamName(t2)} 勝ち
                           </Button>
                         </div>
                       </div>
@@ -199,17 +137,16 @@ export default function TeamPreliminaryGroup({
                   </div>
                 )}
 
-                {/* 対戦一覧: ラウンドごとにまとめ、カードは折りたたむ。
-                    決着済みと未着手は畳み、入力途中のものだけ開いた状態で出す。 */}
+                {/* 対戦一覧: ラウンドごとにまとめ、カードは折りたたむ */}
                 <div className="space-y-2">
                   {roundsOf(encounters).map(({ round, list }) => (
                     <div key={round} className="space-y-1.5">
                       <div className="flex items-center justify-between px-0.5">
-                        <p className="text-[11px] font-bold text-slate-600">
+                        <p className="text-xs font-bold text-slate-600">
                           {round > 0 ? `第${round}巡` : '対戦'}
                         </p>
-                        <p className="text-[11px] text-slate-400">
-                          {list.filter(e => e.completed).length}/{list.length} 決着
+                        <p className="text-xs text-slate-400">
+                          {list.filter(e => e.completed).length}/{list.length} 入力済み
                         </p>
                       </div>
                       {list.map(enc => (
@@ -217,7 +154,8 @@ export default function TeamPreliminaryGroup({
                           key={enc.id}
                           encounter={enc}
                           getTeamName={getTeamName}
-                          onGameResult={onGameResult}
+                          onScore={onScore}
+                          onClear={onClearScore}
                           readOnly={readOnly}
                           collapsible
                         />

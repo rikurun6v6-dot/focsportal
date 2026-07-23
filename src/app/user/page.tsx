@@ -17,14 +17,17 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import type { ETAResult, Player, Match, Camp } from "@/types";
-import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy, ChevronUp } from "lucide-react";
+import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy, ChevronUp, Users } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import UserGuide from "@/components/common/UserGuide";
 import ChatWindow from "@/components/ChatWindow";
 import ChatNotification from "@/components/ChatNotification";
 import VisualBracket from "@/components/admin/VisualBracket";
-import { getSettings, subscribeToMessages, savePushSubscription } from "@/lib/firestore-helpers";
+import TeamStandingsTable from "@/components/TeamStandingsTable";
+import { getSettings, subscribeToMessages, savePushSubscription, subscribeToTeamTournamentState } from "@/lib/firestore-helpers";
+import { rankTeamGroup, normalizeTeamRankOrder, type TeamRankCriterion } from "@/lib/tournament-logic";
+import type { TeamEncounter, TeamRankEntry } from "@/types";
 import type { Settings, Message } from "@/types";
 
 const isPlayerInMatch = (match: Match, playerId: string) => {
@@ -235,6 +238,10 @@ export default function UserDashboard() {
     const [players, setPlayers] = useState<Player[]>([]);
     const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null);
     const [campStatus, setCampStatus] = useState<'setup' | 'active' | 'archived' | null>(null);
+    // 団体戦の予選順位（運営の入力をそのまま見せる）
+    const [teamNames, setTeamNames] = useState<Record<string, string>>({});
+    const [teamStandings, setTeamStandings] = useState<{ group: string; rankings: TeamRankEntry[] }[]>([]);
+    const [teamRankOrder, setTeamRankOrder] = useState<TeamRankCriterion[] | undefined>(undefined);
     const [notifEnabled, setNotifEnabled] = useState(false);
     const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
     const [isIOSNotPWA, setIsIOSNotPWA] = useState(false);
@@ -485,6 +492,40 @@ export default function UserDashboard() {
 
         return () => unsubscribe();
     }, [camp]);
+
+    // 団体戦の予選順位をリアルタイムで購読する
+    useEffect(() => {
+        if (!camp?.id) return;
+        const unsubscribe = subscribeToTeamTournamentState(camp.id, (state) => {
+            if (!state) {
+                setTeamStandings([]);
+                setTeamNames({});
+                return;
+            }
+            const teams = (state.teams as { id: string; name: string }[] | undefined) ?? [];
+            setTeamNames(Object.fromEntries(teams.map(t => [t.id, t.name])));
+
+            const encounters = (state.prelimEncounters as TeamEncounter[] | undefined) ?? [];
+            const janken = (state.jankenWinners as Record<string, string> | undefined) ?? {};
+            const manual = (state.manualRanksByGroup as Record<string, string[]> | undefined) ?? {};
+            const order = normalizeTeamRankOrder(state.rankOrder as TeamRankCriterion[] | undefined);
+            setTeamRankOrder(order);
+
+            const groups = [...new Set(encounters.map(e => e.group ?? ''))].sort();
+            setTeamStandings(groups.map(g => {
+                const inGroup = encounters.filter(e => (e.group ?? '') === g);
+                const auto = rankTeamGroup(inGroup, janken, order);
+                const manualOrder = manual[g] ?? [];
+                if (manualOrder.length === 0) return { group: g, rankings: auto };
+                // 運営が手動で並べ替えていれば、その順を優先する
+                const map = new Map(auto.map(r => [r.teamId, r]));
+                const ordered = manualOrder.map(id => map.get(id)).filter(Boolean) as TeamRankEntry[];
+                auto.forEach(r => { if (!manualOrder.includes(r.teamId)) ordered.push(r); });
+                return { group: g, rankings: ordered };
+            }));
+        }, () => setSyncError(true));
+        return () => unsubscribe();
+    }, [camp?.id]);
 
     // 大会ステータスのリアルタイム購読
     useEffect(() => {
@@ -842,6 +883,9 @@ export default function UserDashboard() {
         }
     }
 
+    const hasTeamBattle = teamStandings.length > 0;
+    const tabCount = (myPlayer ? 3 : 2) + (hasTeamBattle ? 1 : 0);
+
     // lastUpdate（10秒ごとに進む）を基準にすることで、表示が止まらないようにする
     const getRelativeTime = (date: Date) => {
         const diff = Math.max(0, Math.floor((lastUpdate.getTime() - date.getTime()) / 1000));
@@ -1142,7 +1186,7 @@ export default function UserDashboard() {
                         )}
 
                         <Tabs defaultValue="courts" className="w-full">
-                            <TabsList className={`w-full grid ${myPlayer ? 'grid-cols-3' : 'grid-cols-2'} bg-slate-200/80 rounded-xl p-1 gap-0.5 h-auto`}>
+                            <TabsList className={`w-full grid ${tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2'} bg-slate-200/80 rounded-xl p-1 gap-0.5 h-auto`}>
                                 <TabsTrigger
                                     value="courts"
                                     className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
@@ -1163,6 +1207,14 @@ export default function UserDashboard() {
                                 >
                                     トーナメント表
                                 </TabsTrigger>
+                                {hasTeamBattle && (
+                                <TabsTrigger
+                                    value="team"
+                                    className="rounded-lg text-xs font-semibold py-2 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                                >
+                                    団体戦
+                                </TabsTrigger>
+                                )}
                             </TabsList>
 
                             <TabsContent value="courts" className="mt-4">
@@ -1193,6 +1245,31 @@ export default function UserDashboard() {
                                     <VisualBracket readOnly={true} />
                                 </div>
                             </TabsContent>
+
+                            {hasTeamBattle && (
+                            <TabsContent value="team" className="mt-4">
+                                <div className="space-y-4">
+                                    <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                                        <Users className="w-5 h-5 text-sky-500" /> 団体戦の順位
+                                    </h2>
+                                    {teamStandings.map(({ group, rankings }) => (
+                                        <div key={group} className="space-y-2">
+                                            <h3 className="text-center font-bold text-violet-700 text-sm bg-violet-100 rounded-md py-2">
+                                                グループ {group}
+                                            </h3>
+                                            <TeamStandingsTable
+                                                rankings={rankings}
+                                                getTeamName={(id) => teamNames[id] ?? id}
+                                                rankOrder={teamRankOrder}
+                                            />
+                                        </div>
+                                    ))}
+                                    <p className="text-xs text-slate-500">
+                                        運営が結果を入れると、この表もその場で更新されます。
+                                    </p>
+                                </div>
+                            </TabsContent>
+                            )}
                         </Tabs>
 
                         <Card className="border-t-4 border-t-violet-400 bg-white">
