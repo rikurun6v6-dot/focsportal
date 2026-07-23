@@ -1,10 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
 import type { TeamMatchConfig, TeamEncounter, TeamRankEntry } from '@/types';
 import {
@@ -19,18 +16,20 @@ import {
   generateTeamBronzeEncounter,
   resolveTeamBronzeEncounter,
   recordTeamGameResult,
+  normalizeTeamRankOrder,
+  DEFAULT_TEAM_RANK_ORDER,
+  TEAM_RANK_CRITERION_LABEL,
+  type TeamRankCriterion,
 } from '@/lib/tournament-logic';
 import { getDocument, setDocument, deleteDocument } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { toastError } from '@/lib/toast';
 import TeamPreliminaryGroup from './TeamPreliminaryGroup';
 import TeamKnockoutTree from './TeamKnockoutTree';
 import TeamPlacementView from './TeamPlacementView';
-import { Trophy, Users, Plus, Trash2, ArrowRight, Pencil, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
-
-interface SimpleTeam {
-  id: string;
-  name: string;
-}
+import TeamSetupPanel, { type SimpleTeam, type FinalFormat } from './TeamSetupPanel';
+import { ArrowRight, ArrowLeft, Pencil, RotateCcw, ChevronDown, ChevronUp, Check, CloudOff, Loader2 } from 'lucide-react';
 
 const DEFAULT_CONFIG: TeamMatchConfig = {
   games: [
@@ -54,17 +53,19 @@ const DEFAULT_TEAMS: SimpleTeam[] = [
 ];
 
 type Phase = 'setup' | 'preliminary' | 'placement' | 'knockout';
-type FinalFormat = 'placement' | 'knockout';
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-const LS_KEY = 'ttg_state_v1';
+// 合宿ごとにキーを分ける。単一キーだと別の合宿の状態が混ざる
+const lsKey = (campId: string) => `ttg_state_v1_${campId}`;
 const FS_COLLECTION = 'team_tournament_states';
 
 export default function TeamTournamentGenerator() {
   const { camp } = useCamp();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const [teams, setTeams] = useState<SimpleTeam[]>(DEFAULT_TEAMS);
   const [newTeamName, setNewTeamName] = useState('');
-  const [config, setConfig] = useState<TeamMatchConfig>(DEFAULT_CONFIG);
+  const [config] = useState<TeamMatchConfig>(DEFAULT_CONFIG);
   const [groupCount, setGroupCount] = useState<number>(2);
   const [qualifiersPerGroup, setQualifiersPerGroup] = useState<number>(2);
   const [finalFormat, setFinalFormat] = useState<FinalFormat>('placement');
@@ -76,14 +77,15 @@ export default function TeamTournamentGenerator() {
   const [bronzeEncounter, setBronzeEncounter] = useState<TeamEncounter | null>(null);
   const [jankenWinners, setJankenWinners] = useState<Record<string, string>>({});
   const [manualRanksByGroup, setManualRanksByGroup] = useState<Record<string, string[]>>({});
+  const [rankOrder, setRankOrder] = useState<TeamRankCriterion[]>(DEFAULT_TEAM_RANK_ORDER);
 
   // UI state (not persisted)
   const [showSetupEdit, setShowSetupEdit] = useState(false);
   const [stateLoaded, setStateLoaded] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
 
   const applyState = (s: Record<string, unknown>) => {
     if (Array.isArray(s.teams)) setTeams(s.teams as SimpleTeam[]);
-    if (s.config) setConfig(s.config as TeamMatchConfig);
     if (typeof s.groupCount === 'number') setGroupCount(s.groupCount);
     if (typeof s.qualifiersPerGroup === 'number') setQualifiersPerGroup(s.qualifiersPerGroup);
     if (s.finalFormat) setFinalFormat(s.finalFormat as FinalFormat);
@@ -95,12 +97,13 @@ export default function TeamTournamentGenerator() {
     setBronzeEncounter((s.bronzeEncounter as TeamEncounter | null) ?? null);
     if (s.jankenWinners) setJankenWinners(s.jankenWinners as Record<string, string>);
     if (s.manualRanksByGroup) setManualRanksByGroup(s.manualRanksByGroup as Record<string, string[]>);
+    // 未設定・壊れたデータでも必ず全基準がそろった順序にする
+    setRankOrder(normalizeTeamRankOrder(s.rankOrder as TeamRankCriterion[] | undefined));
   };
 
   // この合宿に団体戦の保存データが無いときの初期化（前の合宿の状態を引き継がない）
   const resetState = () => {
     setTeams(DEFAULT_TEAMS);
-    setConfig(DEFAULT_CONFIG);
     setGroupCount(2);
     setQualifiersPerGroup(2);
     setFinalFormat('placement');
@@ -112,29 +115,38 @@ export default function TeamTournamentGenerator() {
     setBronzeEncounter(null);
     setJankenWinners({});
     setManualRanksByGroup({});
+    setRankOrder([...DEFAULT_TEAM_RANK_ORDER]);
   };
 
-  // Firestoreからロード（campが変わるたびに）
+  // Firestoreからロード（campが変わるたびに）。失敗時は同じ合宿のlocalStorageで復帰を試みる
   useEffect(() => {
     if (!camp?.id) return;
-    setStateLoaded(false);
     const load = async () => {
+      setStateLoaded(false);
+      setSaveState('idle');
       try {
         const saved = await getDocument<Record<string, unknown>>(FS_COLLECTION, camp.id);
         if (saved) {
           applyState(saved);
         } else {
-          // この合宿には団体戦データが無い → 初期化（前合宿の localStorage を引き継がない）
           resetState();
         }
       } catch {
-        // 取得失敗時も前合宿の状態を表示しないよう初期化
-        resetState();
+        // 取得に失敗したら、同じ合宿のローカル控えを使う（無ければ初期化）
+        let recovered = false;
+        try {
+          const local = localStorage.getItem(lsKey(camp.id));
+          if (local) {
+            applyState(JSON.parse(local));
+            recovered = true;
+          }
+        } catch { /* ignore */ }
+        if (!recovered) resetState();
+        setSaveState('error');
       }
       setStateLoaded(true);
     };
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camp?.id]);
 
   // 状態変化をFirestore+localStorageに保存（ロード完了後のみ）
@@ -143,28 +155,33 @@ export default function TeamTournamentGenerator() {
     const state = {
       teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
       teamGroupAssignments, prelimEncounters, placementEncounters,
-      knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup,
+      knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
     };
-    // localStorageに即時保存
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
-    // Firestoreにデバウンス保存（1.5秒後）
+    // localStorageに即時保存（合宿ごとのキー）
+    try { localStorage.setItem(lsKey(camp.id), JSON.stringify(state)); } catch { /* ignore */ }
+    // Firestoreにデバウンス保存
     const timer = setTimeout(async () => {
+      setSaveState('saving');
       try {
         await setDocument(FS_COLLECTION, { id: camp.id, campId: camp.id, ...state });
-      } catch { /* ignore */ }
-    }, 1500);
+        setSaveState('saved');
+      } catch {
+        // 黙って落とさない。ここを握りつぶすと入力が消えたことに誰も気づけない
+        setSaveState('error');
+      }
+    }, 1200);
     return () => clearTimeout(timer);
   }, [stateLoaded, camp?.id, teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
     teamGroupAssignments, prelimEncounters, placementEncounters,
-    knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup]);
+    knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder]);
 
-  const getTeamName = (id: string) => {
+  const getTeamName = useCallback((id: string) => {
     if (id === 'BYE') return 'BYE';
     if (id.startsWith('winner-of-')) return '勝者待ち';
     if (id.startsWith('loser-of-')) return '敗者待ち';
     if (id.startsWith('team-slot-')) return `待機中(${id.replace('team-slot-', '')})`;
     return teams.find(t => t.id === id)?.name ?? id;
-  };
+  }, [teams]);
 
   // グループ別エンカウンター・順位計算
   const groups = [...new Set(prelimEncounters.map(e => e.group ?? ''))].sort();
@@ -174,7 +191,7 @@ export default function TeamTournamentGenerator() {
 
   for (const g of groups) {
     encountersByGroup[g] = prelimEncounters.filter(e => e.group === g);
-    const autoRanked = rankTeamGroup(encountersByGroup[g], jankenWinners);
+    const autoRanked = rankTeamGroup(encountersByGroup[g], jankenWinners, rankOrder);
     const manualOrder = manualRanksByGroup[g] ?? [];
     if (manualOrder.length > 0) {
       const map = new Map(autoRanked.map(r => [r.teamId, r]));
@@ -184,16 +201,21 @@ export default function TeamTournamentGenerator() {
     } else {
       rankingsByGroup[g] = autoRanked;
     }
-    jankenPairsByGroup[g] = getNeedJankenPairs(rankingsByGroup[g], encountersByGroup[g], jankenWinners);
+    jankenPairsByGroup[g] = getNeedJankenPairs(rankingsByGroup[g], encountersByGroup[g], jankenWinners, rankOrder);
   }
 
   const allPrelimDone = prelimEncounters.length > 0 && prelimEncounters.every(e => e.completed);
   const needJanken = allPrelimDone && groups.some(g => (jankenPairsByGroup[g] ?? []).length > 0);
   const canAdvance = allPrelimDone && !needJanken;
+  const prelimHasResults = prelimEncounters.some(e => e.games.some(g => g.winner !== null));
 
   const handleAddTeam = () => {
     const name = newTeamName.trim();
     if (!name) return;
+    if (teams.some(t => t.name === name)) {
+      toastError(`「${name}」は既に登録されています`);
+      return;
+    }
     const id = `team_${Date.now()}`;
     setTeams(prev => [...prev, { id, name }]);
     setNewTeamName('');
@@ -208,51 +230,86 @@ export default function TeamTournamentGenerator() {
     });
   };
 
-  const handleStartPreliminary = () => {
-    let encs: TeamEncounter[];
-
-    if (groupCount > 1) {
-      // Use manual group assignments to build groups
-      const groupedTeams: SimpleTeam[][] = Array.from({ length: groupCount }, () => []);
-      teams.forEach(t => {
-        const g = Math.min(teamGroupAssignments[t.id] ?? 0, groupCount - 1);
-        groupedTeams[g].push(t);
-      });
-
-      const encounters: TeamEncounter[] = [];
-      for (let g = 0; g < groupCount; g++) {
-        const group = groupedTeams[g];
-        const groupLabel = String.fromCharCode(65 + g);
-        for (let i = 0; i < group.length; i++) {
-          for (let j = i + 1; j < group.length; j++) {
-            encounters.push({
-              id: `pre_${groupLabel}_${group[i].id}_${group[j].id}`,
-              team1_id: group[i].id, team2_id: group[j].id,
-              games: buildGameSlots(config),
-              team1_wins: 0, team2_wins: 0, winner_id: null,
-              phase: 'preliminary', group: groupLabel, round: 0, completed: false,
-            });
-          }
+  const buildPreliminaryEncounters = (): TeamEncounter[] => {
+    if (groupCount <= 1) return generateTeamPreliminaryEncounters(teams, groupCount, config);
+    const groupedTeams: SimpleTeam[][] = Array.from({ length: groupCount }, () => []);
+    teams.forEach(t => {
+      const g = Math.min(teamGroupAssignments[t.id] ?? 0, groupCount - 1);
+      groupedTeams[g].push(t);
+    });
+    const encounters: TeamEncounter[] = [];
+    for (let g = 0; g < groupCount; g++) {
+      const group = groupedTeams[g];
+      const groupLabel = String.fromCharCode(65 + g);
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          encounters.push({
+            id: `pre_${groupLabel}_${group[i].id}_${group[j].id}`,
+            team1_id: group[i].id, team2_id: group[j].id,
+            games: buildGameSlots(config),
+            team1_wins: 0, team2_wins: 0, winner_id: null,
+            phase: 'preliminary', group: groupLabel, round: 0, completed: false,
+          });
         }
       }
-      encs = encounters;
-    } else {
-      encs = generateTeamPreliminaryEncounters(teams, groupCount, config);
+    }
+    return encounters;
+  };
+
+  const handleStartPreliminary = async () => {
+    // 進行中に押された場合は、消えるものを具体的に伝えてから作り直す
+    if (prelimHasResults) {
+      const doneCount = prelimEncounters.filter(e => e.completed).length;
+      const confirmed = await confirm({
+        title: '対戦表を作り直しますか？',
+        message:
+          `入力済みの予選結果がすべて消えます（決着済み ${doneCount} 対戦 / 全 ${prelimEncounters.length} 対戦）。\n` +
+          '順位決定戦・決勝トーナメントの結果も一緒に消えます。\n\n' +
+          'チーム名や順位の決め方を直しただけなら、この操作は不要です。',
+        confirmText: '作り直す',
+        cancelText: 'やめる',
+        type: 'danger',
+      });
+      if (!confirmed) return;
     }
 
-    setPrelimEncounters(encs);
+    setPrelimEncounters(buildPreliminaryEncounters());
     setManualRanksByGroup({});
+    setJankenWinners({});
+    setPlacementEncounters([]);
+    setKnockoutEncounters([]);
+    setBronzeEncounter(null);
     setPhase('preliminary');
     setShowSetupEdit(false);
   };
 
-  const handleStartPlacement = () => {
-    const encs = generateTeamPlacementEncounters(rankingsByGroup, groups, config);
-    setPlacementEncounters(encs);
+  const handleStartPlacement = async () => {
+    // 既に入力済みの順位決定戦があるなら、作り直すか確認する
+    if (placementEncounters.some(e => e.games.some(g => g.winner !== null))) {
+      const confirmed = await confirm({
+        title: '順位決定戦を作り直しますか？',
+        message: '入力済みの順位決定戦の結果が消えます。\n続きを入力したいだけなら「順位決定戦を開く」を使ってください。',
+        confirmText: '作り直す',
+        cancelText: 'やめる',
+        type: 'warning',
+      });
+      if (!confirmed) return;
+    }
+    setPlacementEncounters(generateTeamPlacementEncounters(rankingsByGroup, groups, config));
     setPhase('placement');
   };
 
-  const handleStartKnockout = () => {
+  const handleStartKnockout = async () => {
+    if (knockoutEncounters.some(e => e.games.some(g => g.winner !== null))) {
+      const confirmed = await confirm({
+        title: '決勝トーナメントを作り直しますか？',
+        message: '入力済みの決勝トーナメントの結果が消えます。\n続きを入力したいだけなら「決勝トーナメントを開く」を使ってください。',
+        confirmText: '作り直す',
+        cancelText: 'やめる',
+        type: 'warning',
+      });
+      if (!confirmed) return;
+    }
     const advancers: string[] = [];
     for (const g of groups) {
       const ranked = rankingsByGroup[g];
@@ -261,41 +318,35 @@ export default function TeamTournamentGenerator() {
     let bracket = generateTeamFinalBracket(advancers.length, config);
     bracket = applyTeamAdvancersToFinalBracket(bracket, advancers);
     setKnockoutEncounters(bracket);
-    const bronze = generateTeamBronzeEncounter(bracket, config);
-    setBronzeEncounter(bronze);
+    setBronzeEncounter(generateTeamBronzeEncounter(bracket, config));
     setPhase('knockout');
   };
 
-  const handlePrelimGameResult = (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => {
+  const handlePrelimGameResult = (encounterId: string, slotId: string, winner: 1 | 2 | null) => {
     setPrelimEncounters(prev => {
       const enc = prev.find(e => e.id === encounterId);
       if (!enc) return prev;
-      const updated = recordTeamGameResult(enc, slotId, winner, score1, score2);
-      return prev.map(e => e.id === encounterId ? updated : e);
+      return prev.map(e => e.id === encounterId ? recordTeamGameResult(enc, slotId, winner) : e);
     });
   };
 
-  const handlePlacementGameResult = (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => {
+  const handlePlacementGameResult = (encounterId: string, slotId: string, winner: 1 | 2 | null) => {
     setPlacementEncounters(prev => {
       const enc = prev.find(e => e.id === encounterId);
       if (!enc) return prev;
-      const updated = recordTeamGameResult(enc, slotId, winner, score1, score2);
-      return prev.map(e => e.id === encounterId ? updated : e);
+      return prev.map(e => e.id === encounterId ? recordTeamGameResult(enc, slotId, winner) : e);
     });
   };
 
-  const handleKnockoutGameResult = (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => {
+  const handleKnockoutGameResult = (encounterId: string, slotId: string, winner: 1 | 2 | null) => {
     if (bronzeEncounter && bronzeEncounter.id === encounterId) {
-      setBronzeEncounter(prev => {
-        if (!prev) return prev;
-        return recordTeamGameResult(prev, slotId, winner, score1, score2);
-      });
+      setBronzeEncounter(prev => prev ? recordTeamGameResult(prev, slotId, winner) : prev);
       return;
     }
     setKnockoutEncounters(prev => {
       const enc = prev.find(e => e.id === encounterId);
       if (!enc) return prev;
-      const updated = recordTeamGameResult(enc, slotId, winner, score1, score2);
+      const updated = recordTeamGameResult(enc, slotId, winner);
       let next = prev.map(e => e.id === encounterId ? updated : e);
       if (updated.completed) {
         next = advanceTeamWinnerToNextRound(next, encounterId);
@@ -322,264 +373,148 @@ export default function TeamTournamentGenerator() {
     setManualRanksByGroup(prev => ({ ...prev, [group]: orderedTeamIds }));
   };
 
-  const handleBackToPrelim = () => {
-    setPlacementEncounters([]);
-    setKnockoutEncounters([]);
-    setBronzeEncounter(null);
-    setPhase('preliminary');
-  };
-
   const handleReset = async () => {
-    if (!confirm('大会をリセットしますか？全データが消去されます。')) return;
-    try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+    const first = await confirm({
+      title: '団体戦をリセットしますか？',
+      message:
+        'チーム・組み合わせ・入力済みの全結果が消えて、初期設定からやり直しになります。\n' +
+        'この操作は取り消せません。',
+      confirmText: '次へ',
+      cancelText: 'やめる',
+      type: 'danger',
+    });
+    if (!first) return;
+    const second = await confirm({
+      title: '本当にリセットしますか？',
+      message: `「${camp?.title ?? 'この大会'}」の団体戦データを削除します。元に戻せません。`,
+      confirmText: 'リセットする',
+      cancelText: 'やめる',
+      type: 'danger',
+    });
+    if (!second) return;
+
     if (camp?.id) {
-      try { await deleteDocument(FS_COLLECTION, camp.id); } catch { /* ignore */ }
+      try { localStorage.removeItem(lsKey(camp.id)); } catch { /* ignore */ }
+      try {
+        await deleteDocument(FS_COLLECTION, camp.id);
+      } catch {
+        toastError('リセットの保存に失敗しました。通信を確認してもう一度お試しください');
+        return;
+      }
     }
-    setTeams(DEFAULT_TEAMS);
-    setConfig(DEFAULT_CONFIG);
-    setGroupCount(2);
-    setQualifiersPerGroup(2);
-    setFinalFormat('placement');
-    setTeamGroupAssignments({});
-    setPrelimEncounters([]);
-    setPlacementEncounters([]);
-    setKnockoutEncounters([]);
-    setBronzeEncounter(null);
-    setJankenWinners({});
-    setPhase('setup');
+    resetState();
     setShowSetupEdit(false);
   };
-
-  const GROUP_COLORS = ['bg-blue-100 text-blue-700 border-blue-300', 'bg-green-100 text-green-700 border-green-300', 'bg-orange-100 text-orange-700 border-orange-300', 'bg-purple-100 text-purple-700 border-purple-300'];
-  const GROUP_LABELS = ['グループ1', 'グループ2', 'グループ3', 'グループ4'];
-
-  // ---- 設定パネル（初期設定のJSX、setupおよびeditモードで表示） ----
-  const SetupPanel = () => (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="w-5 h-5 text-blue-500" />
-            チーム設定
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={newTeamName}
-              onChange={e => setNewTeamName(e.target.value)}
-              placeholder="チーム名を入力"
-              className="flex-1"
-              onKeyDown={e => e.key === 'Enter' && handleAddTeam()}
-            />
-            <Button onClick={handleAddTeam} size="sm" className="gap-1">
-              <Plus className="w-3 h-3" /> 追加
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {teams.map(t => (
-              <Badge key={t.id} variant="outline" className="flex items-center gap-1 py-1">
-                {t.name}
-                <button
-                  onClick={() => handleRemoveTeam(t.id)}
-                  className="ml-1 text-slate-400 hover:text-red-500"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </Badge>
-            ))}
-          </div>
-          <p className="text-xs text-slate-500">{teams.length}チーム</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Trophy className="w-4 h-4 text-violet-500" />
-            大会形式
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-3">
-            <label className="text-sm w-28">グループ数</label>
-            <div className="flex gap-1">
-              {[1, 2, 3, 4].map(n => (
-                <Button
-                  key={n}
-                  size="sm"
-                  variant={groupCount === n ? 'default' : 'outline'}
-                  className="h-7 w-7 p-0 text-xs"
-                  onClick={() => setGroupCount(n)}
-                >
-                  {n}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <label className="text-sm w-28">最終フェーズ</label>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant={finalFormat === 'placement' ? 'default' : 'outline'}
-                className="h-7 px-3 text-xs"
-                onClick={() => setFinalFormat('placement')}
-              >
-                順位決定戦
-              </Button>
-              <Button
-                size="sm"
-                variant={finalFormat === 'knockout' ? 'default' : 'outline'}
-                className="h-7 px-3 text-xs"
-                onClick={() => setFinalFormat('knockout')}
-              >
-                決勝T
-              </Button>
-            </div>
-          </div>
-
-          {finalFormat === 'knockout' && (
-            <div className="flex items-center gap-3">
-              <label className="text-sm w-28">通過チーム数</label>
-              <div className="flex gap-1">
-                {[1, 2, 3, 4].map(n => (
-                  <Button
-                    key={n}
-                    size="sm"
-                    variant={qualifiersPerGroup === n ? 'default' : 'outline'}
-                    className="h-7 w-7 p-0 text-xs"
-                    onClick={() => setQualifiersPerGroup(n)}
-                  >
-                    {n}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="text-xs text-slate-500 bg-slate-50 rounded p-2">
-            {finalFormat === 'placement'
-              ? `予選終了後、同順位チーム同士で順位決定戦を行います（1位同士、2位同士、…）`
-              : `各グループ上位${qualifiersPerGroup}チームが決勝トーナメントに進出します`}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* グループ割り当て（グループ数 > 1 のとき表示） */}
-      {groupCount > 1 && teams.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Users className="w-4 h-4 text-indigo-500" />
-              グループ割り当て
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-xs text-slate-500 mb-3">各チームをグループに割り当ててください（未選択はグループ1に入ります）</p>
-            {teams.map(t => {
-              const assigned = teamGroupAssignments[t.id] ?? 0;
-              return (
-                <div key={t.id} className="flex items-center gap-3 py-1 border-b border-slate-100 last:border-0">
-                  <span className="flex-1 text-sm font-medium text-slate-800">{t.name}</span>
-                  <div className="flex gap-1">
-                    {Array.from({ length: groupCount }, (_, i) => (
-                      <Button
-                        key={i}
-                        size="sm"
-                        variant={assigned === i ? 'default' : 'outline'}
-                        className={`h-7 px-2.5 text-xs ${assigned === i ? '' : 'text-slate-500'}`}
-                        onClick={() => setTeamGroupAssignments(prev => ({ ...prev, [t.id]: i }))}
-                      >
-                        {GROUP_LABELS[i]}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-            {/* グループ別プレビュー */}
-            <div className={`grid gap-2 mt-3 ${groupCount === 2 ? 'grid-cols-2' : groupCount === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
-              {Array.from({ length: groupCount }, (_, g) => {
-                const groupTeams = teams.filter(t => (teamGroupAssignments[t.id] ?? 0) === g);
-                const colorClass = GROUP_COLORS[g] || GROUP_COLORS[0];
-                return (
-                  <div key={g} className={`rounded-lg border p-2 text-xs ${colorClass}`}>
-                    <div className="font-bold mb-1">{GROUP_LABELS[g]}（{groupTeams.length}チーム）</div>
-                    {groupTeams.map(t => <div key={t.id} className="truncate">{t.name}</div>)}
-                    {groupTeams.length === 0 && <div className="text-slate-400 italic">未割り当て</div>}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Button
-        onClick={handleStartPreliminary}
-        disabled={teams.length < 2}
-        className="w-full gap-2"
-      >
-        <Trophy className="w-4 h-4" />
-        予選グループを開始
-      </Button>
-    </div>
-  );
 
   if (camp?.id && !stateLoaded) {
     return <Loading />;
   }
 
+  const phaseLabel =
+    phase === 'preliminary' ? '予選' :
+    phase === 'placement' ? '順位決定戦' :
+    phase === 'knockout' ? '決勝トーナメント' : '';
+
+  const setupPanel = (
+    <TeamSetupPanel
+      teams={teams}
+      newTeamName={newTeamName}
+      groupCount={groupCount}
+      qualifiersPerGroup={qualifiersPerGroup}
+      finalFormat={finalFormat}
+      teamGroupAssignments={teamGroupAssignments}
+      rankOrder={rankOrder}
+      isRunning={phase !== 'setup'}
+      onNewTeamNameChange={setNewTeamName}
+      onAddTeam={handleAddTeam}
+      onRemoveTeam={handleRemoveTeam}
+      onGroupCountChange={setGroupCount}
+      onQualifiersChange={setQualifiersPerGroup}
+      onFinalFormatChange={setFinalFormat}
+      onAssignGroup={(teamId, group) => setTeamGroupAssignments(prev => ({ ...prev, [teamId]: group }))}
+      onRankOrderChange={setRankOrder}
+      onStartPreliminary={handleStartPreliminary}
+    />
+  );
+
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
 
       {/* 大会進行中ヘッダー（setup以外のフェーズで表示） */}
       {phase !== 'setup' && (
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-800">団体戦進行中</p>
               <p className="text-xs text-slate-500 mt-0.5">
-                {teams.length}チーム / {groupCount}グループ /{' '}
-                {phase === 'preliminary' && '予選'}
-                {phase === 'placement' && '順位決定戦'}
-                {phase === 'knockout' && '決勝T'}
+                {teams.length}チーム / {groupCount}グループ / {phaseLabel}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                順位: {rankOrder.map(c => TEAM_RANK_CRITERION_LABEL[c]).join(' → ')}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              {/* 保存状態。黙って落ちると入力が消えたことに気づけない */}
+              <div className="text-xs flex items-center gap-1">
+                {saveState === 'saving' && (
+                  <span className="text-slate-500 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />保存中
+                  </span>
+                )}
+                {saveState === 'saved' && (
+                  <span className="text-emerald-600 flex items-center gap-1">
+                    <Check className="w-3 h-3" />保存済み
+                  </span>
+                )}
+                {saveState === 'error' && (
+                  <span className="text-red-600 font-bold flex items-center gap-1">
+                    <CloudOff className="w-3 h-3" />保存できていません
+                  </span>
+                )}
+              </div>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 text-xs gap-1"
+                className="h-9 text-xs gap-1"
                 onClick={() => setShowSetupEdit(e => !e)}
               >
                 <Pencil className="w-3 h-3" />
                 {showSetupEdit ? '設定を閉じる' : '設定を編集'}
                 {showSetupEdit ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs text-red-500 border-red-200 hover:bg-red-50 gap-1"
-                onClick={handleReset}
-              >
-                <RotateCcw className="w-3 h-3" />
-                リセット
-              </Button>
             </div>
           </div>
+
+          {saveState === 'error' && (
+            <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+              サーバーに保存できていません。この端末には控えが残っているので、
+              通信が戻れば次の入力で保存されます。画面を閉じる前に通信を確認してください。
+            </p>
+          )}
+
           {showSetupEdit && (
             <div className="mt-4 border-t border-slate-200 pt-4">
-              <SetupPanel />
+              {setupPanel}
+              {/* リセットは破壊操作なので、設定を開いたときだけ・いちばん下に置く */}
+              <div className="mt-6 pt-4 border-t border-red-100">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 text-xs text-red-600 border-red-200 hover:bg-red-50 gap-1"
+                  onClick={handleReset}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  団体戦をリセット（すべて消す）
+                </Button>
+              </div>
             </div>
           )}
         </div>
       )}
 
       {/* セットアップ（初回のみ） */}
-      {phase === 'setup' && <SetupPanel />}
+      {phase === 'setup' && setupPanel}
 
       {/* 予選フェーズ */}
       {phase === 'preliminary' && (
@@ -590,6 +525,7 @@ export default function TeamTournamentGenerator() {
             rankingsByGroup={rankingsByGroup}
             jankenPairsByGroup={jankenPairsByGroup}
             manualRanksByGroup={manualRanksByGroup}
+            rankOrder={rankOrder}
             getTeamName={getTeamName}
             onGameResult={handlePrelimGameResult}
             onJanken={handleJanken}
@@ -597,8 +533,8 @@ export default function TeamTournamentGenerator() {
           />
 
           {needJanken && (
-            <div className="text-xs text-center text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
-              同順位チームのじゃんけん結果を入力してください
+            <div className="text-xs text-center text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              順位が並んだチームがあります。じゃんけんの結果を入力してください
             </div>
           )}
 
@@ -611,7 +547,19 @@ export default function TeamTournamentGenerator() {
             {finalFormat === 'placement' ? '順位決定戦へ進む' : '決勝トーナメントへ進む'}
           </Button>
           {!allPrelimDone && (
-            <p className="text-xs text-center text-slate-400">全予選対戦が完了すると次のフェーズに進めます</p>
+            <p className="text-xs text-center text-slate-500">全予選対戦が決着すると次のフェーズに進めます</p>
+          )}
+
+          {/* 作成済みの次フェーズがあるなら、作り直さずに開けるようにする */}
+          {placementEncounters.length > 0 && (
+            <Button variant="outline" size="sm" className="w-full text-xs gap-1" onClick={() => setPhase('placement')}>
+              <ArrowRight className="w-3 h-3" />順位決定戦を開く（入力済みの結果はそのまま）
+            </Button>
+          )}
+          {knockoutEncounters.length > 0 && (
+            <Button variant="outline" size="sm" className="w-full text-xs gap-1" onClick={() => setPhase('knockout')}>
+              <ArrowRight className="w-3 h-3" />決勝トーナメントを開く（入力済みの結果はそのまま）
+            </Button>
           )}
         </div>
       )}
@@ -624,13 +572,9 @@ export default function TeamTournamentGenerator() {
             getTeamName={getTeamName}
             onGameResult={handlePlacementGameResult}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleBackToPrelim}
-            className="text-xs"
-          >
-            ← 予選に戻る
+          {/* 予選を見に行くだけ。結果は保持する */}
+          <Button variant="outline" size="sm" onClick={() => setPhase('preliminary')} className="text-xs gap-1">
+            <ArrowLeft className="w-3 h-3" />予選を見る（順位決定戦の結果は残ります）
           </Button>
         </div>
       )}
@@ -644,13 +588,8 @@ export default function TeamTournamentGenerator() {
             getTeamName={getTeamName}
             onGameResult={handleKnockoutGameResult}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleBackToPrelim}
-            className="text-xs"
-          >
-            ← 予選に戻る
+          <Button variant="outline" size="sm" onClick={() => setPhase('preliminary')} className="text-xs gap-1">
+            <ArrowLeft className="w-3 h-3" />予選を見る（決勝トーナメントの結果は残ります）
           </Button>
         </div>
       )}

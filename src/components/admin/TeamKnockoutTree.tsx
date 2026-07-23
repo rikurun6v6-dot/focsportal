@@ -9,7 +9,7 @@ interface TeamKnockoutTreeProps {
   encounters: TeamEncounter[];
   bronzeEncounter?: TeamEncounter | null;
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2) => void;
+  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2 | null) => void;
   readOnly?: boolean;
 }
 

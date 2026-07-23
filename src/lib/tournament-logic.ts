@@ -336,22 +336,17 @@ export function computeEncounterWinner(games: TeamGame[], total: number): 1 | 2 
   return null;
 }
 
+/**
+ * 1試合の勝者を記録する。
+ * winner に null を渡すと未入力に戻す（押し間違いの取り消し）。
+ */
 export function recordTeamGameResult(
   enc: TeamEncounter,
   slotId: string,
-  winner: 1 | 2,
-  score1?: number,
-  score2?: number
+  winner: 1 | 2 | null
 ): TeamEncounter {
   const games = enc.games.map(g =>
-    g.id === slotId
-      ? {
-          ...g,
-          winner,
-          ...(score1 !== undefined ? { score1 } : {}),
-          ...(score2 !== undefined ? { score2 } : {}),
-        }
-      : g
+    g.id === slotId ? { ...g, winner } : g
   );
   const total = games.length;
   const team1Wins = games.filter(g => g.winner === 1).length;
@@ -402,68 +397,175 @@ function getHeadToHead(
   return enc?.winner_id ?? null;
 }
 
-export function rankTeamGroup(
-  encounters: TeamEncounter[],
-  jankenWinners?: Record<string, string>
-): TeamRankEntry[] {
-  const completed = encounters.filter(e => e.completed && e.phase === 'preliminary');
-  const map = new Map<string, TeamRankEntry>();
-  const getOrCreate = (id: string): TeamRankEntry => {
-    if (!map.has(id)) map.set(id, { teamId: id, wins: 0, losses: 0, gameDiff: 0, pointDiff: 0 });
-    return map.get(id)!;
-  };
-  for (const enc of completed) {
-    const e1 = getOrCreate(enc.team1_id);
-    const e2 = getOrCreate(enc.team2_id);
-    if (enc.winner_id === enc.team1_id) { e1.wins++; e2.losses++; }
-    else if (enc.winner_id === enc.team2_id) { e2.wins++; e1.losses++; }
-    e1.gameDiff += enc.team1_wins - enc.team2_wins;
-    e2.gameDiff += enc.team2_wins - enc.team1_wins;
-    for (const game of enc.games) {
-      if (game.score1 !== undefined && game.score2 !== undefined) {
-        e1.pointDiff += game.score1 - game.score2;
-        e2.pointDiff += game.score2 - game.score1;
-      }
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => {
-    // 1. 勝利数
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    // 2. 得失試合数差（三つ巴でも機能する推移的な指標を先に）
-    if (b.gameDiff !== a.gameDiff) return b.gameDiff - a.gameDiff;
-    // 3. 直接対決（2チーム間の場合のみ有効）
-    const h2h = getHeadToHead(a.teamId, b.teamId, completed);
-    if (h2h !== null) return h2h === a.teamId ? -1 : 1;
-    // 4. じゃんけん（得失点差は無視）
-    if (jankenWinners) {
-      const key = [a.teamId, b.teamId].sort().join('_');
-      const janken = jankenWinners[key];
-      if (janken) return janken === a.teamId ? -1 : 1;
-    }
-    return 0;
-  });
+/**
+ * 予選順位の判定基準。並び順は大会ごとに設定できる（TeamTournamentGenerator の「順位の決め方」）。
+ * - wins:        対戦の勝ち数（決着した対戦のみ）
+ * - headToHead:  直接対決の勝敗
+ * - gameDiff:    得失ゲーム差（取ったゲーム − 取られたゲーム）
+ * - gamesWon:    得ゲーム数（取ったゲームの合計）
+ * - janken:      じゃんけん（手入力）
+ */
+export type TeamRankCriterion = 'wins' | 'headToHead' | 'gameDiff' | 'gamesWon' | 'janken';
+
+export const DEFAULT_TEAM_RANK_ORDER: TeamRankCriterion[] = [
+  'wins', 'headToHead', 'gameDiff', 'gamesWon', 'janken',
+];
+
+export const TEAM_RANK_CRITERION_LABEL: Record<TeamRankCriterion, string> = {
+  wins: '勝利数',
+  headToHead: '直接対決',
+  gameDiff: '得失ゲーム差',
+  gamesWon: '得ゲーム数',
+  janken: 'じゃんけん',
+};
+
+/** 保存データが壊れていても必ず全基準がそろった順序を返す */
+export function normalizeTeamRankOrder(order?: TeamRankCriterion[] | null): TeamRankCriterion[] {
+  const valid = (order ?? []).filter((c): c is TeamRankCriterion =>
+    DEFAULT_TEAM_RANK_ORDER.includes(c as TeamRankCriterion));
+  const deduped = [...new Set(valid)];
+  // 欠けている基準はデフォルトの並びで末尾に補う
+  DEFAULT_TEAM_RANK_ORDER.forEach(c => { if (!deduped.includes(c)) deduped.push(c); });
+  return deduped;
 }
 
-/** じゃんけんが必要なペアを返す */
+/** 数値で比べられる基準は、その値を取り出すだけで済む */
+const NUMERIC_CRITERION_VALUE: Record<'wins' | 'gameDiff' | 'gamesWon', (e: TeamRankEntry) => number> = {
+  wins: e => e.wins,
+  gameDiff: e => e.gameDiff,
+  gamesWon: e => e.gamesWon,
+};
+
+/**
+ * 同順位ブロックを、基準を上から順に当てて割っていく。
+ *
+ * 比較器を並べる方式ではなく段階的にブロックを割るのは、**直接対決を「2チームが並んだときだけ」**
+ * 適用するため。3チーム以上が並ぶ（三つ巴以上）と A>B, B>C, C>A が成立しうるので直接対決では
+ * 決着しない。その場合はこの基準を飛ばして次の基準（得失ゲーム差など）で決める。
+ *
+ * @param block      現時点で並んでいるチーム
+ * @param order      基準の適用順
+ * @param idx        いま見ている基準の位置
+ */
+function splitIntoRankBlocks(
+  block: TeamRankEntry[],
+  order: TeamRankCriterion[],
+  idx: number,
+  completed: TeamEncounter[],
+  jankenWinners?: Record<string, string>,
+): TeamRankEntry[][] {
+  // 基準を使い切っても割れなければ、そのかたまりが「まだ並んでいる」ことを意味する
+  if (block.length <= 1 || idx >= order.length) return [block];
+
+  const criterion = order[idx];
+  const next = (b: TeamRankEntry[]) => splitIntoRankBlocks(b, order, idx + 1, completed, jankenWinners);
+
+  // 直接対決: 2チームが並んだときだけ有効。三つ巴以上は次の基準に送る
+  if (criterion === 'headToHead') {
+    if (block.length !== 2) return next(block);
+    const [a, b] = block;
+    const h2h = getHeadToHead(a.teamId, b.teamId, completed);
+    if (h2h === null) return next(block);
+    return h2h === a.teamId ? [[a], [b]] : [[b], [a]];
+  }
+
+  // じゃんけん: 並んでいる全ペアの結果が入っているときだけ、それで並べ切る
+  if (criterion === 'janken') {
+    const jankenOf = (a: TeamRankEntry, b: TeamRankEntry) =>
+      jankenWinners?.[[a.teamId, b.teamId].sort().join('_')];
+    const allPairsDecided = block.every((a, i) =>
+      block.every((b, j) => i >= j || !!jankenOf(a, b)));
+    if (!allPairsDecided) return next(block);
+    return [...block]
+      .sort((a, b) => {
+        const w = jankenOf(a, b);
+        if (!w) return 0;
+        return w === a.teamId ? -1 : 1;
+      })
+      .map(e => [e]);
+  }
+
+  // 数値基準: 同じ値ごとにまとめ、値の大きい順に並べてから各かたまりを次の基準へ
+  const valueOf = NUMERIC_CRITERION_VALUE[criterion];
+  const buckets = new Map<number, TeamRankEntry[]>();
+  for (const entry of block) {
+    const v = valueOf(entry);
+    if (!buckets.has(v)) buckets.set(v, []);
+    buckets.get(v)!.push(entry);
+  }
+  return [...buckets.entries()]
+    .sort((x, y) => y[0] - x[0])
+    .flatMap(([, bucket]) => next(bucket));
+}
+
+export function rankTeamGroup(
+  encounters: TeamEncounter[],
+  jankenWinners?: Record<string, string>,
+  rankOrder?: TeamRankCriterion[],
+): TeamRankEntry[] {
+  const order = normalizeTeamRankOrder(rankOrder);
+  const prelim = encounters.filter(e => e.phase === 'preliminary');
+  // 直接対決の判定には「決着した対戦」だけを使う
+  const completed = prelim.filter(e => e.completed);
+  const map = new Map<string, TeamRankEntry>();
+  const getOrCreate = (id: string): TeamRankEntry => {
+    if (!map.has(id)) map.set(id, { teamId: id, wins: 0, losses: 0, gamesWon: 0, gamesLost: 0, gameDiff: 0 });
+    return map.get(id)!;
+  };
+  for (const enc of prelim) {
+    const e1 = getOrCreate(enc.team1_id);
+    const e2 = getOrCreate(enc.team2_id);
+
+    // 勝敗は決着した対戦のみ加算する
+    if (enc.completed) {
+      if (enc.winner_id === enc.team1_id) { e1.wins++; e2.losses++; }
+      else if (enc.winner_id === enc.team2_id) { e2.wins++; e1.losses++; }
+    }
+
+    // 本数は入力済みの試合をその都度集計する（未決着の対戦も途中経過として反映）
+    const t1 = enc.games.filter(g => g.winner === 1).length;
+    const t2 = enc.games.filter(g => g.winner === 2).length;
+    e1.gamesWon += t1; e1.gamesLost += t2;
+    e2.gamesWon += t2; e2.gamesLost += t1;
+    e1.gameDiff += t1 - t2;
+    e2.gameDiff += t2 - t1;
+  }
+  // 全チームを1つの同順位ブロックとして、基準を上から当てて割っていく
+  return splitIntoRankBlocks(Array.from(map.values()), order, 0, completed, jankenWinners).flat();
+}
+
+/**
+ * じゃんけんが必要なペアを返す。
+ *
+ * じゃんけんより前のすべての基準を当てても割り切れずに残ったかたまりが対象。
+ * ここでも直接対決は2チームのときだけ効くので、三つ巴が数値基準でも割れなければ
+ * そのかたまりの全ペアがじゃんけん対象になる。
+ */
 export function getNeedJankenPairs(
   entries: TeamRankEntry[],
   encounters: TeamEncounter[],
-  jankenWinners?: Record<string, string>
+  jankenWinners?: Record<string, string>,
+  rankOrder?: TeamRankCriterion[],
 ): [string, string][] {
+  const order = normalizeTeamRankOrder(rankOrder);
   const completed = encounters.filter(e => e.completed && e.phase === 'preliminary');
+  const jankenIdx = order.indexOf('janken');
+  // じゃんけんを使わない設定なら、決めようがないので何も要求しない
+  if (jankenIdx < 0) return [];
+
+  // じゃんけん直前までの基準で割り、それでも2チーム以上残ったかたまりが対象
+  const beforeJanken = order.slice(0, jankenIdx);
+  const tiedBlocks = splitIntoRankBlocks(entries, beforeJanken, 0, completed, jankenWinners)
+    .filter(block => block.length >= 2);
+
   const pairs: [string, string][] = [];
-  for (let i = 0; i < entries.length; i++) {
-    for (let j = i + 1; j < entries.length; j++) {
-      const a = entries[i];
-      const b = entries[j];
-      if (a.wins !== b.wins) continue;
-      if (a.gameDiff !== b.gameDiff) continue;
-      const h2h = getHeadToHead(a.teamId, b.teamId, completed);
-      if (h2h !== null) continue;
-      // 勝利数・得失ゲーム数・直接対決が全て同じ時にじゃんけん対象
-      const key = [a.teamId, b.teamId].sort().join('_');
-      if (jankenWinners?.[key]) continue;
-      pairs.push([a.teamId, b.teamId]);
+  for (const block of tiedBlocks) {
+    for (let i = 0; i < block.length; i++) {
+      for (let j = i + 1; j < block.length; j++) {
+        const key = [block[i].teamId, block[j].teamId].sort().join('_');
+        if (jankenWinners?.[key]) continue;
+        pairs.push([block[i].teamId, block[j].teamId]);
+      }
     }
   }
   return pairs;

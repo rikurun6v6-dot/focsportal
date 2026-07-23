@@ -7,7 +7,7 @@ import TeamEncounterCard from './TeamEncounterCard';
 interface TeamPlacementViewProps {
   encounters: TeamEncounter[];
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => void;
+  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2 | null) => void;
 }
 
 const PLACEMENT_LABEL: Record<number, string> = {

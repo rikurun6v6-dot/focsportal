@@ -4,6 +4,11 @@ import { Trophy, Scissors, ChevronUp, ChevronDown, RotateCcw } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import type { TeamEncounter, TeamRankEntry } from '@/types';
 import TeamEncounterCard from './TeamEncounterCard';
+import {
+  DEFAULT_TEAM_RANK_ORDER,
+  TEAM_RANK_CRITERION_LABEL,
+  type TeamRankCriterion,
+} from '@/lib/tournament-logic';
 
 interface TeamPreliminaryGroupProps {
   groups: string[];
@@ -11,8 +16,9 @@ interface TeamPreliminaryGroupProps {
   rankingsByGroup: Record<string, TeamRankEntry[]>;
   jankenPairsByGroup?: Record<string, [string, string][]>;
   manualRanksByGroup?: Record<string, string[]>;
+  rankOrder?: TeamRankCriterion[];
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2, score1?: number, score2?: number) => void;
+  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2 | null) => void;
   onJanken?: (team1Id: string, team2Id: string, winnerId: string) => void;
   onManualRankChange?: (group: string, orderedTeamIds: string[]) => void;
   readOnly?: boolean;
@@ -24,6 +30,7 @@ export default function TeamPreliminaryGroup({
   rankingsByGroup,
   jankenPairsByGroup,
   manualRanksByGroup,
+  rankOrder = DEFAULT_TEAM_RANK_ORDER,
   getTeamName,
   onGameResult,
   onJanken,
@@ -106,7 +113,8 @@ export default function TeamPreliminaryGroup({
                             <th className="py-1 px-1.5 text-left">チーム</th>
                             <th className="py-1 px-1 text-center">勝</th>
                             <th className="py-1 px-1 text-center">負</th>
-                            <th className="py-1 px-1 text-center" title="得失試合数差">試</th>
+                            <th className="py-1 px-1 text-center">得</th>
+                            <th className="py-1 px-1 text-center">差</th>
                             {!readOnly && onManualRankChange && <th className="py-1 px-1 text-center">移動</th>}
                           </tr>
                         </thead>
@@ -117,6 +125,7 @@ export default function TeamPreliminaryGroup({
                               <td className="py-1 px-1.5 truncate max-w-[72px]">{getTeamName(r.teamId)}</td>
                               <td className="py-1 px-1 text-center text-emerald-700">{r.wins}</td>
                               <td className="py-1 px-1 text-center text-red-600">{r.losses}</td>
+                              <td className="py-1 px-1 text-center text-slate-700">{r.gamesWon}</td>
                               <td className={`py-1 px-1 text-center ${r.gameDiff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                                 {r.gameDiff > 0 ? `+${r.gameDiff}` : r.gameDiff}
                               </td>
@@ -145,11 +154,13 @@ export default function TeamPreliminaryGroup({
                         </tbody>
                       </table>
                     </div>
-                    {!readOnly && onManualRankChange && (
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        順位基準: 勝利数→得失試合数→直接対決。▲▼で手動変更可
-                      </p>
-                    )}
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      得＝取ったゲーム数 / 差＝得失ゲーム差
+                    </p>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      順位: {rankOrder.map(c => TEAM_RANK_CRITERION_LABEL[c]).join(' → ')}
+                      {!readOnly && onManualRankChange && '（▲▼で手動変更可）'}
+                    </p>
                   </div>
                 )}
 

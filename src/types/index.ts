@@ -350,9 +350,9 @@ export interface TeamMatchConfig {
 export interface TeamGame {
   id: string;        // 例: "MD_1", "WD_1"
   type: TeamGameType;
-  winner: 1 | 2 | null; // 1=team1勝, 2=team2勝
-  score1?: number;   // team1の得点（得失点差計算用）
-  score2?: number;   // team2の得点（得失点差計算用）
+  winner: 1 | 2 | null; // 1=team1勝, 2=team2勝, null=未入力
+  // score1 / score2 は廃止（得点入力UIを削除）。
+  // 既存の保存データに残っている場合があるため、読み込み時は無視する。
 }
 
 /** チーム間の1対戦 */
@@ -377,8 +377,9 @@ export interface TeamEncounter {
 /** グループ順位エントリー */
 export interface TeamRankEntry {
   teamId: string;
-  wins: number;
-  losses: number;
-  gameDiff: number; // 種目勝利数の差分合計（得失試合数差）
-  pointDiff: number; // 得失点差（個別種目の点数合計）
+  wins: number;      // 対戦の勝ち数（決着した対戦のみ）
+  losses: number;    // 対戦の負け数（決着した対戦のみ）
+  gamesWon: number;  // 取得本数（入力済みの試合を集計。未決着の対戦も含む）
+  gamesLost: number; // 被取得本数（同上）
+  gameDiff: number;  // 得失試合数差 = gamesWon - gamesLost
 }
