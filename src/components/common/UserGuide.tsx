@@ -68,7 +68,6 @@ function UrlBlock({ path }: { path: string }) {
 interface Section {
   id: string;
   title: string;
-  icon: string;
   keywords: string[];
   content: React.ReactNode;
 }
@@ -80,7 +79,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'quickstart',
       title: 'クイックスタート',
-      icon: '🚀',
       keywords: ['初期設定', 'コート', '初回', 'スタート', '始め方', '手順', 'キャンプ', '合宿'],
       content: (
         <div className="space-y-4">
@@ -129,7 +127,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'csv',
       title: 'CSVインポート',
-      icon: '📄',
       keywords: ['CSV', '選手', 'インポート', 'Shift-JIS', '文字コード', 'player5', 'player6', '列', 'カラム', '一括', '登録'],
       content: (
         <div className="space-y-5">
@@ -198,7 +195,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'triplet',
       title: '3人ペア対応',
-      icon: '👥',
       keywords: ['3人', '三人', 'ペア', 'player5', 'player6', '3人組', 'トリオ', '人数合わせ', '奇数'],
       content: (
         <div className="space-y-5">
@@ -251,7 +247,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'pairing',
       title: 'ペア・シード設定',
-      icon: '🎯',
       keywords: ['ペア', 'シード', 'ダブルス', 'ミックス', 'ランダム', '手動', '配置', 'スワップ', '入れ替え', 'ビジュアル', 'ドラッグ', 'シャッフル', 'ブラケット配置'],
       content: (
         <div className="space-y-5">
@@ -321,7 +316,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'tournament',
       title: 'トーナメント生成',
-      icon: '🏆',
       keywords: ['トーナメント', '生成', 'ブラケット', 'グループ', '予選', '本戦', 'knockout', 'preliminary', 'BYE', '不戦勝', '種目', '部門'],
       content: (
         <div className="space-y-5">
@@ -364,7 +358,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'groupranking',
       title: '予選順位・グループランキング',
-      icon: '📊',
       keywords: ['予選', 'グループ', 'ランキング', '順位', '勝利数', '失点率', '同点', '手動', '決定', '本戦', 'スーパーシード', '直接対決'],
       content: (
         <div className="space-y-5">
@@ -395,7 +388,7 @@ function buildAdminSections(): Section[] {
             <h4 className="font-semibold text-slate-800 mb-2">スーパーシード（3グループ以上）</h4>
             <p className="text-sm text-slate-600">
               グループが3つ以上ある大会では、各グループの1位を上記ロジックで比較し、
-              最も成績の良い選手・ペアが<strong>スーパーシード（👑）</strong>として選ばれます。
+              最も成績の良い選手・ペアが<strong>スーパーシード</strong>として選ばれます。
               本戦進出確定時、スーパーシードは最もBYEを得やすい位置（先頭スロット）に配置されます。
             </p>
           </div>
@@ -429,7 +422,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'dispatch',
       title: 'Auto-Dispatch・操作タブ',
-      icon: '⚡',
       keywords: ['Auto-Dispatch', '自動', '割当', 'コート', '運営', '進行制御', '順次', '休憩', '呼び出し', '強制割当', '手動', '3位', '決勝', '待機', '休息時間', '優先順位', 'ラウンド順', '上から', 'ブラケット', '順番'],
       content: (
         <div className="space-y-5">
@@ -519,7 +511,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'results',
       title: 'コート結果入力',
-      icon: '📋',
       keywords: ['結果', 'コート', 'スコア', 'WO', '不戦勝', '入力', '取消', 'Undo', '編集', '結果一覧'],
       content: (
         <div className="space-y-5">
@@ -569,7 +560,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'safety',
       title: '安全タブの極意',
-      icon: '🛡️',
       keywords: ['安全', '欠場', 'BYE', '取消', 'Undo', '修復', '削除', '幽霊', 'walkover', 'ブラケット', '欠場処理', '種目削除', 'subtitle', 'サブタイトル', 'クリーンアップ', 'reset', 'リセット', 'キャッシュ'],
       content: (
         <div className="space-y-5">
@@ -666,7 +656,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'messages',
       title: 'メッセージ機能',
-      icon: '💬',
       keywords: ['メッセージ', 'チャット', '送信', '一斉', '全体', '個別', '受信', '返信', 'broadcast'],
       content: (
         <div className="space-y-5">
@@ -717,7 +706,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'notifications',
       title: '通知機能',
-      icon: '🔔',
       keywords: ['通知', 'プッシュ', 'Push', 'ベル', 'VAPID', '環境変数', '.env', 'iOS', 'PWA', 'sw.js', 'バックグラウンド', 'サービスアカウント'],
       content: (
         <div className="space-y-5">
@@ -783,7 +771,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'advisor',
       title: 'AIアドバイザー',
-      icon: '🧠',
       keywords: ['AI', 'アドバイザー', '渋滞', '稼働率', 'ボトルネック', '提案', 'advisor', '分析'],
       content: (
         <div className="space-y-5">
@@ -828,7 +815,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'preview',
       title: 'プレビュー・掲示板',
-      icon: '📺',
       keywords: ['プレビュー', '掲示板', 'iPad', 'URL', 'campId', 'スクロール', 'オーバーレイ', '投影', '表示', 'display', 'エクスポート'],
       content: (
         <div className="space-y-5">
@@ -887,7 +873,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'advanced',
       title: '応用タブ（Dispatcher分析 + AI診断）',
-      icon: '🔬',
       keywords: ['応用', 'advanced', 'dispatcher', '分析', 'スコア', 'ボトルネック', 'パスワード', '可視化', 'デバッグ', 'AI', '診断', 'Claude', 'ストリーミング', '自動診断', '更新'],
       content: (
         <div className="space-y-5">
@@ -928,7 +913,7 @@ function buildAdminSections(): Section[] {
 
           <div className="border-t border-slate-200 pt-4">
             <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-              <span className="text-purple-600">✨</span> AI自動診断機能
+              <span className="text-purple-600"></span> AI自動診断機能
             </h4>
             <p className="text-sm text-slate-600 mb-3">
               「更新」ボタンを押すと最新データを取得し、問題が検出された場合に
@@ -974,7 +959,6 @@ function buildAdminSections(): Section[] {
     {
       id: 'troubleshoot',
       title: 'トラブルシューティング',
-      icon: '🔧',
       keywords: ['エラー', 'トラブル', 'オフライン', 'リセット', 'バグ', '壊れた', '動かない', '文字化け', '通知', '届かない', 'Primary Lease'],
       content: (
         <div className="space-y-3">
@@ -1028,129 +1012,141 @@ function buildAdminSections(): Section[] {
     // ─── 16. 団体戦（チーム戦） ───────────────────────────────
     {
       id: 'team_battle',
-      title: '団体戦（チーム戦）',
-      icon: '🏅',
-      keywords: ['団体', 'チーム', 'team_battle', '5本', '勝敗数', 'チーム名', '団体戦', 'team', 'matchLabel', '決勝', '順位決定戦', 'スコア', '勝利数'],
+      title: '団体戦',
+      keywords: ['団体', 'チーム', 'team_battle', '5試合', '本数', 'チーム名', '順位', 'じゃんけん', '進行表', '同時対戦', 'コート面数', '順位決定戦'],
       content: (
         <div className="space-y-5">
           <p className="text-sm text-slate-600">
-            「団体戦（team_battle）」モードでは、個人スコアの代わりにチーム合計の<strong>勝利数</strong>で結果を記録します。
-            コート表示・プレビュー画面にはチーム名が大きく表示されます。
+            団体戦はサイドバーの「団体戦」タブだけで完結します。チームを作り、予選グループを回し、
+            順位決定戦か決勝トーナメントで最終順位を決めます。個人戦の試合データとは別に保存されます。
           </p>
 
-          {/* 事前準備 */}
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-            <h4 className="font-semibold text-indigo-800 mb-2 flex items-center gap-1.5">
-              📋 事前準備: リーグ編成タブでブロック分け
-            </h4>
-            <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
-              <li>サイドバーの <strong>「リーグ編成」</strong> タブを開く</li>
-              <li>登録済みチームの一覧が表示される。未割り当てのチームには <strong>A / B / C / D</strong> ボタンが表示される</li>
-              <li>ボタンをクリックして各チームをブロックへ割り当てる（Firestore に即時保存）</li>
-              <li>全チームを割り当てたら緑色のバナーで完了と表示される</li>
-              <li>その後「初期設定 → トーナメント生成」で試合を作成すると、<code className="bg-indigo-100 px-1 rounded text-xs">match.group</code> にA〜Dが自動設定される</li>
-            </ol>
-            <div className="mt-3 p-2 bg-white border border-indigo-200 rounded text-xs text-indigo-700">
-              <strong>例：</strong> チームA・B・C を予選Aブロックへ、チームD・E・F を予選Bブロックへ割り当て
-              → それぞれのブロック内でリーグ戦の試合が生成されます
-            </div>
-          </div>
-
-          {/* 当日運営 */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-            <h4 className="font-semibold text-emerald-800 mb-2 flex items-center gap-1.5">
-              🏸 当日運営: コート表示とスコア入力
-            </h4>
-            <div className="space-y-2 text-sm text-slate-700">
-              <div className="flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">コート表示:</span>
-                <span>
-                  <code className="bg-emerald-100 px-1 rounded text-xs">tournament_type: team_battle</code> の試合では、
-                  コート名の下に選手名ではなく <strong>チーム名</strong> が大きく表示されます（例:「チームA vs チームB」）
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">1. 設定</h4>
+            <ul className="space-y-1.5 text-sm text-slate-700 list-disc list-inside">
+              <li>チーム設定: チーム名を追加・削除する</li>
+              <li>大会形式: グループ数と、最終フェーズ（順位決定戦 / 決勝トーナメント）
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  順位決定戦は「グループAの1位 vs グループBの1位」の形なので、グループ数はちょうど2つ必要です
                 </span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">スコア入力:</span>
-                <span>
-                  「結果入力」を押すと、個人スコアではなく <strong>チームごとの合計勝利数</strong> を入力する画面になります。
-                  合計5本勝負なら 3〜2 や 4〜1 などを入力して「結果を確定」します
-                </span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">重複防止:</span>
-                <span>
-                  自動割り当て時、<strong>同一チームが複数コートで同時に試合することはありません</strong>（チームIDでロック）
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2">団体戦種目の作成方法</h4>
-            <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
-              <li>トーナメント生成タブで種目として「団体戦（team_battle）」を選択する</li>
-              <li>各チームに所属する選手を登録し、チーム名を設定しておく</li>
-              <li>通常と同様にトーナメントを生成すると、コート割り当て対象になる</li>
-            </ol>
-            <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200 text-xs text-slate-600">
-              チーム名は Firestore → teams コレクションの <code className="bg-slate-100 px-1 rounded">name</code> フィールドから自動取得されます。
-              選手の <code className="bg-slate-100 px-1 rounded">team_id</code> が一致するチームの名前が表示されます。
-            </div>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2">スコア入力：勝利数で記録</h4>
-            <p className="text-sm text-slate-600 mb-2">
-              コート結果タブで「結果入力」を押すと、個人スコアではなく<strong>チームごとの勝利数</strong>を入力する画面になります。
-            </p>
-            <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 text-xs text-sky-800">
-              <strong>例：</strong> 5本勝負の場合 → チームAが3勝・チームBが2勝 → 「3 勝」「2 勝」と入力して確定。<br />
-              内部では <code className="bg-sky-100 px-1 rounded">score_p1 = 3</code>、<code className="bg-sky-100 px-1 rounded">score_p2 = 2</code> として保存されます。
-            </div>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2">コート表示・プレビューの仕様</h4>
-            <div className="space-y-2">
-              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">
-                <p className="font-semibold text-slate-800">管理画面（コート結果タブ）</p>
-                <p className="text-slate-600 text-xs mt-1">
-                  tournament_type が <code className="bg-slate-100 px-1 rounded">team_battle</code> の試合では、選手名の代わりに<strong>チーム名</strong>が表示されます。
-                </p>
-              </div>
-              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">
-                <p className="font-semibold text-slate-800">モニター（プレビュー画面）</p>
-                <p className="text-slate-600 text-xs mt-1">
-                  プレビュー画面（/preview）でも同様に、団体戦のコートには<strong>「チームA vs チームB」</strong>のみが大きく表示されます。
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2">順位決定戦ラベル（matchLabel）の設定</h4>
-            <p className="text-sm text-slate-600">
-              「決勝」「3位決定戦」などのラベルは <strong>subtitle フィールド</strong> を使って設定します。
-            </p>
-            <ol className="space-y-1.5 text-sm text-slate-700 list-decimal list-inside mt-2">
-              <li>「安全」タブ → 「Subtitle（試合補足情報）」を開く</li>
-              <li>対象試合の match_id を入力する</li>
-              <li>テキストに「決勝」「3位決定戦」「5位決定戦」などを入力して設定</li>
-            </ol>
-            <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200 text-xs text-amber-800">
-              <strong>表示箇所：</strong>
-              コート結果タブのラウンドバッジ・トーナメント表（KnockoutTree）・プレビュー画面の各コートカードに表示されます。
-              subtitleが設定されると、ラウンド名（準決勝・決勝など）の代わりにsubtitleが優先表示されます。
-            </div>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2">Auto-Dispatchとの連携</h4>
-            <p className="text-sm text-slate-600">
-              団体戦の試合も他の種目と同様にAuto-Dispatchの対象になります。
-              「種目ごとの進行制御」で団体戦だけON/OFFの切り替えも可能です。
+              </li>
+              <li>コートと同時進行: 面数と、1グループあたり同時に進める対戦数</li>
+              <li>予選順位の決め方: 判定の順番を上下ボタンで入れ替えられる</li>
+              <li>グループ割り当て: 各チームをどのグループにするか</li>
+            </ul>
+            <p className="text-xs text-slate-500 mt-2">
+              空のグループがある、通過チーム数に対してチームが足りないなど、そのままでは回らない設定は開始前に止まります。
             </p>
           </div>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">2. コート面数と同時対戦数</h4>
+            <p className="text-sm text-slate-700">
+              面数は既定でその合宿のコート設定から自動で数えます（使用中の面から、手動で止めている面を引いた数）。
+              コートを止めると面数も進行表も追従します。団体戦だけ別の面数で回す場合は手動で指定してください。
+            </p>
+            <p className="text-sm text-slate-700 mt-2">
+              同時対戦数は選択肢ごとに、何チームが同時にコートへ入るか、1対戦あたり何面か、何波で消化するか、
+              1チームが同時に出す試合数はいくつかが並ぶので、当日の人数を見て選べます。
+            </p>
+            <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600">
+              例: 10チーム2グループで12面なら、1グループ1対戦なら4チーム同時（1対戦5面）、
+              1グループ2対戦なら8チーム同時（1対戦3面・2波）。所要時間はどちらも同じで、待ち時間の長さが変わります。
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">3. 進行表</h4>
+            <p className="text-sm text-slate-700">
+              予選の対戦はサーキット法で「同時に進められる巡」の順に作られます。1巡の中に同じチームは1回しか出ず、
+              奇数チームなら毎巡ちょうど1チームが休みます（休みの回数も全チーム均等）。
+              進行表にはブロックごとの対戦、休みチーム、所要時間の目安が出ます。既定は閉じた状態です。
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">4. 結果の入力</h4>
+            <p className="text-sm text-slate-700">
+              1対戦は5試合です。対戦カードをタップして開き、勝ったチームを選んでから
+              本数（5-0 / 4-1 / 3-2）を選びます。入れ終わるとカードは自動で畳まれます。
+            </p>
+            <ul className="mt-2 space-y-1 text-sm text-slate-700 list-disc list-inside">
+              <li>先取制ではありません。全5試合を消化してから、勝ち数の多い方が勝ちです</li>
+              <li>間違えたら「結果を取り消す」で未入力に戻せます</li>
+              <li>どの試合を誰が取ったかは記録しません（種目を固定していないため）</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">5. 予選順位の確定とじゃんけん</h4>
+            <p className="text-sm text-slate-700">
+              全対戦を入れ終わったら「予選結果を確定」を押します。
+              同着で決まらないチームがあれば、そこで初めてじゃんけんの入力欄が出ます。
+              確定して、じゃんけんも片付いて初めて次のフェーズへ進めます。
+            </p>
+            <p className="text-sm text-slate-700 mt-2">
+              判定は既定で、勝利数、直接対決、取ったゲーム数、じゃんけん の順です。
+              直接対決は2チームが並んだときだけ使います。3チーム以上が並ぶと、
+              AがBに勝ち、BがCに勝ち、CがAに勝つ、という三つ巴が起こりうるので、
+              直接対決は飛ばして次の基準で決めます。
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              それでも決まらないときは、順位表の上下ボタンで手動で並べ替えられます。
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">6. 最終順位</h4>
+            <p className="text-sm text-slate-700">
+              順位決定戦は、両グループの同じ順位同士が対戦します（1位決定戦、3位決定戦、5位決定戦、という形）。
+              10チームなら1位から10位まで全部決まります。
+            </p>
+            <p className="text-sm text-slate-700 mt-2">
+              決勝トーナメントは、各グループの上位が勝ち上がります。決勝と3位決定戦で1位から4位まで決まります。
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <h4 className="font-semibold text-amber-900 mb-2">気をつけること</h4>
+            <ul className="space-y-1.5 text-sm text-amber-900 list-disc list-inside">
+              <li>「設定を編集」の中にある「対戦表を作り直す」を押すと、入力済みの予選結果が消えます（確認あり）。
+                チーム名や順位の決め方を直しただけなら押す必要はありません</li>
+              <li>「予選を見る」で戻っても、順位決定戦や決勝トーナメントの結果は残ります</li>
+              <li>「団体戦をリセット」は全データを消します（二重確認あり）</li>
+              <li>ヘッダーに保存状態が出ます。「保存できていません」のときは通信を確認してください</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h4 className="font-semibold text-slate-800 mb-2">参加者側の見え方</h4>
+            <p className="text-sm text-slate-700">
+              参加者画面に「団体戦」タブが出て、予選のグループ順位をそのまま見られます。
+              運営が結果を入れるとその場で更新されます。手動で並べ替えた順位やじゃんけんの結果も反映されます。
+            </p>
+          </div>
+        </div>
+      ),
+    },
+
+    {
+      id: 'results_page',
+      title: '結果発表ページ',
+      keywords: ['結果', '発表', '表彰', '順位', 'results', 'まとめ'],
+      content: (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            結果発表のときに使うページです。各種目の1位から3位と、団体戦の全順位を1ページにまとめて出します。
+            画面を行き来する必要がありません。
+          </p>
+          <ul className="space-y-1.5 text-sm text-slate-700 list-disc list-inside">
+            <li>各種目は優勝、準優勝、3位（共同3位にも対応）。まだ終わっていない種目は「進行中」として名前だけ出ます</li>
+            <li>団体戦は全順位と、予選のグループ順位</li>
+            <li>団体戦は自動で更新されます。各種目は30秒ごとに取り直し、「更新」ボタンもあります</li>
+            <li>参加者画面のヘッダーの「結果」、またはホームの「結果発表」から開けます</li>
+          </ul>
+          <p className="text-xs text-slate-500">
+            PINなしで誰でも見られます。発表前に見られたくない場合は、共有するタイミングを運営で調整してください。
+          </p>
         </div>
       ),
     },
@@ -1274,7 +1270,6 @@ export default function UserGuide({ isOpen, onClose, isAdmin = false }: UserGuid
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                         }`}
                     >
-                      <span className="shrink-0 text-sm leading-none">{section.icon}</span>
                       <span className="leading-tight">{section.title}</span>
                     </button>
                   ))}
@@ -1309,7 +1304,6 @@ export default function UserGuide({ isOpen, onClose, isAdmin = false }: UserGuid
                       ref={(el) => { sectionRefs.current[section.id] = el; }}
                     >
                       <h3 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b border-slate-200 flex items-center gap-2">
-                        <span className="text-xl">{section.icon}</span>
                         {section.title}
                       </h3>
                       {section.content}
@@ -1326,38 +1320,46 @@ export default function UserGuide({ isOpen, onClose, isAdmin = false }: UserGuid
               {[
                 {
                   num: 1,
-                  title: '自分の試合を確認する',
+                  title: '名前を選ぶか、見るだけにするか',
                   items: [
-                    '「マイ試合」タブで自分の全試合を確認できます',
-                    '次の試合が赤枠でハイライト表示されます',
-                    '試合のステータス（待機中 / 呼び出し中 / 完了）を確認してください',
+                    '呼び出しを受け取りたい人は、大会と自分の名前を選んで「利用を開始する」',
+                    '結果や誰が出ているかを見たいだけなら「名前を選ばずに見る」でも入れます',
+                    '見るだけで入っても、あとから画面上部の「名前を選ぶ」でいつでも切り替えられます',
                   ],
                 },
                 {
                   num: 2,
-                  title: 'コート状況を確認する',
+                  title: '自分の試合を確認する',
                   items: [
-                    '「コート状況」タブで各コートの試合をリアルタイム確認',
-                    '自分の試合がどのコートに割り当てられたか確認できます',
-                    '「呼び出し中」になったらすぐにコートへ向かってください',
+                    '「自分の試合」タブで自分の全試合を確認できます',
+                    '画面いちばん上に、いまの自分の状態（待機中・呼出中・試合中）が出ます',
+                    '待機中は「あと何分」「前に何試合」の目安も出ます',
                   ],
                 },
                 {
                   num: 3,
-                  title: 'トーナメント表で全体を見る',
+                  title: 'コート状況とトーナメント表',
                   items: [
-                    '「トーナメント表」タブで大会全体の進行状況を確認',
-                    '自分の試合が強調表示されます',
-                    '勝ち進んだ場合の次の対戦相手を事前に確認できます',
+                    '「コート状況」タブで、どのコートで誰が試合中かが分かります',
+                    '「トーナメント表」タブで大会全体の進行を確認できます',
+                    '団体戦がある大会では「団体戦」タブにグループ順位が出ます',
                   ],
                 },
                 {
                   num: 4,
-                  title: '通知を有効にする（推奨）',
+                  title: '通知を有効にする（名前を選んだ人）',
                   items: [
-                    '画面上部のベルアイコンをタップして通知をONにしてください',
-                    '「呼び出し中」になるとスマホに通知が届きます',
-                    'iOSの場合はホーム画面に追加（PWAインストール）してからONにしてください',
+                    '画面上部の「通知」を押してONにしてください',
+                    '呼び出しのときに音・振動・通知でお知らせします',
+                    'iPhoneはホーム画面に追加してから開き直すと通知が使えます',
+                  ],
+                },
+                {
+                  num: 5,
+                  title: '結果を見る',
+                  items: [
+                    '画面上部の「結果」から、各種目の1位から3位と団体戦の順位をまとめて見られます',
+                    '結果発表のときはこの画面を見てください',
                   ],
                 },
               ].map(({ num, title, items }) => (
@@ -1379,7 +1381,7 @@ export default function UserGuide({ isOpen, onClose, isAdmin = false }: UserGuid
                 </div>
               ))}
               <div className="p-4 bg-sky-50 rounded-xl border border-sky-200 text-sm text-sky-800">
-                <strong>ヒント：</strong> 画面は自動更新されます。リロード不要です。困ったときはスタッフに声をかけてください。
+                <strong>ヒント：</strong> 画面は自動で新しくなります。読み込み直す必要はありません。画面右下に「同期 ○秒前」と出ていれば最新です。「オフライン」「同期エラー」と出たときは表示が古いままかもしれないので、運営に声をかけてください。
               </div>
             </div>
           )}
