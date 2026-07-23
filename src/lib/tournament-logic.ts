@@ -397,6 +397,59 @@ function getHeadToHead(
   return enc?.winner_id ?? null;
 }
 
+/** 総当たりの1巡ぶん。同じラウンドの対戦は同時に進められる（同じチームが重複しない） */
+export interface RoundRobinRound {
+  round: number;                 // 1始まり
+  pairs: [string, string][];     // 同時に成立する対戦（チームID）
+  byeTeamId: string | null;      // 奇数チームのとき、この巡で休むチーム
+}
+
+/**
+ * 総当たりの組み合わせを「同時に進められるラウンド」に分けて返す（サーキット法）。
+ *
+ * 単純な二重ループ（A-B, A-C, A-D, …）だと同じチームが連続で試合に入ってしまい、
+ * そのままでは進行表として使えない。サーキット法なら1ラウンド内に同じチームは1回しか出ず、
+ * 奇数チームのときは毎ラウンドちょうど1チームが休む（休みの回数も全チーム均等になる）。
+ */
+export function generateRoundRobinRounds(teamIds: string[]): RoundRobinRound[] {
+  const ids = [...teamIds];
+  if (ids.length < 2) return [];
+
+  const BYE = '__BYE__';
+  if (ids.length % 2 === 1) ids.push(BYE);
+
+  const totalRounds = ids.length - 1;
+  const fixed = ids[0];
+  let rotating = ids.slice(1);
+  const rounds: RoundRobinRound[] = [];
+
+  for (let r = 0; r < totalRounds; r++) {
+    const pairs: [string, string][] = [];
+    let bye: string | null = null;
+
+    // 固定席 と 回転列の末尾
+    const opponent = rotating[rotating.length - 1];
+    if (fixed === BYE) bye = opponent;
+    else if (opponent === BYE) bye = fixed;
+    else pairs.push([fixed, opponent]);
+
+    // 残りは回転列の両端から詰めていく
+    for (let i = 0; i < (rotating.length - 1) / 2; i++) {
+      const a = rotating[i];
+      const b = rotating[rotating.length - 2 - i];
+      if (a === BYE) bye = b;
+      else if (b === BYE) bye = a;
+      else pairs.push([a, b]);
+    }
+
+    rounds.push({ round: r + 1, pairs, byeTeamId: bye });
+    // 末尾を先頭に回す
+    rotating = [rotating[rotating.length - 1], ...rotating.slice(0, -1)];
+  }
+
+  return rounds;
+}
+
 /**
  * 予選順位の判定基準。並び順は大会ごとに設定できる（TeamTournamentGenerator の「順位の決め方」）。
  * - wins:        対戦の勝ち数（決着した対戦のみ）

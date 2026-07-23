@@ -6,7 +6,6 @@ import { Loading } from '@/components/ui/loading';
 import type { TeamMatchConfig, TeamEncounter, TeamRankEntry } from '@/types';
 import {
   buildGameSlots,
-  generateTeamPreliminaryEncounters,
   generateTeamPlacementEncounters,
   generateTeamFinalBracket,
   applyTeamAdvancersToFinalBracket,
@@ -16,6 +15,7 @@ import {
   generateTeamBronzeEncounter,
   resolveTeamBronzeEncounter,
   recordTeamGameResult,
+  generateRoundRobinRounds,
   normalizeTeamRankOrder,
   DEFAULT_TEAM_RANK_ORDER,
   TEAM_RANK_CRITERION_LABEL,
@@ -29,6 +29,7 @@ import TeamPreliminaryGroup from './TeamPreliminaryGroup';
 import TeamKnockoutTree from './TeamKnockoutTree';
 import TeamPlacementView from './TeamPlacementView';
 import TeamSetupPanel, { type SimpleTeam, type FinalFormat } from './TeamSetupPanel';
+import TeamScheduleView from './TeamScheduleView';
 import { ArrowRight, ArrowLeft, Pencil, RotateCcw, ChevronDown, ChevronUp, Check, CloudOff, Loader2 } from 'lucide-react';
 
 const DEFAULT_CONFIG: TeamMatchConfig = {
@@ -51,6 +52,8 @@ const DEFAULT_TEAMS: SimpleTeam[] = [
   { id: 'team_7', name: 'チームG' },
   { id: 'team_8', name: 'チームH' },
 ];
+
+const DEFAULT_COURT_COUNT = 6;
 
 type Phase = 'setup' | 'preliminary' | 'placement' | 'knockout';
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -78,6 +81,11 @@ export default function TeamTournamentGenerator() {
   const [jankenWinners, setJankenWinners] = useState<Record<string, string>>({});
   const [manualRanksByGroup, setManualRanksByGroup] = useState<Record<string, string[]>>({});
   const [rankOrder, setRankOrder] = useState<TeamRankCriterion[]>(DEFAULT_TEAM_RANK_ORDER);
+  // 進行の設定。合宿ごとに保存する（面数も同時対戦数も大会によって変わる）
+  const [courtCount, setCourtCount] = useState<number>(DEFAULT_COURT_COUNT);
+  const [concurrentPerGroup, setConcurrentPerGroup] = useState<number>(1);
+  // グループ・ラウンドごとの休みチーム: `${group}_${round}` -> teamId
+  const [prelimByes, setPrelimByes] = useState<Record<string, string | null>>({});
 
   // UI state (not persisted)
   const [showSetupEdit, setShowSetupEdit] = useState(false);
@@ -99,6 +107,9 @@ export default function TeamTournamentGenerator() {
     if (s.manualRanksByGroup) setManualRanksByGroup(s.manualRanksByGroup as Record<string, string[]>);
     // 未設定・壊れたデータでも必ず全基準がそろった順序にする
     setRankOrder(normalizeTeamRankOrder(s.rankOrder as TeamRankCriterion[] | undefined));
+    if (typeof s.courtCount === 'number') setCourtCount(s.courtCount);
+    if (typeof s.concurrentPerGroup === 'number') setConcurrentPerGroup(s.concurrentPerGroup);
+    setPrelimByes((s.prelimByes as Record<string, string | null>) ?? {});
   };
 
   // この合宿に団体戦の保存データが無いときの初期化（前の合宿の状態を引き継がない）
@@ -116,6 +127,9 @@ export default function TeamTournamentGenerator() {
     setJankenWinners({});
     setManualRanksByGroup({});
     setRankOrder([...DEFAULT_TEAM_RANK_ORDER]);
+    setCourtCount(DEFAULT_COURT_COUNT);
+    setConcurrentPerGroup(1);
+    setPrelimByes({});
   };
 
   // Firestoreからロード（campが変わるたびに）。失敗時は同じ合宿のlocalStorageで復帰を試みる
@@ -156,6 +170,7 @@ export default function TeamTournamentGenerator() {
       teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
       teamGroupAssignments, prelimEncounters, placementEncounters,
       knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
+      courtCount, concurrentPerGroup, prelimByes,
     };
     // localStorageに即時保存（合宿ごとのキー）
     try { localStorage.setItem(lsKey(camp.id), JSON.stringify(state)); } catch { /* ignore */ }
@@ -173,7 +188,8 @@ export default function TeamTournamentGenerator() {
     return () => clearTimeout(timer);
   }, [stateLoaded, camp?.id, teams, config, groupCount, qualifiersPerGroup, finalFormat, phase,
     teamGroupAssignments, prelimEncounters, placementEncounters,
-    knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder]);
+    knockoutEncounters, bronzeEncounter, jankenWinners, manualRanksByGroup, rankOrder,
+    courtCount, concurrentPerGroup, prelimByes]);
 
   const getTeamName = useCallback((id: string) => {
     if (id === 'BYE') return 'BYE';
@@ -204,6 +220,9 @@ export default function TeamTournamentGenerator() {
     jankenPairsByGroup[g] = getNeedJankenPairs(rankingsByGroup[g], encountersByGroup[g], jankenWinners, rankOrder);
   }
 
+  // 1対戦あたりの試合数（設定は5試合固定だが、config から数えて追従させる）
+  const gamesPerEncounter = config.games.reduce((sum, g) => sum + g.count, 0);
+
   const allPrelimDone = prelimEncounters.length > 0 && prelimEncounters.every(e => e.completed);
   const needJanken = allPrelimDone && groups.some(g => (jankenPairsByGroup[g] ?? []).length > 0);
   const canAdvance = allPrelimDone && !needJanken;
@@ -230,30 +249,44 @@ export default function TeamTournamentGenerator() {
     });
   };
 
-  const buildPreliminaryEncounters = (): TeamEncounter[] => {
-    if (groupCount <= 1) return generateTeamPreliminaryEncounters(teams, groupCount, config);
-    const groupedTeams: SimpleTeam[][] = Array.from({ length: groupCount }, () => []);
+  /** チームをグループごとに分けた配列を返す（グループ数1なら全員が1つ目に入る） */
+  const groupedTeams = (): SimpleTeam[][] => {
+    const buckets: SimpleTeam[][] = Array.from({ length: Math.max(1, groupCount) }, () => []);
     teams.forEach(t => {
-      const g = Math.min(teamGroupAssignments[t.id] ?? 0, groupCount - 1);
-      groupedTeams[g].push(t);
+      const g = Math.min(teamGroupAssignments[t.id] ?? 0, Math.max(1, groupCount) - 1);
+      buckets[g].push(t);
     });
+    return buckets;
+  };
+
+  /**
+   * 予選の対戦を作る。
+   * サーキット法で「同時に進められるラウンド」の順に並べるので、
+   * 同じチームが連続で試合に入らない＝そのまま進行表として使える。
+   */
+  const buildPreliminaryEncounters = (): { encounters: TeamEncounter[]; byes: Record<string, string | null> } => {
+    const buckets = groupedTeams();
     const encounters: TeamEncounter[] = [];
-    for (let g = 0; g < groupCount; g++) {
-      const group = groupedTeams[g];
+    const byes: Record<string, string | null> = {};
+
+    buckets.forEach((group, g) => {
       const groupLabel = String.fromCharCode(65 + g);
-      for (let i = 0; i < group.length; i++) {
-        for (let j = i + 1; j < group.length; j++) {
+      const rounds = generateRoundRobinRounds(group.map(t => t.id));
+      for (const r of rounds) {
+        byes[`${groupLabel}_${r.round}`] = r.byeTeamId;
+        for (const [t1, t2] of r.pairs) {
           encounters.push({
-            id: `pre_${groupLabel}_${group[i].id}_${group[j].id}`,
-            team1_id: group[i].id, team2_id: group[j].id,
+            id: `pre_${groupLabel}_${t1}_${t2}`,
+            team1_id: t1, team2_id: t2,
             games: buildGameSlots(config),
             team1_wins: 0, team2_wins: 0, winner_id: null,
-            phase: 'preliminary', group: groupLabel, round: 0, completed: false,
+            phase: 'preliminary', group: groupLabel, round: r.round, completed: false,
           });
         }
       }
-    }
-    return encounters;
+    });
+
+    return { encounters, byes };
   };
 
   const handleStartPreliminary = async () => {
@@ -273,7 +306,9 @@ export default function TeamTournamentGenerator() {
       if (!confirmed) return;
     }
 
-    setPrelimEncounters(buildPreliminaryEncounters());
+    const built = buildPreliminaryEncounters();
+    setPrelimEncounters(built.encounters);
+    setPrelimByes(built.byes);
     setManualRanksByGroup({});
     setJankenWinners({});
     setPlacementEncounters([]);
@@ -424,6 +459,9 @@ export default function TeamTournamentGenerator() {
       finalFormat={finalFormat}
       teamGroupAssignments={teamGroupAssignments}
       rankOrder={rankOrder}
+      courtCount={courtCount}
+      concurrentPerGroup={concurrentPerGroup}
+      gamesPerEncounter={gamesPerEncounter}
       isRunning={phase !== 'setup'}
       onNewTeamNameChange={setNewTeamName}
       onAddTeam={handleAddTeam}
@@ -433,6 +471,8 @@ export default function TeamTournamentGenerator() {
       onFinalFormatChange={setFinalFormat}
       onAssignGroup={(teamId, group) => setTeamGroupAssignments(prev => ({ ...prev, [teamId]: group }))}
       onRankOrderChange={setRankOrder}
+      onCourtCountChange={setCourtCount}
+      onConcurrentPerGroupChange={setConcurrentPerGroup}
       onStartPreliminary={handleStartPreliminary}
     />
   );
@@ -519,6 +559,15 @@ export default function TeamTournamentGenerator() {
       {/* 予選フェーズ */}
       {phase === 'preliminary' && (
         <div className="space-y-4">
+          <TeamScheduleView
+            encounters={prelimEncounters}
+            byeByGroupRound={prelimByes}
+            concurrentPerGroup={concurrentPerGroup}
+            courtCount={courtCount}
+            gamesPerEncounter={gamesPerEncounter}
+            getTeamName={getTeamName}
+          />
+
           <TeamPreliminaryGroup
             groups={groups}
             encountersByGroup={encountersByGroup}
