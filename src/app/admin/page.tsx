@@ -58,16 +58,16 @@ const GUIDE_SEEN_KEY = 'focs_guide_seen';
 
 /**
  * 常時表示の固定タブ。
- * 大会中に叩く回数が突出して多い「進行中」「操作」を、グループを開かずに
+ * 大会中に叩く回数が突出して多い「コート状況」「種目設定」を、グループを開かずに
  * 1タップで出せる位置に置く。項目をグループに畳むと探す手間は減るが、
  * その代わり頻用項目まで1階層深くなり、いちばん急いでいる場面で遅くなる。
  */
 const PINNED_ITEMS: { value: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: 'live', label: '進行中', icon: Activity },
-  { value: 'control', label: '操作', icon: Play },
+  { value: 'live', label: 'コート状況', icon: Activity },
+  { value: 'control', label: '種目設定', icon: Play },
 ];
 
-// 固定タブに出している「進行中」「操作」はここに重複させない。
+// 固定タブに出している「コート状況」「種目設定」はここに重複させない。
 // アコーディオンをやめて全項目を常時表示するので、グループは見出しとしてだけ使う。
 const NAV_GROUPS: {
   key: string;
@@ -82,7 +82,6 @@ const NAV_GROUPS: {
       { value: 'players', label: '選手', icon: Users },
       { value: 'pairseed', label: 'ペア・シード', icon: Settings },
       { value: 'groupedit', label: '予選配置編集', icon: ArrowLeftRight },
-      { value: 'team_battle', label: '団体戦', icon: Users },
     ],
   },
   {
@@ -92,6 +91,7 @@ const NAV_GROUPS: {
       { value: 'results-list', label: '結果一覧', icon: BarChart3 },
       { value: 'bracket', label: 'トーナメント表', icon: Trophy },
       { value: 'awards', label: '表彰', icon: Medal },
+      { value: 'team_battle', label: '団体戦', icon: Users },
     ],
   },
   {
@@ -1354,7 +1354,7 @@ export default function AdminDashboard() {
               </TabsContent>
 
               <TabsContent value="live" className="space-y-4">
-                {/* 進行中: 自動割り当てON/OFF ＋ コート結果（入力）を1画面に集約 */}
+                {/* コート状況: 自動割り当てON/OFF ＋ コート結果（入力）を1画面に集約 */}
                 <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${autoDispatchEnabled ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="flex items-center gap-2.5 min-w-0">
                     <span className="relative flex h-3 w-3 shrink-0">

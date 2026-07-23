@@ -92,7 +92,7 @@ function buildAdminSections(): Section[] {
               ['選手タブ', 'CSVインポートまたは手動で選手を一括登録します。'],
               ['ペア・シードタブ', 'ダブルス種目のペアを組みます（ランダム / 手動 / ミックス）。'],
               ['初期設定タブ', '「トーナメント作成」で試合を自動生成します。種目・部門・形式を事前に設定してから実行。'],
-              ['操作タブ', 'Auto-Dispatch をONにすると空きコートへ自動割り当てが始まります。'],
+              ['コート状況タブ', '自動割り当てをONにすると空きコートへ試合が入り始めます。'],
               ['コート結果タブ', '試合が終わるたびにスコアを入力します。'],
             ].map(([tab, desc], i) => (
               <li key={i} className="flex gap-3">
@@ -418,10 +418,10 @@ function buildAdminSections(): Section[] {
       ),
     },
 
-    // ─── 7. Auto-Dispatch・操作タブ ───────────────────────────
+    // ─── 7. Auto-Dispatch・種目設定 ───────────────────────────
     {
       id: 'dispatch',
-      title: 'Auto-Dispatch・操作タブ',
+      title: 'Auto-Dispatch・種目設定',
       keywords: ['Auto-Dispatch', '自動', '割当', 'コート', '運営', '進行制御', '順次', '休憩', '呼び出し', '強制割当', '手動', '3位', '決勝', '待機', '休息時間', '優先順位', 'ラウンド順', '上から', 'ブラケット', '順番'],
       content: (
         <div className="space-y-5">
@@ -429,7 +429,7 @@ function buildAdminSections(): Section[] {
             <h4 className="font-semibold text-slate-800 mb-2">Auto-Dispatch のON/OFF</h4>
             <p className="text-sm text-slate-600">
               空きコートが発生すると次の試合を自動的に割り当てるエンジンです。
-              「操作」タブの <strong>Auto-Dispatch スイッチをON</strong> にするだけで自動運営が始まります。
+              「コート状況」タブの <strong>自動割り当てをON</strong> にするだけで自動運営が始まります。
               OFFにすると新規割り当てが停止し、進行中の試合はそのまま続きます。
             </p>
           </div>
@@ -965,7 +965,7 @@ function buildAdminSections(): Section[] {
           {[
             {
               q: 'Auto-Dispatchが動かない',
-              a: '①「操作」タブで種目制御が全停止していないか確認。②「コート結果」タブで「blocked match」警告が出ていれば強制割当で解消。③全試合が「休憩中（available_at設定済み）」状態で時間待ちの場合もあります。「応用」タブでスコアを確認するとブロック理由がわかります。',
+              a: '①「種目設定」タブで種目が全停止していないか確認。②「コート結果」タブで「blocked match」警告が出ていれば強制割当で解消。③全試合が「休憩中（available_at設定済み）」状態で時間待ちの場合もあります。「応用」タブでスコアを確認するとブロック理由がわかります。',
             },
             {
               q: 'BYEがブラケットに正しく伝播していない',
