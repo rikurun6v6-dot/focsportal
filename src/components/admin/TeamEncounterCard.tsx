@@ -34,6 +34,11 @@ export default function TeamEncounterCard({
 
   // 未入力のものは開いて始める。入れ終わったら畳む
   const [open, setOpen] = useState(!collapsible || !decided);
+  // 入力は「勝ったチーム」→「本数」の2段階。1段目で選んだ側をここに持つ
+  const recordedSide: 1 | 2 | null =
+    encounter.winner_id === encounter.team1_id ? 1
+      : encounter.winner_id === encounter.team2_id ? 2 : null;
+  const [pickedSide, setPickedSide] = useState<1 | 2 | null>(recordedSide);
 
   const team1Name = getTeamName(encounter.team1_id);
   const team2Name = getTeamName(encounter.team2_id);
@@ -98,49 +103,78 @@ export default function TeamEncounterCard({
         )}
 
         {open && !readOnly && (
-          <div className="space-y-1.5 pt-1">
-            <p className="text-[11px] text-slate-500 text-center">勝ったチームと本数を選んでください</p>
-            {winnerCounts.map(count => {
-              const t1Picked = encounter.winner_id === encounter.team1_id && encounter.team1_wins === count;
-              const t2Picked = encounter.winner_id === encounter.team2_id && encounter.team2_wins === count;
-              return (
-                <div key={count} className="flex items-center gap-1.5">
-                  <span className="w-11 shrink-0 text-xs font-bold text-slate-600 tabular-nums text-center">
-                    {count}-{total - count}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={t1Picked ? 'default' : 'outline'}
-                    className={`flex-1 min-w-0 h-11 px-1 text-xs font-bold ${t1Picked
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'border-blue-200 text-blue-700 hover:bg-blue-50'
-                      }`}
-                    onClick={() => handlePick(1, count)}
-                    aria-pressed={t1Picked}
-                    aria-label={`${team1Name} が ${count}対${total - count} で勝ち`}
-                  >
-                    <span className="truncate">{team1Name}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={t2Picked ? 'default' : 'outline'}
-                    className={`flex-1 min-w-0 h-11 px-1 text-xs font-bold ${t2Picked
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'border-red-200 text-red-700 hover:bg-red-50'
-                      }`}
-                    onClick={() => handlePick(2, count)}
-                    aria-pressed={t2Picked}
-                    aria-label={`${team2Name} が ${count}対${total - count} で勝ち`}
-                  >
-                    <span className="truncate">{team2Name}</span>
-                  </Button>
+          <div className="space-y-2 pt-1">
+            {/* 1段目: どちらが勝ったか */}
+            <div className="space-y-1">
+              <p className="text-[11px] font-bold text-slate-600">1. 勝ったチーム</p>
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant={pickedSide === 1 ? 'default' : 'outline'}
+                  className={`flex-1 min-w-0 h-11 px-1 text-xs font-bold ${pickedSide === 1
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'border-blue-200 text-blue-700 hover:bg-blue-50'
+                    }`}
+                  onClick={() => setPickedSide(1)}
+                  aria-pressed={pickedSide === 1}
+                >
+                  <span className="truncate">{team1Name}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant={pickedSide === 2 ? 'default' : 'outline'}
+                  className={`flex-1 min-w-0 h-11 px-1 text-xs font-bold ${pickedSide === 2
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'border-red-200 text-red-700 hover:bg-red-50'
+                    }`}
+                  onClick={() => setPickedSide(2)}
+                  aria-pressed={pickedSide === 2}
+                >
+                  <span className="truncate">{team2Name}</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* 2段目: 本数。勝ったチームを選ぶまで出さない */}
+            {pickedSide === null ? (
+              <p className="text-[11px] text-slate-400 text-center py-1">
+                勝ったチームを選ぶと本数を選べます
+              </p>
+            ) : (
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-slate-600">
+                  2. 本数（{pickedSide === 1 ? team1Name : team2Name} の勝ち）
+                </p>
+                <div className="flex gap-1.5">
+                  {winnerCounts.map(count => {
+                    const picked = recordedSide === pickedSide
+                      && (pickedSide === 1 ? encounter.team1_wins : encounter.team2_wins) === count;
+                    return (
+                      <Button
+                        key={count}
+                        size="sm"
+                        variant={picked ? 'default' : 'outline'}
+                        className={`flex-1 h-11 text-sm font-bold tabular-nums ${picked
+                          ? pickedSide === 1
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-red-600 hover:bg-red-700 text-white'
+                          : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        onClick={() => handlePick(pickedSide, count)}
+                        aria-pressed={picked}
+                        aria-label={`${pickedSide === 1 ? team1Name : team2Name} が ${count}対${total - count} で勝ち`}
+                      >
+                        {count}-{total - count}
+                      </Button>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            )}
 
             {decided && (
               <button
-                onClick={() => onClear?.(encounter.id)}
+                onClick={() => { setPickedSide(null); onClear?.(encounter.id); }}
                 className="w-full h-10 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded transition-colors"
               >
                 <Undo2 className="w-3.5 h-3.5" />
@@ -149,6 +183,7 @@ export default function TeamEncounterCard({
             )}
           </div>
         )}
+
       </CardContent>
     </Card>
   );
