@@ -210,7 +210,7 @@ export default function AdvancedAnalytics({ campId }: Props) {
         } else if (isBusyBlocked) {
           const detail = busyPlayers.map(id => {
             const courtNum = playerCourtMap.get(id);
-            return `${pName(id)}（第${courtNum}コート試合中）`;
+            return `${pName(id)}（コート${courtNum}で試合中）`;
           }).join("、");
           blockReason = "選手が試合中";
           blockDetail = detail;

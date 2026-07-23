@@ -76,6 +76,20 @@ export async function recordMatchDuration(matchId: string): Promise<void> {
 /**
  * プレイヤー名から次の試合と待ち時間を検索する
  */
+/**
+ * 名前の選手が登録されているかだけを確認する。
+ *
+ * searchPlayerByName() は「選手がいない」場合も「待機中の試合がない」場合も
+ * 同じ null を返すため、呼び出し側でこの2つを言い分けられなかった。
+ * null が返ったときにこれを併せて呼ぶことで、
+ * 「そんな人はいません」と「その人に待機中の試合はありません」を区別する。
+ */
+export async function playerExistsByName(name: string): Promise<boolean> {
+  const q = query(collection(db, 'players'), where('name', '==', name));
+  const snapshot = await safeGetDocs(q);
+  return !snapshot.empty;
+}
+
 export async function searchPlayerByName(name: string): Promise<ETAResult | null> {
   try {
     // 1. プレイヤー検索

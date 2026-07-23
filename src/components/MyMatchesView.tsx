@@ -292,7 +292,7 @@ export default function MyMatchesView({ playerId, campId }: MyMatchesViewProps) 
                     </div>
                     {match.court_id && (
                       <Badge variant="outline" className="text-xs">
-                        コート {match.court_id.replace('court_', '')}
+                        コート{match.court_id.replace('court_', '')}
                       </Badge>
                     )}
                   </div>

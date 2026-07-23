@@ -56,6 +56,17 @@ const MessageManager = dynamic(() => import("@/components/admin/MessageManager")
 
 const GUIDE_SEEN_KEY = 'focs_guide_seen';
 
+/**
+ * 常時表示の固定タブ。
+ * 大会中に叩く回数が突出して多い「進行中」「操作」を、グループを開かずに
+ * 1タップで出せる位置に置く。項目をグループに畳むと探す手間は減るが、
+ * その代わり頻用項目まで1階層深くなり、いちばん急いでいる場面で遅くなる。
+ */
+const PINNED_ITEMS: { value: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: 'live', label: '進行中', icon: Activity },
+  { value: 'control', label: '操作', icon: Play },
+];
+
 // サイドバーのタブを4グループに集約（操作性向上）
 const NAV_GROUPS: {
   key: string;
@@ -870,6 +881,29 @@ export default function AdminDashboard() {
           </button>
 
           <nav className="flex-1 overflow-y-auto py-2">
+            {/* 固定タブ（進行中・操作）: 常にいちばん上。グループを開く操作を挟まない */}
+            <div className={`${isExpanded ? 'block' : 'block md:hidden'} border-b border-slate-200 pb-1 mb-1`}>
+              {PINNED_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.value;
+                return (
+                  <button
+                    key={`pinned-${item.value}`}
+                    onClick={() => { setActiveTab(item.value); setMobileNavOpen(false); }}
+                    className={`w-full px-3 py-3 flex items-center gap-3 transition-all ${isActive
+                      ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                      : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                  >
+                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
+                    <span className="text-sm font-bold whitespace-nowrap overflow-hidden pl-1">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* グループ見出し＋項目（ラベル付き）: モバイルは常に表示、デスクトップは展開時のみ。
                 アクティブなグループは自動で開く（現在地が見える・1クリックで切替） */}
             <div className={isExpanded ? 'block' : 'block md:hidden'}>
@@ -910,6 +944,28 @@ export default function AdminDashboard() {
                 );
               })}
             </div>
+            {/* アイコンレール: 折りたたみ時も固定タブは直接切り替えできるようにする */}
+            <div className={`${isExpanded ? 'hidden' : 'hidden md:block'} border-b border-slate-200 pb-1 mb-1`}>
+              {PINNED_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.value;
+                return (
+                  <button
+                    key={`pinned-rail-${item.value}`}
+                    onClick={() => setActiveTab(item.value)}
+                    aria-label={item.label}
+                    title={item.label}
+                    className={`w-full px-3 py-4 flex items-center justify-center transition-all ${isActive
+                      ? 'bg-indigo-100 text-indigo-700 border-r-4 border-indigo-600'
+                      : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                  >
+                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : ''}`} />
+                  </button>
+                );
+              })}
+            </div>
+
             {/* アイコンレール（グループ代表アイコン4個）: デスクトップ折りたたみ時のみ。クリックで展開＋そのグループを開く */}
             <div className={isExpanded ? 'hidden' : 'hidden md:block'}>
               {NAV_GROUPS.map((group) => {
@@ -941,6 +997,7 @@ export default function AdminDashboard() {
               onClick={handleOpenGuide}
               className="w-full px-3 py-4 flex items-center gap-3 transition-all text-sky-500 hover:bg-sky-50 rounded-lg"
               title="使い方ガイドを表示"
+              aria-label="使い方ガイドを表示"
             >
               <HelpCircle className="w-5 h-5 shrink-0" />
               <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'hidden'}`}>

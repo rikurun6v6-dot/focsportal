@@ -92,7 +92,7 @@ export default function ActiveMatchesView({ campId }: ActiveMatchesViewProps) {
                 </div>
                 {match.court_id && (
                   <Badge variant="outline" className="text-xs font-bold">
-                    コート {match.court_id.replace('court_', '')}
+                    コート{match.court_id.replace('court_', '')}
                   </Badge>
                 )}
               </div>

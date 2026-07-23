@@ -197,7 +197,7 @@ export default function PreliminaryGroup({
                               ].join(" ")}
                             >
                               {isSel && editMode && (
-                                <span className="block text-[9px] text-sky-600 mb-0.5">▶ 選択中</span>
+                                <span className="block text-[11px] text-sky-600 mb-0.5">▶ 選択中</span>
                               )}
                               {pairLabel(pairId)}
                             </th>
@@ -226,7 +226,7 @@ export default function PreliminaryGroup({
                               ].join(" ")}
                             >
                               {isSel && editMode && (
-                                <span className="block text-[9px] text-sky-600 mb-0.5">▶ 選択中</span>
+                                <span className="block text-[11px] text-sky-600 mb-0.5">▶ 選択中</span>
                               )}
                               {pairLabel(pairId1)}
                             </td>

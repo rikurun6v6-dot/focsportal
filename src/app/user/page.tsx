@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import CourtGrid from "@/components/CourtGrid";
 import MyMatchesView from "@/components/MyMatchesView";
 import ActiveMatchesView from "@/components/ActiveMatchesView";
-import { searchPlayerByName, calculateTournamentETA } from "@/lib/eta";
+import { searchPlayerByName, playerExistsByName, calculateTournamentETA } from "@/lib/eta";
 import type { TournamentETAByType } from "@/lib/eta";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
@@ -19,6 +19,7 @@ import { safeGetDocs } from "@/lib/firestore-helpers";
 import type { ETAResult, Player, Match, Camp } from "@/types";
 import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy, ChevronUp } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import UserGuide from "@/components/common/UserGuide";
 import ChatWindow from "@/components/ChatWindow";
 import ChatNotification from "@/components/ChatNotification";
@@ -120,16 +121,18 @@ function LoginScreen({ onLogin }: { onLogin: (player: Player, camp: Camp) => voi
                     {camps.length === 0 ? (
                         <div className="text-center py-6 text-slate-500">
                             <MapPin className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                            <p className="font-medium">現在開催中のイベントはありません</p>
-                            <p className="text-xs mt-1 text-slate-400">管理者にお問い合わせください</p>
+                            <p className="font-medium">現在開催中の大会はありません</p>
+                            <p className="text-xs mt-1 text-slate-400">
+                                通信がうまくいっていない可能性もあります。表示されないときは、画面を下に引いて更新するか、運営にお声がけください。
+                            </p>
                         </div>
                     ) : (
                         <>
                             <div className="space-y-2">
-                                <label className="text-sm font-bold text-slate-500">1. 合宿を選択</label>
+                                <label className="text-sm font-bold text-slate-500">1. 大会を選択</label>
                                 <Select value={selectedCampId} onValueChange={setSelectedCampId}>
                                     <SelectTrigger className="bg-white text-slate-900 border-slate-300">
-                                        <SelectValue placeholder="合宿を選択" />
+                                        <SelectValue placeholder="大会を選択" />
                                     </SelectTrigger>
                                     <SelectContent className="bg-white border-slate-200 shadow-xl text-slate-900 z-50">
                                         {camps.map(camp => (
@@ -181,15 +184,21 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 export default function UserDashboard() {
     const { camp, setManualCamp } = useCamp();
+    const { confirm, ConfirmDialog } = useConfirmDialog();
     const [myPlayer, setMyPlayer] = useState<Player | null>(null);
     const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
     const [searchName, setSearchName] = useState("");
     const [etaResult, setEtaResult] = useState<ETAResult | null>(null);
+    const [searchOutcome, setSearchOutcome] = useState<'found' | 'player_not_found' | 'no_waiting_match' | 'error' | null>(null);
     const [searching, setSearching] = useState(false);
     const previousMatchStatusRef = useRef<string | null>(null);
     const [myEta, setMyEta] = useState<string | null>(null);
     const [etaLoading, setEtaLoading] = useState(false);
     const [isOnline, setIsOnline] = useState(true);
+    // 「最後にサーバのデータを受け取れた時刻」。回線の有無ではなく同期できているかを示す
+    const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+    // 購読が落ちている間だけ立つフラグ。次に受信できたら解除する
+    const [syncError, setSyncError] = useState(false);
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
     const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
     const [estimatedMinutes, setEstimatedMinutes] = useState(0);
@@ -317,7 +326,7 @@ export default function UserDashboard() {
         };
     }, []);
 
-    // 10秒ごとに最終更新時刻を更新
+    // 10秒ごとに再描画をかけ、「同期 ○秒前」の表示を進める
     useEffect(() => {
         const interval = setInterval(() => {
             setLastUpdate(new Date());
@@ -434,9 +443,12 @@ export default function UserDashboard() {
             (snapshot) => {
                 const playersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
                 setPlayers(playersList);
+                setLastSyncAt(new Date());
+                setSyncError(false);
             },
             (error) => {
                 console.error('[onSnapshot Error] 選手データ監視エラー:', error);
+                setSyncError(true);
             }
         );
 
@@ -455,9 +467,12 @@ export default function UserDashboard() {
                     const data = snapshot.data();
                     setCampStatus(data.status as 'setup' | 'active' | 'archived');
                 }
+                setLastSyncAt(new Date());
+                setSyncError(false);
             },
             (error) => {
-                console.error('[onSnapshot Error] 合宿ステータス監視エラー:', error);
+                console.error('[onSnapshot Error] 大会ステータス監視エラー:', error);
+                setSyncError(true);
             }
         );
 
@@ -476,6 +491,8 @@ export default function UserDashboard() {
         const unsubscribe = onSnapshot(
             q,
             async (snapshot) => {
+                setLastSyncAt(new Date());
+                setSyncError(false);
                 const matches = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Match));
                 const myActiveMatch = matches.find(m =>
                     isPlayerInMatch(m, myPlayer.id!) &&
@@ -550,6 +567,8 @@ export default function UserDashboard() {
                 // onSnapshotエラーハンドリング（モバイル接続切れ対応）
                 console.error('[onSnapshot Error] 試合監視エラー:', error);
                 console.log('[onSnapshot Error] 自動再接続を試みています...');
+                // 画面にも出す。ここを黙って握りつぶすと「Online なのに情報が古い」状態になる
+                setSyncError(true);
             });
         return () => unsubscribe();
     }, [myPlayer, camp]);
@@ -640,7 +659,16 @@ export default function UserDashboard() {
         setManualCamp(camp);
     };
 
-    const handleLogout = () => {
+    // 退出は取り消せない（もう一度大会と名前を選び直すことになる）ので、必ず確認を挟む
+    const handleLogout = async () => {
+        const confirmed = await confirm({
+            title: '退出しますか？',
+            message: '退出すると、もう一度「大会」と「あなたの名前」を選び直すことになります。試合の呼び出し通知も届かなくなります。',
+            confirmText: '退出する',
+            cancelText: 'このまま使う',
+            type: 'warning',
+        });
+        if (!confirmed) return;
         localStorage.removeItem("focs_user");
         localStorage.removeItem("focs_camp");
         setMyPlayer(null);
@@ -656,15 +684,28 @@ export default function UserDashboard() {
         setIsGuideOpen(true);
     };
 
+    // 検索結果は「見つかった / 該当者なし / 待機中の試合なし / 通信失敗」の4つを言い分ける。
+    // 以前はすべて null に潰していたため、通信が切れていても
+    // 「現在、待機中の試合はありません」と表示され、原因が読めなかった。
     const handleSearch = async () => {
-        if (!searchName.trim()) return;
+        const name = searchName.trim();
+        if (!name) return;
         setSearching(true);
         setEtaResult(null);
+        setSearchOutcome(null);
         try {
-            const result = await searchPlayerByName(searchName.trim());
-            setEtaResult(result);
+            const result = await searchPlayerByName(name);
+            if (result) {
+                setEtaResult(result);
+                setSearchOutcome('found');
+            } else {
+                // null は「選手がいない」と「待機中の試合がない」の両方で返るので、ここで切り分ける
+                const exists = await playerExistsByName(name);
+                setSearchOutcome(exists ? 'no_waiting_match' : 'player_not_found');
+            }
         } catch (error) {
-            setEtaResult(null);
+            console.error('[検索エラー]', error);
+            setSearchOutcome('error');
         }
         setSearching(false);
     };
@@ -691,7 +732,7 @@ export default function UserDashboard() {
         if (currentMatch.status === 'calling') {
             statusColor = "orange";
             statusTitle = "試合中！";
-            statusMessage = `第${courtNumber}コートに集合してください！`;
+            statusMessage = `コート${courtNumber}に集合してください！`;
 
             // Neon Glassmorphism デザインの通知
             alertComponent = (
@@ -729,7 +770,7 @@ export default function UserDashboard() {
                     <div className="flex items-center justify-center gap-2">
                         <span className="text-2xl"></span>
                         <p className="text-slate-300 text-lg font-medium">
-                            「第{courtNumber}コート」へお越しください！
+                            「コート{courtNumber}」へお越しください！
                         </p>
                     </div>
                 </div>
@@ -737,18 +778,26 @@ export default function UserDashboard() {
         } else if (currentMatch.status === 'playing') {
             statusColor = "blue";
             statusTitle = "試合進行中";
-            statusMessage = `第${courtNumber}コートで試合中です`;
+            statusMessage = `コート${courtNumber}で試合中です`;
         }
     }
 
+    // lastUpdate（10秒ごとに進む）を基準にすることで、表示が止まらないようにする
     const getRelativeTime = (date: Date) => {
-        const now = new Date();
-        const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+        const diff = Math.max(0, Math.floor((lastUpdate.getTime() - date.getTime()) / 1000));
 
         if (diff < 60) return `${diff}秒前`;
         if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
         return `${Math.floor(diff / 3600)}時間前`;
     };
+
+    // 「回線が繋がっているか」ではなく「サーバのデータを受け取れているか」を状態にする。
+    // navigator.onLine が true でも購読が落ちていれば画面の中身は古い。
+    const syncState: 'offline' | 'error' | 'syncing' | 'ok' =
+        !isOnline ? 'offline'
+            : syncError ? 'error'
+                : !lastSyncAt ? 'syncing'
+                    : 'ok';
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 relative">
@@ -768,16 +817,18 @@ export default function UserDashboard() {
                             <p className="text-xs font-bold text-slate-800 leading-none whitespace-nowrap overflow-hidden text-ellipsis max-w-[110px] sm:max-w-none">{myPlayer.name} さん</p>
                         </div>
                     </div>
-                    {/* 右: アイコン群（1行固定） */}
-                    <div className="flex flex-nowrap items-center gap-0.5 flex-shrink-0">
+                    {/* 右: アイコン群（1行固定）
+                        タップ目標は 44px 角を確保し、間隔も 4px 空ける。
+                        「退出」は取り消しの効かない操作なので、区切り線と余白で他のボタンから離す。 */}
+                    <div className="flex flex-nowrap items-center gap-1 flex-shrink-0">
                         {/* ホームボタン */}
                         <Link href="/">
                             <button
-                                className="flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
-                                title="ホームに戻る"
+                                className="flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
+                                aria-label="ホームに戻る"
                             >
                                 <Home className="w-4 h-4 text-slate-600" />
-                                <span className="text-[9px] text-slate-500 leading-none font-medium">ホーム</span>
+                                <span className="text-[11px] text-slate-500 leading-none font-medium">ホーム</span>
                             </button>
                         </Link>
 
@@ -790,13 +841,14 @@ export default function UserDashboard() {
                                     handleNotifToggle();
                                 }
                             }}
-                            className="flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
-                            title={
-                                isIOSNotPWA ? 'ホーム画面に追加すると通知が使えます'
-                                    : notifPermission === 'denied' ? 'ブラウザ設定から通知を許可してください'
-                                        : notifEnabled ? '通知ON（タップでOFF）'
-                                            : '通知OFF（タップして許可）'
+                            className="flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
+                            aria-label={
+                                isIOSNotPWA ? '通知の受け取り方を見る（ホーム画面に追加すると使えます）'
+                                    : notifPermission === 'denied' ? '通知はブロック中。ブラウザ設定から許可してください'
+                                        : notifEnabled ? '通知オン。タップでオフ'
+                                            : '通知オフ。タップして許可'
                             }
+                            aria-pressed={!isIOSNotPWA && notifEnabled}
                         >
                             {isIOSNotPWA
                                 ? <BellOff className="w-4 h-4 text-orange-300" />
@@ -806,15 +858,18 @@ export default function UserDashboard() {
                                         ? <Bell className="w-4 h-4 text-amber-400" />
                                         : <Bell className="w-4 h-4 text-slate-400" />
                             }
-                            <span className="text-[9px] text-slate-500 leading-none font-medium">通知</span>
+                            {/* 状態を title(ホバー)だけに預けない。スマホでは title は出ないので文字で出す */}
+                            <span className="text-[11px] text-slate-500 leading-none font-medium whitespace-nowrap">
+                                {isIOSNotPWA || notifPermission === 'denied' ? '通知' : notifEnabled ? '通知ON' : '通知OFF'}
+                            </span>
                         </button>
 
                         {/* チャットボタン */}
                         {isChatEnabled && (
                             <button
                                 onClick={() => setIsChatOpen(true)}
-                                className="relative flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
-                                title="メッセージを開く"
+                                className="relative flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
+                                aria-label={hasUnreadMessages ? 'メッセージを開く（未読あり）' : 'メッセージを開く'}
                             >
                                 <div className="relative">
                                     <MessageCircle className="w-4 h-4 text-sky-500" />
@@ -825,18 +880,21 @@ export default function UserDashboard() {
                                         </span>
                                     )}
                                 </div>
-                                <span className="text-[9px] text-slate-500 leading-none font-medium">チャット</span>
+                                <span className="text-[11px] text-slate-500 leading-none font-medium">チャット</span>
                             </button>
                         )}
 
-                        {/* ログアウト */}
+                        {/* 区切り: ここから先は「戻れない操作」 */}
+                        <span className="w-px h-7 bg-slate-200 mx-1" aria-hidden="true" />
+
+                        {/* 退出（確認ダイアログあり） */}
                         <button
                             onClick={handleLogout}
-                            className="flex flex-col items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
-                            title="ログアウト"
+                            className="flex flex-col items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors gap-0.5"
+                            aria-label="この大会から退出する"
                         >
                             <LogOut className="w-4 h-4 text-slate-400" />
-                            <span className="text-[9px] text-slate-500 leading-none font-medium">退出</span>
+                            <span className="text-[11px] text-slate-500 leading-none font-medium">退出</span>
                         </button>
                     </div>
                 </div>
@@ -859,7 +917,8 @@ export default function UserDashboard() {
                             </h3>
                             <button
                                 onClick={() => setShowIOSGuide(false)}
-                                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 text-xl"
+                                className="w-11 h-11 flex items-center justify-center text-slate-400 hover:text-slate-600 text-xl"
+                                aria-label="閉じる"
                             >✕</button>
                         </div>
                         <ol className="space-y-3 text-sm text-slate-700">
@@ -886,6 +945,30 @@ export default function UserDashboard() {
             {alertComponent && (
                 <div className="px-0">
                     {alertComponent}
+                </div>
+            )}
+
+            {/* 同期できていないときは黙らない。表示が古いことを本文で伝える */}
+            {(syncState === 'offline' || syncState === 'error') && (
+                <div
+                    role="status"
+                    className={`px-4 py-3 border-b ${syncState === 'offline'
+                        ? 'bg-amber-50 border-amber-200 text-amber-900'
+                        : 'bg-red-50 border-red-200 text-red-900'
+                        }`}
+                >
+                    <div className="container mx-auto max-w-4xl flex items-start gap-2">
+                        <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                        <div>
+                            <p className="text-sm font-bold">
+                                {syncState === 'offline' ? 'オフラインです' : '最新の情報を受け取れていません'}
+                            </p>
+                            <p className="text-xs mt-0.5">
+                                下の内容は{lastSyncAt ? `${getRelativeTime(lastSyncAt)}` : 'これまで'}の情報のままです。
+                                呼び出しが表示されないことがあるので、コートの近くで運営に確認してください。
+                            </p>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -1038,7 +1121,13 @@ export default function UserDashboard() {
                                     </Button>
                                 </div>
 
-                                {etaResult && (
+                                {searching && (
+                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                                        <p className="text-sm text-slate-500">検索中...</p>
+                                    </div>
+                                )}
+
+                                {!searching && etaResult && (
                                     <div className="p-4 bg-violet-50 rounded-lg border border-violet-100">
                                         <p className="font-bold text-violet-900">{etaResult.detail}</p>
                                         {etaResult.next_court && (
@@ -1048,14 +1137,25 @@ export default function UserDashboard() {
                                         )}
                                     </div>
                                 )}
-                                {searching && (
-                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
-                                        <p className="text-sm text-slate-500">検索中...</p>
+
+                                {!searching && searchOutcome === 'no_waiting_match' && (
+                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                        <p className="text-sm font-bold text-slate-700">この人に待機中の試合はありません</p>
+                                        <p className="text-xs text-slate-500 mt-1">すべての試合が終わっているか、まだ試合が組まれていません。</p>
                                     </div>
                                 )}
-                                {!searching && !etaResult && searchName.trim() && (
-                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
-                                        <p className="text-sm text-slate-600">現在、待機中の試合はありません</p>
+
+                                {!searching && searchOutcome === 'player_not_found' && (
+                                    <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                                        <p className="text-sm font-bold text-amber-900">「{searchName.trim()}」という選手は見つかりませんでした</p>
+                                        <p className="text-xs text-amber-700 mt-1">姓と名の間のスペースの有無など、登録されている表記と合っているか確かめてください。</p>
+                                    </div>
+                                )}
+
+                                {!searching && searchOutcome === 'error' && (
+                                    <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                                        <p className="text-sm font-bold text-red-900">通信に失敗しました</p>
+                                        <p className="text-xs text-red-700 mt-1">電波の状況を確かめて、もう一度「検索」を押してください。</p>
                                     </div>
                                 )}
                             </CardContent>
@@ -1068,7 +1168,7 @@ export default function UserDashboard() {
             <button
                 onClick={handleOpenGuide}
                 className="fixed bottom-4 left-4 z-50 bg-sky-500 hover:bg-sky-600 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-110 active:scale-95"
-                title="使い方ガイドを表示"
+                aria-label="使い方ガイドを表示"
             >
                 <HelpCircle className="w-6 h-6" />
             </button>
@@ -1134,23 +1234,37 @@ export default function UserDashboard() {
                 {/* ピル */}
                 <button
                     onClick={() => setIsStatusOpen(o => !o)}
+                    aria-expanded={isStatusOpen}
+                    aria-label="同期状況と終了予想時刻を開く"
                     className="bg-slate-100/95 backdrop-blur-sm border border-slate-300 rounded-full px-4 py-2 shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95"
                 >
                     <div className="flex items-center gap-3 text-slate-600">
-                        {/* 接続状況 */}
+                        {/* 同期状況（回線の有無ではなく、データを受け取れているか） */}
                         <div className="flex items-center gap-1.5">
-                            {isOnline ? (
+                            {syncState === 'ok' && (
                                 <>
-                                    <span className="relative flex h-2 w-2">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    <span className="text-xs font-medium text-emerald-600 whitespace-nowrap">
+                                        同期 {lastSyncAt ? getRelativeTime(lastSyncAt) : ''}
                                     </span>
-                                    <span className="text-xs font-medium text-emerald-600">Online</span>
                                 </>
-                            ) : (
+                            )}
+                            {syncState === 'syncing' && (
+                                <>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span>
+                                    <span className="text-xs font-medium text-slate-500 whitespace-nowrap">接続中</span>
+                                </>
+                            )}
+                            {syncState === 'offline' && (
                                 <>
                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                                    <span className="text-xs font-medium text-amber-600">Offline</span>
+                                    <span className="text-xs font-medium text-amber-600 whitespace-nowrap">オフライン</span>
+                                </>
+                            )}
+                            {syncState === 'error' && (
+                                <>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                    <span className="text-xs font-medium text-red-600 whitespace-nowrap">同期エラー</span>
                                 </>
                             )}
                         </div>
@@ -1175,6 +1289,9 @@ export default function UserDashboard() {
                     </div>
                 </button>
             </div>
+
+            {/* 退出の確認ダイアログ */}
+            <ConfirmDialog />
 
             {/* ユーザーガイドモーダル */}
             <UserGuide isOpen={isGuideOpen} onClose={handleCloseGuide} />

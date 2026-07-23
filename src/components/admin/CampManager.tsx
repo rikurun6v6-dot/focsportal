@@ -500,6 +500,7 @@ export default function CampManager() {
                                                                 onClick={() => requireUnlock(() => handleStartEdit(camp))}
                                                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                                                                 title="名前・コート数を編集"
+                                                                aria-label="名前・コート数を編集"
                                                             >
                                                                 <Pencil className="w-3.5 h-3.5" />
                                                             </button>

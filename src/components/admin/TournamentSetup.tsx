@@ -471,6 +471,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
                         onClick={() => handleMoveUp(index)}
                         disabled={readOnly || index === 0}
                         title="上へ移動"
+                        aria-label="上へ移動"
                         className="h-6 w-6 p-0"
                       >
                         <ArrowUp className="w-3 h-3" />
@@ -481,6 +482,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
                         onClick={() => handleMoveDown(index)}
                         disabled={readOnly || index === configs.length - 1}
                         title="下へ移動"
+                        aria-label="下へ移動"
                         className="h-6 w-6 p-0"
                       >
                         <ArrowDown className="w-3 h-3" />
