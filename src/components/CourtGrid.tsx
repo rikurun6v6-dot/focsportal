@@ -227,7 +227,7 @@ export default function CourtGrid() {
     return (
       <div className="bg-amber-50 border-l-4 border-amber-400 p-6 rounded-lg">
         <p className="text-amber-800 font-medium">
-          合宿を選択してください
+          大会を選択してください
         </p>
       </div>
     );
@@ -379,18 +379,18 @@ export default function CourtGrid() {
                       return (
                         <div className="mt-2 w-full px-2">
                           <div className="bg-orange-50 border border-orange-200 rounded p-2 text-center">
-                            <p className="text-[10px] font-bold text-orange-700 mb-1">予約あり</p>
-                            <p className="text-[9px] text-orange-600 truncate">
+                            <p className="text-[11px] font-bold text-orange-700 mb-1">予約あり</p>
+                            <p className="text-[11px] text-orange-600 truncate">
                               {reservedMatch.player1?.name}
                               {reservedMatch.player3?.id && ` / ${reservedMatch.player3.name}`}
                             </p>
-                            <p className="text-[9px] text-orange-600 mb-1 truncate">
+                            <p className="text-[11px] text-orange-600 mb-1 truncate">
                               vs {reservedMatch.player2?.name}
                               {reservedMatch.player4?.id && ` / ${reservedMatch.player4.name}`}
                             </p>
                             <div className="flex items-center justify-center gap-1 text-orange-700 bg-orange-100 px-2 py-0.5 rounded">
                               <Clock className="w-3 h-3" />
-                              <span className="text-[10px] font-bold">
+                              <span className="text-[11px] font-bold">
                                 {remainingMinutes > 0 ? `あと${remainingMinutes}分` : '復帰可能'}
                               </span>
                             </div>
@@ -460,8 +460,8 @@ export default function CourtGrid() {
                   return (
                     <div className="mt-1 w-full px-1">
                       <div className="bg-orange-50/50 border border-orange-200 rounded px-2 py-1">
-                        <p className="text-[9px] font-bold text-orange-700 mb-0.5">次に控えている:</p>
-                        <p className="text-[8px] text-orange-600 truncate">
+                        <p className="text-[11px] font-bold text-orange-700 mb-0.5">次に控えている:</p>
+                        <p className="text-[11px] text-orange-600 truncate">
                           {reservedMatch.player1?.name}
                           {reservedMatch.player3?.id && ` / ${reservedMatch.player3.name}`}
                           {' vs '}
@@ -469,8 +469,8 @@ export default function CourtGrid() {
                           {reservedMatch.player4?.id && ` / ${reservedMatch.player4.name}`}
                         </p>
                         <div className="flex items-center justify-center gap-1 text-orange-700 mt-0.5">
-                          <Clock className="w-2.5 h-2.5" />
-                          <span className="text-[8px] font-bold">
+                          <Clock className="w-3 h-3" />
+                          <span className="text-[11px] font-bold">
                             {remainingMinutes > 0 ? `あと${remainingMinutes}分` : '復帰可能'}
                           </span>
                         </div>

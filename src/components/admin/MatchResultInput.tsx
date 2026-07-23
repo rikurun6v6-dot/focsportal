@@ -11,6 +11,7 @@ import type { Match, Player, MatchWithPlayers } from '@/types';
 import { useCamp } from '@/context/CampContext';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
+import { validateMatchScore } from '@/lib/score-validation';
 
 export default function MatchResultInput({ readOnly = false }: { readOnly?: boolean }) {
   const { camp } = useCamp();
@@ -95,17 +96,19 @@ export default function MatchResultInput({ readOnly = false }: { readOnly?: bool
 
   const handleSubmit = async (match: MatchWithPlayers) => {
     const score = scores[match.id];
-    if (!score || (score.p1 === 0 && score.p2 === 0)) {
-      alert('スコアを入力してください');
+    const validation = validateMatchScore(score?.p1, score?.p2, match.player1_id, match.player2_id);
+    if (!validation.ok) {
+      toastError(validation.error);
       return;
     }
-
-    const winnerId = score.p1 > score.p2 ? match.player1_id : match.player2_id;
+    const { winnerId } = validation;
+    const scoreP1 = score!.p1;
+    const scoreP2 = score!.p2;
 
     setSubmitting(match.id);
 
     try {
-      await updateMatchResult(match.id, score.p1, score.p2, winnerId);
+      await updateMatchResult(match.id, scoreP1, scoreP2, winnerId);
 
       if (match.court_id) {
         await updateDocument('courts', match.court_id, { current_match_id: null });
@@ -146,18 +149,18 @@ export default function MatchResultInput({ readOnly = false }: { readOnly?: bool
 
   const handleEditScore = async (match: MatchWithPlayers) => {
     const score = scores[match.id];
-    if (!score || (score.p1 === 0 && score.p2 === 0)) {
-      alert('スコアを入力してください');
+    const validation = validateMatchScore(score?.p1, score?.p2, match.player1_id, match.player2_id);
+    if (!validation.ok) {
+      toastError(validation.error);
       return;
     }
-
-    const winnerId = score.p1 > score.p2 ? match.player1_id : match.player2_id;
+    const winnerId = validation.winnerId;
 
     setSubmitting(match.id);
     try {
       await updateDocument('matches', match.id, {
-        score_p1: score.p1,
-        score_p2: score.p2,
+        score_p1: score!.p1,
+        score_p2: score!.p2,
         winner_id: winnerId,
       });
       setEditingMatchId(null);

@@ -566,6 +566,7 @@ export default function KnockoutTree({
                                       onClick={(e) => { e.stopPropagation(); onSlotEditClick?.(match.id, 1); }}
                                       className="ml-1 flex-shrink-0 p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-600"
                                       title="メンバー変更"
+                                      aria-label="メンバー変更"
                                     >
                                       <Pencil className="w-3 h-3" />
                                     </button>
@@ -622,6 +623,7 @@ export default function KnockoutTree({
                                       onClick={(e) => { e.stopPropagation(); onSlotEditClick?.(match.id, 2); }}
                                       className="ml-1 flex-shrink-0 p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-600"
                                       title="メンバー変更"
+                                      aria-label="メンバー変更"
                                     >
                                       <Pencil className="w-3 h-3" />
                                     </button>

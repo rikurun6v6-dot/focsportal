@@ -34,6 +34,7 @@ import { useCamp } from '@/context/CampContext';
 import { Clock, Users, Monitor, AlertTriangle, ChevronDown, ChevronUp, Pencil, Check, X, ArrowLeftRight } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError } from '@/lib/toast';
+import { validateMatchScore } from '@/lib/score-validation';
 
 export default function ResultsTab() {
   const { camp } = useCamp();
@@ -295,16 +296,16 @@ export default function ResultsTab() {
 
   const handleSubmit = async (match: MatchWithPlayers, courtId: string) => {
     const score = scores[match.id];
-    if (!score || (score.p1 === 0 && score.p2 === 0)) {
-      alert('スコアを入力してください');
+    const validation = validateMatchScore(score?.p1, score?.p2, match.player1_id, match.player2_id);
+    if (!validation.ok) {
+      toastError(validation.error);
       return;
     }
-
-    const winnerId = score.p1 > score.p2 ? match.player1_id : match.player2_id;
+    const winnerId = validation.winnerId;
     setSubmitting(match.id);
 
     try {
-      await updateMatchResult(match.id, score.p1, score.p2, winnerId);
+      await updateMatchResult(match.id, score!.p1, score!.p2, winnerId);
       // 同じ試合IDが割り当てられている全コートを解放（団体戦3面同時対応）
       const courtsToFree = courts.filter(c => c.current_match_id === match.id);
       await Promise.all(courtsToFree.map(c => updateDocument('courts', c.id, { current_match_id: null })));
@@ -660,8 +661,12 @@ export default function ResultsTab() {
   const handleEditResultSubmit = async (match: MatchWithPlayers) => {
     const score = scores[match.id];
     if (!score) return;
-    const newWinnerId = score.p1 > score.p2 ? match.player1_id : match.player2_id;
-    if (!newWinnerId) { toastError('勝者を判定できません'); return; }
+    const validation = validateMatchScore(score.p1, score.p2, match.player1_id, match.player2_id);
+    if (!validation.ok) {
+      toastError(validation.error);
+      return;
+    }
+    const newWinnerId = validation.winnerId;
     setSubmitting(match.id);
     try {
       const result = await editMatchResultSafe(match.id, score.p1, score.p2, newWinnerId);
@@ -1106,7 +1111,7 @@ export default function ResultsTab() {
                       {isTeamBattle(match) && matchCourtCount > 1 && !isPrimaryCourtForMatch && match.status !== 'completed' && (
                         <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded text-center">
                           <p className="text-[10px] text-rose-700 font-medium">
-                            スコア入力は第{primaryCourtNumber}コートのカードから
+                            スコア入力はコート{primaryCourtNumber}のカードから
                           </p>
                         </div>
                       )}
@@ -1570,7 +1575,7 @@ export default function ResultsTab() {
                         </span>
                         {waitingScores[match.id] !== undefined && (
                           <span
-                            className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded flex-shrink-0 tabular-nums"
+                            className="text-[11px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded flex-shrink-0 tabular-nums"
                             title={`優先スコア: ${Math.round(waitingScores[match.id])}`}
                           >
                             {Math.round(waitingScores[match.id])}
@@ -1667,7 +1672,7 @@ export default function ResultsTab() {
                       </span>
                       {/* スコア */}
                       {d.score !== undefined && (
-                        <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded flex-shrink-0 tabular-nums">
+                        <span className="text-[11px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded flex-shrink-0 tabular-nums">
                           {Math.round(d.score)}
                         </span>
                       )}

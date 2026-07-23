@@ -381,6 +381,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
                           disabled={readOnly}
                           className="relative text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
                           title="種目別の部（例外）を設定"
+                          aria-label="種目別の部（例外）を設定"
                         >
                           <SlidersHorizontal className="w-4 h-4" />
                           {overrideCount(player) > 0 && (

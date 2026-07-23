@@ -90,7 +90,7 @@ export default function TeamPreliminaryGroup({
                       {!readOnly && (manualRanksByGroup?.[group] ?? []).length > 0 && (
                         <button
                           onClick={() => handleResetManual(group)}
-                          className="flex items-center gap-0.5 text-[9px] text-amber-600 hover:text-amber-800"
+                          className="flex items-center gap-0.5 text-[11px] text-amber-600 hover:text-amber-800"
                           title="自動順位に戻す"
                         >
                           <RotateCcw className="w-2.5 h-2.5" />
@@ -146,7 +146,7 @@ export default function TeamPreliminaryGroup({
                       </table>
                     </div>
                     {!readOnly && onManualRankChange && (
-                      <p className="text-[9px] text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-400 mt-0.5">
                         順位基準: 勝利数→得失試合数→直接対決。▲▼で手動変更可
                       </p>
                     )}

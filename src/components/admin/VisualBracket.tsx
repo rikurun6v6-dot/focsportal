@@ -20,6 +20,7 @@ import { getUnifiedRoundName, getTournamentTypeName } from "@/lib/tournament-log
 import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { toastSuccess, toastInfo, toastError } from "@/lib/toast";
+import { validateMatchScore } from "@/lib/score-validation";
 
 const LS_KEY_TYPE = 'vb_tournamentType';
 const LS_KEY_DIV = 'vb_division';
@@ -62,7 +63,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                 });
                 await updateDocument('courts', emptyCourt.id, { current_match_id: match.id });
                 fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matchId: match.id }) }).catch(() => {});
-                toastSuccess(`第${emptyCourt.number}コートに割り当てました`);
+                toastSuccess(`コート${emptyCourt.number}に割り当てました`);
             } else {
                 await updateDocument('matches', match.id, { priority_dispatch: true });
                 toastInfo('「次に優先」に設定しました。コートが空き次第、最優先で割り当てます');
@@ -249,11 +250,12 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         if (!resultEditMatch) return;
         const p1 = resultEditScoreP1;
         const p2 = resultEditScoreP2;
-        if (p1 === p2) {
-            toastError('スコアが同点です。勝者を判定できません');
+        const validation = validateMatchScore(p1, p2, resultEditMatch.player1_id, resultEditMatch.player2_id);
+        if (!validation.ok) {
+            toastError(validation.error);
             return;
         }
-        const winnerId = p1 > p2 ? resultEditMatch.player1_id : resultEditMatch.player2_id;
+        const winnerId = validation.winnerId;
         setResultEditSaving(true);
         // 進出する側が入れ替わり、次戦以降が既に消化/進行中なら → モード選択へ
         const impact = await analyzeCorrectionImpact(resultEditMatch.id, winnerId);

@@ -99,7 +99,7 @@ export default function TeamEncounterCard({
                 </div>
                 {game.winner && (
                   <Badge
-                    className={`text-[9px] px-1 h-4 ${game.winner === 1 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}
+                    className={`text-[11px] px-1 h-4 ${game.winner === 1 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}
                   >
                     {game.winner === 1 ? team1Name.slice(0, 3) : team2Name.slice(0, 3)}
                   </Badge>
@@ -155,7 +155,7 @@ export default function TeamEncounterCard({
                 </div>
               );
             })}
-            <p className="text-[9px] text-slate-400">勝者ボタンを押すと点数が保存されます</p>
+            <p className="text-[11px] text-slate-400">勝者ボタンを押すと点数が保存されます</p>
           </div>
         )}
       </CardContent>
