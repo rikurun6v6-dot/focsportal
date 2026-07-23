@@ -22,7 +22,7 @@ export interface ScheduleBlock {
   byeByGroup: Record<string, string | null>;
   /** 1対戦に割り当てる面数 */
   courtsPerEncounter: number;
-  /** 5試合を消化するのに必要な波の数 */
+  /** 1対戦の全試合を消化するのに必要な波の数 */
   waves: number;
   /** このブロックの所要時間の目安（分） */
   minutes: number;
@@ -51,7 +51,7 @@ interface BuildScheduleParams {
   concurrentPerGroup: number;
   /** 使えるコート面数 */
   courtCount: number;
-  /** 1対戦あたりの試合数（男子D・女子D・混合D・男子S・女子S なら5） */
+  /** 1対戦あたりの試合数（第1試合〜第5試合の5試合） */
   gamesPerEncounter: number;
 }
 

@@ -9,7 +9,8 @@ interface TeamKnockoutTreeProps {
   encounters: TeamEncounter[];
   bronzeEncounter?: TeamEncounter | null;
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2 | null) => void;
+  onScore?: (encounterId: string, winnerSide: 1 | 2, winnerGames: number) => void;
+  onClearScore?: (encounterId: string) => void;
   readOnly?: boolean;
 }
 
@@ -17,7 +18,8 @@ export default function TeamKnockoutTree({
   encounters,
   bronzeEncounter,
   getTeamName,
-  onGameResult,
+  onScore,
+  onClearScore,
   readOnly = false,
 }: TeamKnockoutTreeProps) {
   const knockoutOnly = encounters.filter(e => e.phase === 'knockout');
@@ -53,7 +55,8 @@ export default function TeamKnockoutTree({
                     <TeamEncounterCard
                       encounter={enc}
                       getTeamName={getTeamName}
-                      onGameResult={onGameResult}
+                      onScore={onScore}
+                  onClear={onClearScore}
                       readOnly={readOnly}
                     />
                   </div>
@@ -72,7 +75,8 @@ export default function TeamKnockoutTree({
                 <TeamEncounterCard
                   encounter={bronzeEncounter}
                   getTeamName={getTeamName}
-                  onGameResult={onGameResult}
+                  onScore={onScore}
+                  onClear={onClearScore}
                   readOnly={readOnly}
                 />
               </div>

@@ -298,6 +298,25 @@ export function subscribeToCourts(callback: (courts: Court[]) => void, campId?: 
   return subscribeToCollection<Court>(COLLECTIONS.courts, callback, constraints);
 }
 
+/**
+ * 団体戦の状態（team_tournament_states/{campId}）をリアルタイムで購読する。
+ * 運営が入力した予選順位を、参加者画面でもそのまま見せるために使う。
+ */
+export function subscribeToTeamTournamentState(
+  campId: string,
+  callback: (state: Record<string, unknown> | null) => void,
+  onError?: (e: unknown) => void,
+) {
+  return onSnapshot(
+    doc(db, 'team_tournament_states', campId),
+    snapshot => callback(snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null),
+    error => {
+      console.error('[onSnapshot Error] 団体戦の状態監視エラー:', error);
+      onError?.(error);
+    },
+  );
+}
+
 export async function initializeCourts(courtCount: number, campId: string): Promise<boolean> {
   try {
     const courts: Court[] = [];

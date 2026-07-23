@@ -7,7 +7,8 @@ import TeamEncounterCard from './TeamEncounterCard';
 interface TeamPlacementViewProps {
   encounters: TeamEncounter[];
   getTeamName: (id: string) => string;
-  onGameResult?: (encounterId: string, slotId: string, winner: 1 | 2 | null) => void;
+  onScore?: (encounterId: string, winnerSide: 1 | 2, winnerGames: number) => void;
+  onClearScore?: (encounterId: string) => void;
 }
 
 const PLACEMENT_LABEL: Record<number, string> = {
@@ -22,7 +23,8 @@ const RANK_ICON: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉', 4: 
 export default function TeamPlacementView({
   encounters,
   getTeamName,
-  onGameResult,
+  onScore,
+  onClearScore,
 }: TeamPlacementViewProps) {
   const sorted = [...encounters]
     .filter(e => e.placement_rank !== undefined)
@@ -64,7 +66,8 @@ export default function TeamPlacementView({
               <TeamEncounterCard
                 encounter={enc}
                 getTeamName={getTeamName}
-                onGameResult={onGameResult}
+                onScore={onScore}
+                  onClear={onClearScore}
               />
             </div>
           );
