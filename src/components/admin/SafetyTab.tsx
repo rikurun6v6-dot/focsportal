@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { RotateCcw, Flag, Tag, UserX, Trash2, Wrench } from 'lucide-react';
 import { resetMatchResult, updateDocument, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory, cleanupEarlyPropagations } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
+import MatchPicker from '@/components/admin/MatchPicker';
 import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import type { Match, TournamentType } from '@/types';
@@ -426,17 +427,13 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">試合を選ぶ</label>
+              <MatchPicker
                 value={undoMatchId}
-                onChange={(e) => setUndoMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setUndoMatchId}
+                statuses={['completed']}
               />
-              <p className="text-xs text-slate-500 mt-1">
-                ※ トーナメント表で確認できます
-              </p>
+              <p className="text-xs text-slate-500 mt-1">結果を入力済みの試合から選べます</p>
             </div>
             <Button
               onClick={handleUndo}
@@ -461,13 +458,11 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">試合を選ぶ</label>
+              <MatchPicker
                 value={walkoverMatchId}
-                onChange={(e) => setWalkoverMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setWalkoverMatchId}
+                statuses={['waiting', 'calling', 'playing']}
               />
             </div>
             <div>
@@ -505,13 +500,11 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">試合を選ぶ</label>
+              <MatchPicker
                 value={subtitleMatchId}
-                onChange={(e) => setSubtitleMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setSubtitleMatchId}
+                statuses={undefined}
               />
             </div>
             <div>
@@ -552,14 +545,13 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">試合を選ぶ</label>
+              <MatchPicker
                 value={absenceMatchId}
-                onChange={(e) => setAbsenceMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setAbsenceMatchId}
+                statuses={['waiting', 'calling']}
               />
+              <p className="text-xs text-slate-500 mt-1">選手ひとりを丸ごと棄権にする場合は「選手」タブの棄権ボタンを使ってください</p>
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block text-slate-700">欠場するペア</label>

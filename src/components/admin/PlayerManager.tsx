@@ -26,6 +26,7 @@ import type { Player, TournamentType, Division } from "@/types";
 import { getDivisionOptions, isValidDivision } from "@/lib/divisions";
 import { useCamp } from "@/context/CampContext";
 import { parsePlayersCSV } from "@/lib/csv-parser"; // 👈 修正1: 複数形(Players)でインポート
+import { withdrawPlayerAndForfeit } from "@/lib/firestore-helpers";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { toastSuccess, toastError } from "@/lib/toast";
 
@@ -205,14 +206,65 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
   };
 
   // 棄権/復帰 切り替え
+  //
+  // 棄権はフラグを立てるだけでは足りない。自動割り当ての候補フィルタは
+  // 選手の is_active を見ていないので、その選手の試合がコートに呼ばれ続ける。
+  // 未消化の試合を相手の不戦勝として確定させ、進行を止めないようにする。
   const toggleActive = async (player: Player) => {
-    try {
-      const playerRef = doc(db, 'players', player.id!);
-      await updateDoc(playerRef, {
-        is_active: !player.is_active
+    if (!camp) {
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
+      return;
+    }
+
+    // 復帰させる場合はフラグを戻すだけ
+    if (!player.is_active) {
+      const confirmed = await confirm({
+        title: `${player.name} を復帰させますか？`,
+        message: `棄権時に不戦勝として確定させた試合は、元には戻りません。
+必要なら「安全」タブから個別に取り消してください。`,
+        confirmText: '復帰させる',
+        cancelText: 'キャンセル',
+        type: 'warning',
       });
+      if (!confirmed) return;
+      try {
+        await updateDoc(doc(db, 'players', player.id!), { is_active: true });
+        toastSuccess(`${player.name} を復帰させました`);
+      } catch (error) {
+        console.error("Error toggling player status:", error);
+        toastError('復帰に失敗しました', '通信を確認して、もう一度お試しください');
+      }
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `${player.name} を棄権にしますか？`,
+      message: `この選手の未消化の試合を、相手の不戦勝として確定させます。
+（そうしないと、棄権にしても試合がコートに呼ばれ続けます）
+
+進行中の試合には手を付けません。結果は通常どおり入力してください。`,
+      confirmText: '棄権にする',
+      cancelText: 'キャンセル',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const r = await withdrawPlayerAndForfeit(player.id!, camp.id);
+      const parts: string[] = [];
+      if (r.forfeited > 0) parts.push(`${r.forfeited}試合を相手の不戦勝にしました`);
+      if (r.playing > 0) parts.push(`進行中の${r.playing}試合はそのままです`);
+      if (r.skipped > 0) parts.push(`相手が未確定の${r.skipped}試合は処理していません`);
+      toastSuccess(
+        `${player.name} を棄権にしました`,
+        parts.length > 0 ? parts.join('。') : '未消化の試合はありませんでした'
+      );
     } catch (error) {
-      console.error("Error toggling player status:", error);
+      console.error("Error withdrawing player:", error);
+      toastError('棄権処理に失敗しました', '通信を確認して、もう一度お試しください');
+    } finally {
+      setLoading(false);
     }
   };
 
