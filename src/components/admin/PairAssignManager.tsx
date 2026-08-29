@@ -133,7 +133,17 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
 
     setSaving(true);
     try {
-      const byNumber = new Map(drafts.map(d => [d.pairNumber, d.members]));
+      // 1人でも入っている番号だけを書きに行く。
+      // 空の番号まで対象にすると、まだ決めていない枠に空文字を書き込んでしまい、
+      // 「1組しか入れていないのに9試合に反映」といった実態と合わない結果になる。
+      const filled = drafts.filter(d => d.members.some(Boolean));
+      if (filled.length === 0) {
+        toastError('反映する組がありません', '番号にひらがなで選手を入れてから押してください');
+        setSaving(false);
+        return;
+      }
+
+      const byNumber = new Map(filled.map(d => [d.pairNumber, d.members]));
       const divisionMatches = matches.filter(m => m.division === division);
       const batch = writeBatch(db);
       let touched = 0;
@@ -167,7 +177,11 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
       }
 
       await batch.commit();
-      toastSuccess(`${assignedCount}組を${touched}試合に反映しました`);
+      const remaining = drafts.length - filled.length;
+      toastSuccess(
+        `${filled.length}組を${touched}試合に反映しました`,
+        remaining > 0 ? `残り${remaining}組が未入力です` : undefined
+      );
       await load();
     } catch (e) {
       console.error('[ペア割り当て] 保存失敗:', e);

@@ -1198,45 +1198,6 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
               </Select>
             </div>
 
-            {state.format === 'group-stage-knockout' && (
-              <>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">グループ数</label>
-                  <Select
-                    value={state.groupCount.toString()}
-                    onValueChange={(v) => setState(prev => ({ ...prev, groupCount: parseInt(v) }))}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="2">2グループ</SelectItem>
-                      <SelectItem value="3">3グループ</SelectItem>
-                      <SelectItem value="4">4グループ</SelectItem>
-                      <SelectItem value="8">8グループ</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">予選通過人数/グループ</label>
-                  <Select
-                    value={state.qualifiersPerGroup.toString()}
-                    onValueChange={(v) => setState(prev => ({ ...prev, qualifiersPerGroup: parseInt(v) }))}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">1位のみ</SelectItem>
-                      <SelectItem value="2">2位まで</SelectItem>
-                      <SelectItem value="3">3位まで</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
                 <Users className="w-4 h-4" />
@@ -1289,6 +1250,45 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
                 </div>
               )}
             </div>
+
+            {state.format === 'group-stage-knockout' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">グループ数</label>
+                  <Select
+                    value={state.groupCount.toString()}
+                    onValueChange={(v) => setState(prev => ({ ...prev, groupCount: parseInt(v) }))}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2">2グループ</SelectItem>
+                      <SelectItem value="3">3グループ</SelectItem>
+                      <SelectItem value="4">4グループ</SelectItem>
+                      <SelectItem value="8">8グループ</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">予選通過人数/グループ</label>
+                  <Select
+                    value={state.qualifiersPerGroup.toString()}
+                    onValueChange={(v) => setState(prev => ({ ...prev, qualifiersPerGroup: parseInt(v) }))}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1位のみ</SelectItem>
+                      <SelectItem value="2">2位まで</SelectItem>
+                      <SelectItem value="3">3位まで</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
