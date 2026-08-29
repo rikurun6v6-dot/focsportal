@@ -17,6 +17,7 @@ import {
 import type { TournamentConfig, EventType, Division, TournamentFormat } from '@/types';
 import { Trash2, Save, ArrowUp, ArrowDown } from 'lucide-react';
 import { useCamp } from '@/context/CampContext';
+import { POINTS_STANDARD } from '@/lib/match-points';
 import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
@@ -31,14 +32,10 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
     event_type: 'MD' as EventType,
     division: 1 as Division,
     format: 'double-elimination' as TournamentFormat,
-    points_per_game: 15 as number,
     group_count: 4,
     qualifiers_per_group: 2,
-    points_by_round: {} as Record<number, number>,
     priority: 999 as number,
   });
-
-  const [showAdvancedPoints, setShowAdvancedPoints] = useState(false);
 
   useEffect(() => {
     if (!camp) {
@@ -63,6 +60,9 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
     try {
       const configToSave = {
         ...newConfig,
+        // 点数は試合ごとに大会の形から決めるため、設定側は既定値のみ保持する
+        points_per_game: POINTS_STANDARD,
+        points_by_round: {},
         campId: camp.id,
       };
       await createTournamentConfig(configToSave);
@@ -71,13 +71,10 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
         event_type: 'MD',
         division: 1,
         format: 'double-elimination',
-        points_per_game: 15,
         group_count: 4,
         qualifiers_per_group: 2,
-        points_by_round: {},
         priority: 999,
       });
-      setShowAdvancedPoints(false);
     } catch (error) {
       alert('設定の保存に失敗しました');
     }
@@ -221,7 +218,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
       <Card>
         <CardHeader>
           <CardTitle className="text-sm md:text-base">新規トーナメント設定</CardTitle>
-          <CardDescription>トーナメント形式、点数、ポイント配分を設定</CardDescription>
+          <CardDescription>種目・部門・トーナメント形式を設定（点数は大会の形から自動で決まります）</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -230,18 +227,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
               <select
                 value={newConfig.event_type}
                 onChange={(e) => {
-                  const eventType = e.target.value as EventType;
-                  // MS/WS選択時: 準々まで15点、準決以降21点（ラウンド別設定）
-                  if (eventType === 'MS' || eventType === 'WS') {
-                    setNewConfig({
-                      ...newConfig,
-                      event_type: eventType,
-                      points_per_game: 15,
-                      points_by_round: { 4: 21, 5: 21 }, // 準決勝・決勝は21点
-                    });
-                  } else {
-                    setNewConfig({ ...newConfig, event_type: eventType });
-                  }
+                  setNewConfig({ ...newConfig, event_type: e.target.value as EventType });
                 }}
                 className="h-8 text-xs md:text-sm w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white text-slate-900 px-3"
                 style={{ backgroundColor: 'white', color: 'black' }}
@@ -341,40 +327,6 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
             )}
 
             <div>
-              <label className="text-xs font-medium mb-1 block">基本点数設定</label>
-              <select
-                value={newConfig.points_per_game === 11 || newConfig.points_per_game === 15 || newConfig.points_per_game === 21 ? newConfig.points_per_game : 'custom'}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setNewConfig({ ...newConfig, points_per_game: 7 });
-                  } else {
-                    setNewConfig({ ...newConfig, points_per_game: parseInt(e.target.value) });
-                  }
-                }}
-                className="h-8 text-xs md:text-sm w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white text-slate-900 px-3"
-                style={{ backgroundColor: 'white', color: 'black' }}
-                disabled={readOnly}
-              >
-                <option value="11">11点</option>
-                <option value="15">15点</option>
-                <option value="21">21点</option>
-                <option value="custom">その他（手入力）</option>
-              </select>
-              {(newConfig.points_per_game !== 11 && newConfig.points_per_game !== 15 && newConfig.points_per_game !== 21) && (
-                <Input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={newConfig.points_per_game}
-                  onChange={(e) => setNewConfig({ ...newConfig, points_per_game: parseInt(e.target.value) || 1 })}
-                  className="mt-2 h-8 text-xs md:text-sm"
-                  placeholder="点数を入力 (例: 7, 30)"
-                  disabled={readOnly}
-                />
-              )}
-            </div>
-
-            <div>
               <label className="text-xs font-medium mb-1 block">進行順位（優先度）</label>
               <select
                 value={newConfig.priority}
@@ -393,55 +345,6 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
               </select>
               <p className="text-xs text-gray-500 mt-1">※保存後、下のリストで並べ替え可能</p>
             </div>
-          </div>
-
-          <div className="pt-2">
-            <Button
-              type="button"
-              onClick={() => setShowAdvancedPoints(!showAdvancedPoints)}
-              variant="outline"
-              size="sm"
-              className="w-full mb-3"
-              disabled={readOnly}
-            >
-              {showAdvancedPoints ? '▼' : '▶'} ラウンド別点数設定（詳細）
-            </Button>
-
-            {showAdvancedPoints && (
-              <div className="space-y-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                  特定のラウンドで異なる点数を設定できます（例: 準決勝以降は21点）
-                </p>
-                <div className="space-y-2">
-                  {[1, 2, 3, 4, 5].map(round => (
-                    <div key={round} className="flex items-center gap-2">
-                      <label className="text-xs w-24">ラウンド {round}:</label>
-                      <select
-                        value={newConfig.points_by_round[round] || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const updated = { ...newConfig.points_by_round };
-                          if (value === '') {
-                            delete updated[round];
-                          } else {
-                            updated[round] = parseInt(value) as 11 | 15 | 21;
-                          }
-                          setNewConfig({ ...newConfig, points_by_round: updated });
-                        }}
-                        className="h-7 text-xs w-32 rounded-md border border-gray-300 dark:border-gray-700 bg-white text-slate-900 px-2"
-                        style={{ backgroundColor: 'white', color: 'black' }}
-                        disabled={readOnly}
-                      >
-                        <option value="">基本設定を使用</option>
-                        <option value="11">11点</option>
-                        <option value="15">15点</option>
-                        <option value="21">21点</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           <Button onClick={handleSaveConfig} disabled={saving || readOnly} className="w-full">
@@ -495,7 +398,6 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
                         <Badge className="bg-indigo-100 text-indigo-800 font-bold">{index + 1}</Badge>
                         <Badge>{getEventTypeName(config.event_type)}</Badge>
                         <Badge variant="outline">{config.division}部</Badge>
-                        <Badge variant="secondary">{config.points_per_game}点</Badge>
                         <Badge className="bg-purple-100 text-purple-800">優先度: {config.priority || 999}</Badge>
                       </div>
                       <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -504,11 +406,6 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
                       {config.format === 'group-stage-knockout' && (
                         <p className="text-xs text-gray-500 mt-1">
                           {config.group_count}グループ, 各{config.qualifiers_per_group}名通過
-                        </p>
-                      )}
-                      {config.points_by_round && Object.keys(config.points_by_round).length > 0 && (
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                          ラウンド別: {Object.entries(config.points_by_round).map(([round, points]) => `R${round}=${points}点`).join(', ')}
                         </p>
                       )}
                     </div>
