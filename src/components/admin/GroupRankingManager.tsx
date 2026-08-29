@@ -222,7 +222,7 @@ export default function GroupRankingManager() {
       await loadData();
     } catch (error) {
       console.error('Error promoting to knockout:', error);
-      toastError('エラーが発生しました');
+      toastError('順位の保存に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 

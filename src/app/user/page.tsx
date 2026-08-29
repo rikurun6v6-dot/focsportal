@@ -17,7 +17,6 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import type { ETAResult, Player, Match, Camp } from "@/types";
-import { toastError } from "@/lib/toast";
 import { Search, Clock, Activity, User, MapPin, LogOut, Sparkles, Bell, BellOff, AlertTriangle, HelpCircle, MessageCircle, Home, Trophy, ChevronUp, Users } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
@@ -30,6 +29,7 @@ import { getSettings, subscribeToMessages, savePushSubscription, subscribeToTeam
 import { rankTeamGroup, normalizeTeamRankOrder, type TeamRankCriterion } from "@/lib/tournament-logic";
 import type { TeamEncounter, TeamRankEntry } from "@/types";
 import type { Settings, Message } from "@/types";
+import { toastError } from '@/lib/toast';
 
 const isPlayerInMatch = (match: Match, playerId: string) => {
     return (
@@ -307,7 +307,7 @@ export default function UserDashboard() {
     const handleNotifToggle = async () => {
         if (!('Notification' in window)) return;
         if (notifPermission === 'denied') {
-            alert('ブラウザの設定から通知を許可してください');
+            toastError('通知がブロックされています', 'ブラウザの設定から、このサイトの通知を許可してください');
             return;
         }
         if (notifPermission === 'default') {
