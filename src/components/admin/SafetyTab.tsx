@@ -552,6 +552,9 @@ export default function SafetyTab() {
                 statuses={['waiting', 'calling', 'playing']}
                 placeholder="選手名で未着手の試合を探す"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                選手ひとりを丸ごと棄権にする場合は、「選手」タブの棄権ボタンを使うとまとめて処理されます
+              </p>
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block text-slate-700">欠場するペア</label>
