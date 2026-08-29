@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,19 +11,25 @@ import { Input } from "@/components/ui/input";
 import { collection, query, where, writeBatch, doc, serverTimestamp, Timestamp, updateDoc, setDoc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
-import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEffectiveDivision } from "@/lib/tournament-generator";
+import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEffectiveDivision, generateNumberedPairs, generateNumberedSingles, extractPairSlots, isPairSlotId } from "@/lib/tournament-generator";
 import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-helpers";
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
+import { getDivisionOptions } from "@/lib/divisions";
+import { resolveGroupPoints, resolveKnockoutPoints, POINTS_STANDARD, type PointsOverride } from "@/lib/match-points";
 import type { Player, TournamentType, Division, TournamentFormat, TeamGroup } from "@/types";
 
 type TournamentGeneratorState = {
   tournamentType: TournamentType;
   division: Division;
   format: TournamentFormat;
-  pointsPerGame: number;
+  /** 点数の明示指定。null = 大会の形から自動で決める */
+  pointsPerGame: PointsOverride;
+  /** true = 選手を割り当てず、ペア番号だけの空の表を作る（当日くじ用） */
+  slotMode: boolean;
+  /** slotMode のときの組数（シングルスは人数） */
+  slotCount: number;
   priority: number;
-  pointsByRound: Record<number, number>;
   groupCount: number;
   qualifiersPerGroup: number;
   loading: boolean;
@@ -128,7 +134,7 @@ function generateGroupStageMatches(
   campId: string,
   tournamentType: TournamentType,
   division: Division,
-  pointsPerMatch: number
+  pointsOverride: PointsOverride
 ): MatchData[] {
   const matches: MatchData[] = [];
   const groupLabels: TeamGroup[] = ['A', 'B', 'C', 'D'];
@@ -182,7 +188,8 @@ function generateGroupStageMatches(
           winner_id: null,
           start_time: null,
           end_time: null,
-          points_per_match: pointsPerMatch,
+          // 明示指定がなければ、4ペア以上のブロックは11点・3ペアのブロックは15点
+          points_per_match: resolveGroupPoints(pointsOverride, groups[g].pairs.length),
         });
       }
     }
@@ -197,20 +204,21 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
 
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkFormat, setBulkFormat] = useState<TournamentFormat>('group-stage-knockout');
-  const [bulkPoints, setBulkPoints] = useState(15);
+  const [bulkPoints, setBulkPoints] = useState<PointsOverride>(null);
   const [bulkGroupCount, setBulkGroupCount] = useState(4);
   const [bulkQualifiers, setBulkQualifiers] = useState(2);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkLog, setBulkLog] = useState<{ key: string; status: 'ok' | 'error'; message: string }[]>([]);
 
-  // 1部用の状態
-  const [division1State, setDivision1State] = useState<TournamentGeneratorState>({
+  // 部門ごとの状態。以前は1部・2部の2つを別々に持っていたため3部以上が作れなかった。
+  const makeInitialState = (division: Division): TournamentGeneratorState => ({
     tournamentType: "mens_doubles",
-    division: 1,
+    division,
     format: "single-elimination",
-    pointsPerGame: 15,
+    pointsPerGame: null,
+    slotMode: false,
+    slotCount: 8,
     priority: 999,
-    pointsByRound: {},
     groupCount: 4,
     qualifiersPerGroup: 2,
     loading: false,
@@ -221,43 +229,62 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
     baselineDuration21: 15,
   });
 
-  // 2部用の状態
-  const [division2State, setDivision2State] = useState<TournamentGeneratorState>({
-    tournamentType: "mens_doubles",
-    division: 2,
-    format: "single-elimination",
-    pointsPerGame: 15,
-    priority: 999,
-    pointsByRound: {},
-    groupCount: 4,
-    qualifiersPerGroup: 2,
-    loading: false,
-    result: null,
-    error: null,
-    baselineDuration11: 8,
-    baselineDuration15: 12,
-    baselineDuration21: 15,
-  });
+  const [divisionStates, setDivisionStates] = useState<Record<number, TournamentGeneratorState>>({});
+
+  const getDivisionState = (division: Division): TournamentGeneratorState =>
+    divisionStates[division] ?? makeInitialState(division);
+
+  const updateDivisionState = (
+    division: Division,
+    updater: (prev: TournamentGeneratorState) => TournamentGeneratorState
+  ) => {
+    setDivisionStates(prev => ({
+      ...prev,
+      [division]: updater(prev[division] ?? makeInitialState(division)),
+    }));
+  };
+
+  // 選べる部門。既定の1〜3部に、登録済みの選手が使っている部門を足す
+  const [knownPlayers, setKnownPlayers] = useState<Player[]>([]);
+  const divisionOptions = getDivisionOptions(knownPlayers);
+
+  useEffect(() => {
+    if (!camp) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await safeGetDocs(
+          query(collection(db, "players"), where("campId", "==", camp.id))
+        );
+        if (!cancelled) {
+          setKnownPlayers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Player)));
+        }
+      } catch (e) {
+        console.error("[トーナメント生成] 部門一覧の取得に失敗:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [camp]);
 
   const handleGenerate = async (division: Division, stateOverride?: Partial<TournamentGeneratorState>) => {
     console.log('[トーナメント生成] 開始:', { division, campId: camp?.id });
 
     if (!camp) {
       console.error('[トーナメント生成] エラー: 合宿未選択');
-      const setState = division === 1 ? setDivision1State : setDivision2State;
-      setState(prev => ({ ...prev, error: "合宿データが選択されていません" }));
+      updateDivisionState(division, prev => ({ ...prev, error: "合宿データが選択されていません" }));
       return;
     }
 
-    const baseState = division === 1 ? division1State : division2State;
+    const baseState = getDivisionState(division);
     const currentState = stateOverride ? { ...baseState, ...stateOverride } : baseState;
-    const setState = division === 1 ? setDivision1State : setDivision2State;
+    const setState = (updater: (prev: TournamentGeneratorState) => TournamentGeneratorState) =>
+      updateDivisionState(division, updater);
 
     console.log('[トーナメント生成] 設定:', {
       tournamentType: currentState.tournamentType,
       division,
       format: currentState.format,
-      pointsPerGame: currentState.pointsPerGame
+      pointsPerGame: currentState.pointsPerGame ?? '自動'
     });
 
     if (!stateOverride) {
@@ -271,9 +298,10 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         event_type: getTournamentEventType(currentState.tournamentType),
         division: division,
         format: currentState.format,
-        points_per_game: currentState.pointsPerGame,
+        // 「自動」のときは既定値を保持する（試合ごとの実際の点数は points_per_match に入る）
+        points_per_game: currentState.pointsPerGame ?? POINTS_STANDARD,
         priority: currentState.priority,
-        points_by_round: currentState.pointsByRound,
+        points_by_round: {},
         group_count: currentState.groupCount,
         qualifiers_per_group: currentState.qualifiersPerGroup,
       });
@@ -332,6 +360,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       }
 
       // 1. 現在の合宿に参加している選手のみを取得
+      //    （形だけ作るモードでは選手を見ないので、後段でスキップする）
       const playersRef = collection(db, "players");
       const q = query(
         playersRef,
@@ -398,7 +427,20 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       let singlePlayers: Player[] = [];
       let pairErrors: string[] = [];
 
-      if (currentState.tournamentType.includes("singles")) {
+      if (currentState.slotMode) {
+        // 当日くじ用: 選手を入れず、ペア番号だけの枠を作る
+        if (currentState.tournamentType.includes("singles")) {
+          const r = generateNumberedSingles(currentState.slotCount, currentState.tournamentType, division);
+          singlePlayers = r.players;
+          pairErrors = r.errors;
+          if (singlePlayers.length === 0) throw new Error(r.errors.join(", "));
+        } else {
+          const r = generateNumberedPairs(currentState.slotCount, currentState.tournamentType, division);
+          pairs = r.pairs;
+          pairErrors = r.errors;
+          if (pairs.length === 0) throw new Error(r.errors.join(", "));
+        }
+      } else if (currentState.tournamentType.includes("singles")) {
         // シングルス: 個人戦として1名ずつ登録
         const singlesResult = generateSinglesMatches(targetPlayers, currentState.tournamentType, division);
         singlePlayers = singlesResult.players;
@@ -430,8 +472,6 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       // 4. トーナメント設定を使用
       const groupCount = currentState.groupCount;
       const qualifiersPerGroup = currentState.qualifiersPerGroup;
-      const pointsByRound: Record<number, number> = currentState.pointsByRound;
-      const defaultPoints: number = currentState.pointsPerGame;
 
       // 5. Firestore保存用のデータ構築
       const matchesRef = collection(db, "matches");
@@ -447,8 +487,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           camp.id,
           currentState.tournamentType,
           division,
-          defaultPoints
-        );
+          currentState.pointsPerGame
+        ).map(m => ({ ...m, ...extractPairSlots(m) }));
 
         // ===== 決勝トーナメント枠を生成（2^k >= N アルゴリズム）=====
         // N人の予選通過者に対し最小の2^k枠を計算し、余った枠をBYEとして上位シードに配置する。
@@ -471,7 +511,11 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             matchNumMap.set(`${round}_${pos}`, nextMN++);
           }
         }
-        const has3rdPlace = totalRounds >= 2;
+        // 3位決定戦は「準決勝が2試合とも実試合になる」ときだけ作る。
+        // 例: 3ペア通過だと4枠ブラケット + BYE1 で準決勝が実質1試合しかなく、
+        //     3位決定戦を作っても敗者が1組しか出ないため成立しない。
+        const realSemiFinals = totalRounds === 2 ? round1Total - byeCount : 2;
+        const has3rdPlace = totalRounds >= 2 && realSemiFinals >= 2;
         if (has3rdPlace) {
           matchNumMap.set('3rd', nextMN++);
         }
@@ -490,7 +534,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // 最初の byeCount 枠が上位シードのBYE。残りは予選後に選手が入るプレースホルダー。
         for (let pos = 1; pos <= round1Total; pos++) {
           const isBye = pos <= byeCount;
-          const pointsForRound = pointsByRound[1] || defaultPoints;
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, 1, totalRounds);
           const nextPos = Math.ceil(pos / 2);
           const nextMatchNum = totalRounds >= 2 ? matchNumMap.get(`2_${nextPos}`) : undefined;
           const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
@@ -526,7 +570,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // --- 2回戦以降（準々決勝・準決勝・決勝）---
         for (let round = 2; round <= totalRounds; round++) {
           const matchesInRound = bracketSize / Math.pow(2, round);
-          const pointsForRound = pointsByRound[round] || defaultPoints;
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, round, totalRounds);
           const isLastRound = round === totalRounds;
 
           for (let pos = 1; pos <= matchesInRound; pos++) {
@@ -565,7 +609,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // subtitle: '3位決定戦' を付けることでVisualBracketのフィルターが正しく除外し、
         // 決勝は round=totalRounds に唯一の1試合として表示される
         if (has3rdPlace) {
-          const pointsFor3rd = pointsByRound[totalRounds] || pointsByRound[totalRounds - 1] || defaultPoints;
+          const pointsFor3rd = resolveKnockoutPoints(currentState.pointsPerGame, totalRounds, totalRounds);
           knockoutMatches.push({
             campId: camp.id,
             tournament_type: currentState.tournamentType,
@@ -680,10 +724,12 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         const BATCH_SIZE = 500;
         let currentBatch = writeBatch(db);
         let batchCount = 0;
+        // ブラケットのスロット以外に追加した試合数（3位決定戦など）
+        let extraMatchCount = 0;
 
         // 各スロットを試合データに変換してFirestoreに保存
         for (const slot of bracket.slots) {
-          const pointsForRound = pointsByRound[slot.roundNumber] || defaultPoints;
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, slot.roundNumber, bracket.totalRounds);
 
           // ドキュメントIDの強制固定: getFinalMatchId()を使用
           const matchDocId = getFinalMatchId(
@@ -747,13 +793,21 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           let byeWinner: Player | undefined;
 
           if (slot.player1 && !slot.player2) {
-            matchData.status = "completed";
-            matchData.winner_id = slot.player1.id;
             byeWinner = slot.player1;
           } else if (!slot.player1 && slot.player2) {
-            matchData.status = "completed";
-            matchData.winner_id = slot.player2.id;
             byeWinner = slot.player2;
+          }
+
+          if (byeWinner) {
+            if (isPairSlotId(byeWinner.id)) {
+              // 選手未定: 予選リーグ+決勝Tのシード枠と同じ形にしておく。
+              // 当日ペアを割り当てると、この枠にもそのペアが入る。
+              matchData.is_walkover = true;
+              matchData.walkover_winner = slot.player1 ? 1 : 2;
+            } else {
+              matchData.status = "completed";
+              matchData.winner_id = byeWinner.id;
+            }
           }
 
           // 次の試合への参照
@@ -805,7 +859,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             }
           }
 
-          currentBatch.set(matchDocRef, matchData);
+          // 形だけ作るモードでは、ダミー選手を「空の選手 + ペア番号」に置き換える
+          currentBatch.set(matchDocRef, { ...matchData, ...extractPairSlots(matchData) });
           batchCount++;
 
           // 500件ごとにバッチをコミット
@@ -816,6 +871,54 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             currentBatch = writeBatch(db);
             batchCount = 0;
           }
+        }
+
+        // --- 3位決定戦 ---
+        // 準決勝が2試合とも実試合になる場合のみ作る。空のまま作っておき、
+        // 準決勝終了後に管理画面の「3位決定戦を作成」で敗者を流し込む。
+        const semiRound = bracket.totalRounds - 1;
+        const realSemiCount = semiRound === 1
+          ? bracket.slots.filter(s => s.roundNumber === 1 && s.player1 && s.player2).length
+          : 2;
+
+        if (bracket.totalRounds >= 2 && realSemiCount >= 2) {
+          const thirdPlaceMatchNumber =
+            bracket.slots.filter(s => s.roundNumber === bracket.totalRounds).length + 1;
+          const thirdPlaceDocId = getFinalMatchId(
+            camp.id,
+            currentState.tournamentType,
+            division,
+            bracket.totalRounds,
+            thirdPlaceMatchNumber
+          );
+
+          currentBatch.set(doc(matchesRef, thirdPlaceDocId), {
+            id: thirdPlaceDocId,
+            campId: camp.id,
+            tournament_type: currentState.tournamentType,
+            division: division,
+            round: bracket.totalRounds,
+            match_number: thirdPlaceMatchNumber,
+            phase: 'knockout' as const,
+            status: 'waiting',
+            court_id: null,
+            player1_id: '',
+            player2_id: '',
+            player3_id: '',
+            player4_id: '',
+            score_p1: 0,
+            score_p2: 0,
+            winner_id: null,
+            start_time: null,
+            end_time: null,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+            points_per_match: resolveKnockoutPoints(currentState.pointsPerGame, bracket.totalRounds, bracket.totalRounds),
+            subtitle: '3位決定戦',
+          });
+          batchCount++;
+          extraMatchCount++;
+          console.log(`[トーナメント生成] 3位決定戦を追加 (round=${bracket.totalRounds}, id=${thirdPlaceDocId})`);
         }
 
         // 残りのバッチをコミット
@@ -883,13 +986,13 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             }
           }
 
-          await updateDoc(nextMatchRef, nextMatchUpdate);
+          await updateDoc(nextMatchRef, extractPairSlots(nextMatchUpdate) as Record<string, unknown>);
           console.log(`[Bye進出] ${byeWinner.name} → ${nextMatchDocId} (position ${nextPosition})`);
         }
         console.log(`[Bye処理] ${byeMatches.length}件の進出処理完了 ✅`);
 
         console.log('[トーナメント生成] 成功 🎉', {
-          matchCount: bracket.slots.length,
+          matchCount: bracket.slots.length + extraMatchCount,
           roundCount: bracket.totalRounds
         });
 
@@ -899,7 +1002,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             ...prev,
             loading: false,
             result: {
-              matchCount: bracket.slots.length,
+              matchCount: bracket.slots.length + extraMatchCount,
               roundCount: bracket.totalRounds,
               warnings: pairErrors.length > 0 ? pairErrors : undefined,
             }
@@ -1009,15 +1112,35 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
   };
 
   const renderDivisionCard = (division: Division) => {
-    const state = division === 1 ? division1State : division2State;
-    const setState = division === 1 ? setDivision1State : setDivision2State;
+    const state = getDivisionState(division);
+    const setState = (updater: (prev: TournamentGeneratorState) => TournamentGeneratorState) =>
+      updateDivisionState(division, updater);
 
-    // 固定のクラス名（Tailwindの動的クラスは使えないため）
-    const cardBorderClass = division === 1 ? "border-t-sky-400" : "border-t-violet-400";
-    const titleColorClass = division === 1 ? "text-sky-700" : "text-violet-700";
-    const buttonClass = division === 1
-      ? "w-full h-11 bg-sky-600 hover:bg-sky-700 text-white font-semibold"
-      : "w-full h-11 bg-violet-600 hover:bg-violet-700 text-white font-semibold";
+    // 固定のクラス名（Tailwindの動的クラスは使えないため、部門ごとに配色を用意して循環させる）
+    const palette = [
+      {
+        border: "border-t-sky-400",
+        title: "text-sky-700",
+        button: "w-full h-11 bg-sky-600 hover:bg-sky-700 text-white font-semibold",
+      },
+      {
+        border: "border-t-violet-400",
+        title: "text-violet-700",
+        button: "w-full h-11 bg-violet-600 hover:bg-violet-700 text-white font-semibold",
+      },
+      {
+        border: "border-t-amber-400",
+        title: "text-amber-700",
+        button: "w-full h-11 bg-amber-600 hover:bg-amber-700 text-white font-semibold",
+      },
+      {
+        border: "border-t-emerald-400",
+        title: "text-emerald-700",
+        button: "w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold",
+      },
+    ];
+    const { border: cardBorderClass, title: titleColorClass, button: buttonClass } =
+      palette[(division - 1) % palette.length];
 
     return (
       <Card className={`border-t-4 ${cardBorderClass}`}>
@@ -1075,6 +1198,59 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
               </Select>
             </div>
 
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                <Users className="w-4 h-4" />
+                出場者の決め方
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, slotMode: false }))}
+                  className={`flex-1 text-left rounded-md border px-3 py-2 transition-colors ${
+                    !state.slotMode
+                      ? 'border-sky-400 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="block text-sm font-bold">登録済みの選手から組む</span>
+                  <span className="block text-xs mt-0.5">その場でランダムにペアを作って表を埋める</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, slotMode: true }))}
+                  className={`flex-1 text-left rounded-md border px-3 py-2 transition-colors ${
+                    state.slotMode
+                      ? 'border-sky-400 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="block text-sm font-bold">番号だけで形を作る</span>
+                  <span className="block text-xs mt-0.5">当日くじで決めた人を後から流し込む</span>
+                </button>
+              </div>
+
+              {state.slotMode && (
+                <div className="rounded-md border border-sky-200 bg-sky-50/50 px-3 py-2 space-y-2">
+                  <label className="text-xs font-medium text-slate-700">
+                    {state.tournamentType.includes('singles') ? '人数' : 'ペア数'}
+                  </label>
+                  <Input
+                    type="number"
+                    min={2}
+                    max={128}
+                    value={state.slotCount}
+                    onChange={(e) => setState(prev => ({ ...prev, slotCount: parseInt(e.target.value) || 2 }))}
+                    className="h-9 w-32 bg-white"
+                  />
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    選手を入れずに表だけ作ります。当日は「ペア割り当て」タブで、
+                    番号ごとにフリガナを打って選手を入れてください。
+                  </p>
+                </div>
+              )}
+            </div>
+
             {state.format === 'group-stage-knockout' && (
               <>
                 <div className="space-y-2">
@@ -1117,21 +1293,25 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
                 <Settings2 className="w-4 h-4" />
-                基本点数設定
+                点数
               </label>
               <Select
-                value={state.pointsPerGame.toString()}
-                onValueChange={(v) => setState(prev => ({ ...prev, pointsPerGame: parseInt(v) }))}
+                value={state.pointsPerGame === null ? 'auto' : String(state.pointsPerGame)}
+                onValueChange={(v) => setState(prev => ({ ...prev, pointsPerGame: v === 'auto' ? null : parseInt(v) }))}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="11">11点</SelectItem>
-                  <SelectItem value="15">15点</SelectItem>
-                  <SelectItem value="21">21点</SelectItem>
+                  <SelectItem value="auto">自動（推奨）</SelectItem>
+                  <SelectItem value="11">全試合 11点</SelectItem>
+                  <SelectItem value="15">全試合 15点</SelectItem>
+                  <SelectItem value="21">全試合 21点</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                自動のとき: 4人ブロックの総当り 11点 / 3人ブロックと準々決勝より前 15点 / 準決勝・決勝・3位決定戦 21点
+              </p>
             </div>
           </div>
 
@@ -1180,47 +1360,6 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             </div>
           </details>
 
-          <details className="group">
-            <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900 flex items-center gap-2 p-2 rounded hover:bg-slate-50">
-              <span className="group-open:rotate-90 transition-transform">▶</span>
-              ラウンド別点数設定（詳細）
-            </summary>
-            <div className="mt-3 space-y-2 p-4 bg-slate-50 rounded-lg border border-slate-200">
-              <p className="text-xs text-slate-600 mb-3">
-                特定のラウンドで異なる点数を設定できます（例: 準決勝以降は21点）
-              </p>
-              {[1, 2, 3, 4, 5].map(round => (
-                <div key={round} className="flex items-center gap-3">
-                  <label className="text-xs w-20 text-slate-600">ラウンド {round}:</label>
-                  <Select
-                    value={state.pointsByRound[round]?.toString() || 'none'}
-                    onValueChange={(v) => {
-                      setState(prev => {
-                        const updated = { ...prev.pointsByRound };
-                        if (v === 'none') {
-                          delete updated[round];
-                        } else {
-                          updated[round] = parseInt(v);
-                        }
-                        return { ...prev, pointsByRound: updated };
-                      });
-                    }}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="基本設定を使用" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">基本設定を使用</SelectItem>
-                      <SelectItem value="11">11点</SelectItem>
-                      <SelectItem value="15">15点</SelectItem>
-                      <SelectItem value="21">21点</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-          </details>
-
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
             <Badge variant="outline" className="text-xs">
               {getTournamentName(state.tournamentType)}
@@ -1231,8 +1370,16 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             </Badge>
             <span className="text-xs text-slate-500">×</span>
             <Badge variant="secondary" className="text-xs">
-              {state.pointsPerGame}点
+              {state.pointsPerGame === null ? '点数=自動' : `全試合 ${state.pointsPerGame}点`}
             </Badge>
+            {state.slotMode && (
+              <>
+                <span className="text-xs text-slate-500">×</span>
+                <Badge className="bg-amber-100 text-amber-800 text-xs">
+                  番号のみ {state.slotCount}{state.tournamentType.includes('singles') ? '名' : '組'}
+                </Badge>
+              </>
+            )}
           </div>
 
           <Button
@@ -1303,7 +1450,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {(['mens_doubles', 'womens_doubles', 'mixed_doubles', 'mens_singles', 'womens_singles'] as TournamentType[]).flatMap(type =>
-              ([1, 2] as Division[]).map(div => {
+              divisionOptions.map(div => {
                 const key = `${type}_div_${div}`;
                 const checked = bulkSelected.has(key);
                 return (
@@ -1340,15 +1487,19 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">基本点数</label>
-              <Select value={bulkPoints.toString()} onValueChange={v => setBulkPoints(parseInt(v))}>
+              <label className="text-xs font-medium text-slate-600">点数</label>
+              <Select
+                value={bulkPoints === null ? 'auto' : String(bulkPoints)}
+                onValueChange={v => setBulkPoints(v === 'auto' ? null : parseInt(v))}
+              >
                 <SelectTrigger className="h-9 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="11">11点</SelectItem>
-                  <SelectItem value="15">15点</SelectItem>
-                  <SelectItem value="21">21点</SelectItem>
+                  <SelectItem value="auto">自動（推奨）</SelectItem>
+                  <SelectItem value="11">全試合 11点</SelectItem>
+                  <SelectItem value="15">全試合 15点</SelectItem>
+                  <SelectItem value="21">全試合 21点</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1442,8 +1593,9 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       {currentStep === 1 && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {renderDivisionCard(1)}
-            {renderDivisionCard(2)}
+            {divisionOptions.map(div => (
+              <div key={div}>{renderDivisionCard(div)}</div>
+            ))}
           </div>
           <div className="flex justify-end">
             <Button onClick={() => setCurrentStep(2)} className="bg-blue-600 hover:bg-blue-700">
@@ -1476,8 +1628,9 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       {currentStep === 3 && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {renderDivisionCard(1)}
-            {renderDivisionCard(2)}
+            {divisionOptions.map(div => (
+              <div key={div}>{renderDivisionCard(div)}</div>
+            ))}
           </div>
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => setCurrentStep(2)}>

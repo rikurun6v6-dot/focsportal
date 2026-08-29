@@ -495,10 +495,13 @@ export async function calculateTournamentETA(campId: string): Promise<{
   }
 }
 
-// ヘルパー: 試合の点数を判定（TournamentConfigから取得）
+// ヘルパー: 試合の点数を判定
 async function getMatchPoints(match: Match): Promise<number> {
+  // 試合生成時に大会の形から決めた点数を最優先で使う
+  if (match.points_per_match) return match.points_per_match;
+
   try {
-    // tournament_config_idがあればそれを使用
+    // 旧データ互換: tournament_config_idがあればそれを使用
     if (match.tournament_config_id) {
       const configDoc = await safeGetDoc(doc(db, 'tournament_configs', match.tournament_config_id));
       if (configDoc.exists()) {

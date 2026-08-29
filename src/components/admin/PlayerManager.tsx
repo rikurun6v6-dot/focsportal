@@ -23,6 +23,7 @@ import {
 import { db } from "@/lib/firebase";
 import { Users, Trash2, UserMinus, UserPlus, Upload, Loader2, SlidersHorizontal } from "lucide-react";
 import type { Player, TournamentType, Division } from "@/types";
+import { getDivisionOptions, isValidDivision } from "@/lib/divisions";
 import { useCamp } from "@/context/CampContext";
 import { parsePlayersCSV } from "@/lib/csv-parser"; // 👈 修正1: 複数形(Players)でインポート
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
@@ -35,10 +36,14 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [newName, setNewName] = useState("");
+  const [newKana, setNewKana] = useState("");
   const [newGender, setNewGender] = useState<"male" | "female">("male");
-  const [newDivision, setNewDivision] = useState<"1" | "2">("1");
+  const [newDivision, setNewDivision] = useState<string>("1");
   const [loading, setLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  // 選べる部門。既定の1〜3部に、登録済みの選手が使っている部門を足す
+  const divisionOptions = getDivisionOptions(players);
 
   // 種目ごとの部の例外（division_overrides）編集用
   const [overridePlayer, setOverridePlayer] = useState<Player | null>(null);
@@ -69,7 +74,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
     const cleaned: Partial<Record<TournamentType, Division>> = {};
     (Object.keys(overrideDraft) as TournamentType[]).forEach((t) => {
       const v = overrideDraft[t];
-      if ((v === 1 || v === 2) && v !== overridePlayer.division) cleaned[t] = v;
+      if (isValidDivision(v) && v !== overridePlayer.division) cleaned[t] = v;
     });
     try {
       await updateDoc(doc(db, 'players', overridePlayer.id!), { division_overrides: cleaned });
@@ -86,7 +91,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
     if (!ov) return 0;
     return (Object.keys(ov) as TournamentType[]).filter((t) => {
       const v = ov[t];
-      return (v === 1 || v === 2) && v !== player.division;
+      return isValidDivision(v) && v !== player.division;
     }).length;
   };
 
@@ -122,6 +127,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
       await addDoc(collection(db, 'players'), {
         campId: camp.id,
         name: newName,
+        ...(newKana.trim() ? { name_kana: newKana.trim() } : {}),
         gender: newGender,
         division: parseInt(newDivision),
         team_id: "",
@@ -132,6 +138,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
         created_at: serverTimestamp(),
       });
       setNewName("");
+      setNewKana("");
     } catch (error) {
       console.error("Error adding player:", error);
       toastError('選手の追加に失敗しました', '通信を確認して、もう一度お試しください');
@@ -171,6 +178,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
           batch.set(docRef, {
             campId: camp.id,
             name: p.name,
+            ...(p.name_kana ? { name_kana: p.name_kana } : {}),
             gender: p.gender,
             division: p.division,
             team_id: "",
@@ -273,6 +281,19 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
               />
             </div>
 
+            <div className="w-full md:flex-1 space-y-2">
+              <label className="text-xs font-bold text-slate-500">フリガナ</label>
+              <Input
+                value={newKana}
+                onChange={(e) => setNewKana(e.target.value)}
+                placeholder="やまだ たろう"
+                className="bg-slate-50"
+              />
+              <p className="text-[10px] text-slate-400 leading-tight">
+                当日のペア割り当てでひらがな検索に使います
+              </p>
+            </div>
+
             <div className="flex gap-2 w-full md:w-auto">
               <div className="w-1/2 md:w-28 space-y-2">
                 <label className="text-xs font-bold text-slate-500">性別</label>
@@ -289,13 +310,14 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
 
               <div className="w-1/2 md:w-28 space-y-2">
                 <label className="text-xs font-bold text-slate-500">レベル</label>
-                <Select value={newDivision} onValueChange={(v: any) => setNewDivision(v)}>
+                <Select value={newDivision} onValueChange={(v: string) => setNewDivision(v)}>
                   <SelectTrigger className="bg-slate-50">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">1部</SelectItem>
-                    <SelectItem value="2">2部</SelectItem>
+                    {divisionOptions.map((d) => (
+                      <SelectItem key={d} value={String(d)}>{d}部</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -425,14 +447,15 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
                 この選手だけ、種目ごとに部を変えたい場合に設定します（変更した種目だけ例外として保存）。
               </p>
               {eventsForGender(overridePlayer.gender).map((ev) => {
-                const current = overrideDraft[ev.type]; // 1 | 2 | undefined
-                const effective = (current === 1 || current === 2) ? current : overridePlayer.division;
+                const current = overrideDraft[ev.type]; // 部門番号 or undefined
+                const effective = isValidDivision(current) ? current : overridePlayer.division;
                 return (
                   <div key={ev.type} className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2">
                     <span className="text-sm font-medium text-slate-700">{ev.label}</span>
                     <div className="flex gap-1">
-                      {([['default', '既定'], ['1', '1部'], ['2', '2部']] as const).map(([val, label]) => {
-                        const isSel = val === 'default' ? !(current === 1 || current === 2) : Number(val) === current;
+                      {(['default', ...divisionOptions.map(String)]).map((val) => {
+                        const label = val === 'default' ? '既定' : `${val}部`;
+                        const isSel = val === 'default' ? !isValidDivision(current) : Number(val) === current;
                         return (
                           <Button
                             key={val}

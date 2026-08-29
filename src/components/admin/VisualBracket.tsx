@@ -21,9 +21,19 @@ import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { toastSuccess, toastInfo, toastError } from "@/lib/toast";
 import { validateMatchScore } from "@/lib/score-validation";
+import { pairSideLabel } from "@/lib/pair-label";
+import { getDivisionsInUse } from "@/lib/divisions";
 
 const LS_KEY_TYPE = 'vb_tournamentType';
 const LS_KEY_DIV = 'vb_division';
+
+// 部門タブの配色。Tailwind は動的クラス名を解決できないので、あらかじめ書き出して循環させる。
+const DIVISION_TAB_CLASSES = [
+    'data-[state=active]:bg-sky-500 data-[state=active]:text-white',
+    'data-[state=active]:bg-violet-500 data-[state=active]:text-white',
+    'data-[state=active]:bg-amber-500 data-[state=active]:text-white',
+    'data-[state=active]:bg-emerald-500 data-[state=active]:text-white',
+];
 
 export default function VisualBracket({ readOnly = false }: { readOnly?: boolean }) {
     const { camp } = useCamp();
@@ -395,7 +405,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
 
             // ファイル名を生成
             const tournamentName = getTournamentTypeName(tournamentType);
-            const divisionText = `${division}部`;
+            const divisionText = `${activeDivision}部`;
             const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
             const fileName = `${tournamentName}_${divisionText}_トーナメント表_${timestamp}.png`;
 
@@ -519,8 +529,15 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         return "未定";
     };
 
+    // この合宿で実際に試合がある部門（1件も無ければ既定の1〜3部）
+    const divisionOptions = getDivisionsInUse(matches);
+
+    // 前回開いた部門が今の合宿に無い場合（localStorage に残っているだけの場合）は先頭に寄せる。
+    // そのままだとタブがどれも選ばれていない状態になり、表が出ない。
+    const activeDivision = divisionOptions.includes(division) ? division : divisionOptions[0];
+
     // 選択した部門の試合のみをフィルタリング
-    const divisionMatches = matches.filter(m => m.division === division || !m.division);
+    const divisionMatches = matches.filter(m => m.division === activeDivision || !m.division);
 
     // 予選リーグと決勝トーナメントに分類
     const preliminaryMatches = divisionMatches.filter(m => m.phase === 'preliminary');
@@ -784,15 +801,11 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                             </div>
                                             <div className="text-sm">
                                                 <p className="font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
-                                                    {getPlayerName(match.player1_id)}
-                                                    {match.player3_id && ` / ${getPlayerName(match.player3_id)}`}
-                                                    {match.player5_id && ` / ${getPlayerName(match.player5_id)}`}
+                                                    {pairSideLabel(match, 1, getPlayerName)}
                                                 </p>
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 my-1">vs</p>
                                                 <p className="font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
-                                                    {getPlayerName(match.player2_id)}
-                                                    {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
-                                                    {match.player6_id && ` / ${getPlayerName(match.player6_id)}`}
+                                                    {pairSideLabel(match, 2, getPlayerName)}
                                                 </p>
                                                 {match.status === 'completed' && (
                                                     <div className="mt-2 flex items-center gap-2 text-xs font-bold">
@@ -813,18 +826,24 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                         </div>
                     )}
 
-                    {/* 1部/2部切り替えタブ */}
-                    <Tabs value={String(division)} onValueChange={(v) => {
+                    {/* 部門切り替えタブ（実際に試合がある部門を並べる。3部以上も出る） */}
+                    <Tabs value={String(activeDivision)} onValueChange={(v) => {
                         setDivision(Number(v) as Division);
                         localStorage.setItem(LS_KEY_DIV, v);
                     }} className="w-full">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="1" className="data-[state=active]:bg-sky-500 data-[state=active]:text-white">
-                                1部
-                            </TabsTrigger>
-                            <TabsTrigger value="2" className="data-[state=active]:bg-violet-500 data-[state=active]:text-white">
-                                2部
-                            </TabsTrigger>
+                        <TabsList
+                            className="grid w-full"
+                            style={{ gridTemplateColumns: `repeat(${divisionOptions.length}, minmax(0, 1fr))` }}
+                        >
+                            {divisionOptions.map((d, i) => (
+                                <TabsTrigger
+                                    key={d}
+                                    value={String(d)}
+                                    className={DIVISION_TAB_CLASSES[i % DIVISION_TAB_CLASSES.length]}
+                                >
+                                    {d}部
+                                </TabsTrigger>
+                            ))}
                         </TabsList>
                     </Tabs>
 

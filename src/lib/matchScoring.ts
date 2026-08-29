@@ -4,7 +4,8 @@
  * フェーズ（予選第1巡目 / 予選中盤 / 決勝T）を自動判定し、最適な優先順位を返す。
  */
 
-import type { Match, Player, Config } from '@/types';
+import type { Match, Player, Config, Division } from '@/types';
+import { getDivisionsInUse } from './divisions';
 
 /** ラウンド係数（ラウンドが若いほど優先）デフォルト値 */
 export const ROUND_COEFFICIENT = 100;
@@ -43,7 +44,7 @@ export type ScorePhase = 'preliminary_first' | 'preliminary_mid' | 'knockout';
 export interface ScoreContext {
   now: number;
   allPlayers: Player[];
-  preferredDivision: 1 | 2;
+  preferredDivision: Division;
   divisionBonusBase: number;
   /** キー: `${tournament_type}_${division}_${phase}` → その種目の最大ラウンド数 */
   maxRoundByTypeDiv: Map<string, number>;
@@ -85,16 +86,23 @@ export function buildScoreContext(
 ): ScoreContext {
   const _now = now ?? Date.now();
 
-  // 1部/2部の進行率を計算
-  const division1Matches = campMatches.filter(m => m.division === 1);
-  const division2Matches = campMatches.filter(m => m.division === 2);
-  const div1Progress = division1Matches.length > 0
-    ? division1Matches.filter(m => m.status === 'completed').length / division1Matches.length : 1;
-  const div2Progress = division2Matches.length > 0
-    ? division2Matches.filter(m => m.status === 'completed').length / division2Matches.length : 1;
+  // 部門ごとの進行率を計算（部門数は可変。以前は1部/2部の2つに決め打ちだった）
+  const divisionProgress = getDivisionsInUse(campMatches, []).map(division => {
+    const ms = campMatches.filter(m => m.division === division);
+    return {
+      division,
+      progress: ms.length > 0
+        ? ms.filter(m => m.status === 'completed').length / ms.length
+        : 1,
+    };
+  });
 
-  const preferredDivision: 1 | 2 = div1Progress < div2Progress ? 1 : 2;
-  const progressGap = Math.abs(div1Progress - div2Progress);
+  // 最も遅れている部を優先し、最速との差をボーナスの大きさに使う
+  const slowest = divisionProgress.reduce<{ division: Division; progress: number } | null>(
+    (acc, d) => (acc === null || d.progress < acc.progress ? d : acc), null);
+  const fastestProgress = divisionProgress.reduce((max, d) => Math.max(max, d.progress), 0);
+  const preferredDivision: Division = slowest?.division ?? 1;
+  const progressGap = slowest ? fastestProgress - slowest.progress : 0;
   const divisionBonusMax = config?.division_bonus_max ?? 50;
   // ギャップに比例したボーナス（最大 division_bonus_max 点）
   const divisionBonusBase = Math.round(divisionBonusMax * Math.min(1, progressGap * (1 / 0.3)));

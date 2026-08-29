@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock, RefreshCw, TrendingUp, BarChart2, AlertTriangle, CheckCircle2, Sparkles, Bot, SlidersHorizontal } from "lucide-react";
 import type { AIDiagnosePayload } from "@/app/api/ai-diagnose/route";
 import type { Match, Court, Player } from "@/types";
+import { getDivisionsInUse } from "@/lib/divisions";
 
 interface Props {
   campId: string;
@@ -54,13 +55,15 @@ interface DiagnosisItem {
   detail: string;
 }
 
+interface DivisionRow {
+  division: number;
+  total: number;
+  completed: number;
+  progress: number;
+}
+
 interface DivisionData {
-  div1Total: number;
-  div2Total: number;
-  div1Comp: number;
-  div2Comp: number;
-  div1Progress: number;
-  div2Progress: number;
+  rows: DivisionRow[];
   preferredDivision: number;
   progressGap: number;
   divisionBonusBase: number;
@@ -124,15 +127,17 @@ export default function AdvancedAnalytics({ campId }: Props) {
       const courtsData = courtsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Court));
       const playersData = playersSnap.docs.map(d => ({ id: d.id, ...d.data() } as Player));
 
-      // Division progress
-      const div1Total = allTotal.filter(m => m.division === 1).length;
-      const div2Total = allTotal.filter(m => m.division === 2).length;
-      const div1Comp = completedMatches.filter(m => m.division === 1).length;
-      const div2Comp = completedMatches.filter(m => m.division === 2).length;
-      const div1Progress = div1Total > 0 ? div1Comp / div1Total : 1;
-      const div2Progress = div2Total > 0 ? div2Comp / div2Total : 1;
-      const preferredDivision = div1Progress < div2Progress ? 1 : 2;
-      const progressGap = Math.abs(div1Progress - div2Progress);
+      // Division progress（部門数は可変）
+      const divisionRows: DivisionRow[] = getDivisionsInUse(allTotal, []).map(division => {
+        const total = allTotal.filter(m => m.division === division).length;
+        const completed = completedMatches.filter(m => m.division === division).length;
+        return { division, total, completed, progress: total > 0 ? completed / total : 1 };
+      });
+      const slowestRow = divisionRows.reduce<DivisionRow | null>(
+        (acc, r) => (acc === null || r.progress < acc.progress ? r : acc), null);
+      const fastestProgress = divisionRows.reduce((max, r) => Math.max(max, r.progress), 0);
+      const preferredDivision = slowestRow?.division ?? 1;
+      const progressGap = slowestRow ? fastestProgress - slowestRow.progress : 0;
       const divisionBonusBase = Math.round(Math.min(600, progressGap * 2000));
 
       // Queue scoring
@@ -284,7 +289,7 @@ export default function AdvancedAnalytics({ campId }: Props) {
         });
       }
 
-      setDivisionData({ div1Total, div2Total, div1Comp, div2Comp, div1Progress, div2Progress, preferredDivision, progressGap, divisionBonusBase });
+      setDivisionData({ rows: divisionRows, preferredDivision, progressGap, divisionBonusBase });
       setScoredQueue(scored);
       setCourts(courtsData);
       setPlayers(playersData);
@@ -299,8 +304,12 @@ export default function AdvancedAnalytics({ campId }: Props) {
           totalCourts: courtsData.filter(c => c.is_active).length,
           waitingTotal: waitingMatches.length,
           assignable: scored.filter(s => !s.isBlocked).length,
-          div1Progress, div2Progress,
-          div1Comp, div1Total, div2Comp, div2Total,
+          divisions: divisionRows.map(r => ({
+            division: r.division,
+            completed: r.completed,
+            total: r.total,
+            progress: r.progress,
+          })),
           blockedMatches: scored.filter(s => s.isBlocked).map(s => ({
             matchNumber: s.match.match_number ?? 0,
             label: getTournamentLabel(s.match.tournament_type ?? "", s.match.division ?? 0),
@@ -528,12 +537,12 @@ export default function AdvancedAnalytics({ campId }: Props) {
                       totalCourts: courts.filter(c => c.is_active).length,
                       waitingTotal: scored.length,
                       assignable: scored.filter(s => !s.isBlocked).length,
-                      div1Progress: divisionData?.div1Progress ?? 0,
-                      div2Progress: divisionData?.div2Progress ?? 0,
-                      div1Comp: divisionData?.div1Comp ?? 0,
-                      div1Total: divisionData?.div1Total ?? 0,
-                      div2Comp: divisionData?.div2Comp ?? 0,
-                      div2Total: divisionData?.div2Total ?? 0,
+                      divisions: (divisionData?.rows ?? []).map(r => ({
+                        division: r.division,
+                        completed: r.completed,
+                        total: r.total,
+                        progress: r.progress,
+                      })),
                       blockedMatches: scored.filter(s => s.isBlocked).map(s => ({
                         matchNumber: s.match.match_number ?? 0,
                         label: getTournamentLabel(s.match.tournament_type ?? "", s.match.division ?? 0),
@@ -577,14 +586,11 @@ export default function AdvancedAnalytics({ campId }: Props) {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <BarChart2 className="w-4 h-4 text-violet-600" />
-              1部 / 2部 進行バランス
+              部門別 進行バランス
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {[1, 2].map(div => {
-              const total = div === 1 ? divisionData.div1Total : divisionData.div2Total;
-              const comp = div === 1 ? divisionData.div1Comp : divisionData.div2Comp;
-              const prog = div === 1 ? divisionData.div1Progress : divisionData.div2Progress;
+            {divisionData.rows.map(({ division: div, total, completed: comp, progress: prog }) => {
               const isPref = divisionData.preferredDivision === div && divisionData.progressGap > 0.005;
               return (
                 <div key={div}>

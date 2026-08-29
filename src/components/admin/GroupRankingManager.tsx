@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { calculateGroupStandings, rankStandings, needsManualIntervention, compareStandings, getLossRatio, type GroupStanding } from '@/lib/group-ranking';
+import { getDivisionsInUse } from '@/lib/divisions';
 import { getMatchesByTournament, getAllPlayers, updateDocument, getDocument } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import type { Match, Player, TournamentType, Division, TeamGroup, Config } from '@/types';
@@ -230,6 +231,8 @@ export default function GroupRankingManager() {
 
   const groups = Array.from(groupStandings.keys()).sort();
   const superSeed = getSuperSeed();
+  // この種目で実際に試合がある部門だけを選ばせる（3部以上も自動で出る）
+  const divisionOptions = getDivisionsInUse(matches);
 
   return (
     <>
@@ -260,8 +263,9 @@ export default function GroupRankingManager() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1部</SelectItem>
-                  <SelectItem value="2">2部</SelectItem>
+                  {divisionOptions.map((d) => (
+                    <SelectItem key={d} value={String(d)}>{d}部</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 

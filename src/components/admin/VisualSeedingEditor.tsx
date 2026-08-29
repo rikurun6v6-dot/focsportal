@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getMatchesByTournament, getAllPlayers, updateDocument, propagateByePlayerChange } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
+import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import type { Match, Player, TournamentType, Division } from '@/types';
 import { Shuffle, Save, RefreshCw, GripVertical, X, CornerDownLeft } from 'lucide-react';
 import { toastSuccess, toastError } from '@/lib/toast';
@@ -383,8 +384,9 @@ export default function VisualSeedingEditor({ readOnly = false }: { readOnly?: b
           <Select value={String(division)} onValueChange={v => setDivision(parseInt(v) as Division)}>
             <SelectTrigger className="w-24 h-11"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="1">1部</SelectItem>
-              <SelectItem value="2">2部</SelectItem>
+              {DEFAULT_DIVISIONS.map((d) => (
+                <SelectItem key={d} value={String(d)}>{d}部</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 

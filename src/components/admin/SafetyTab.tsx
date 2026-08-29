@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RotateCcw, Flag, Tag, UserX, Trash2, Wrench } from 'lucide-react';
 import { resetMatchResult, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory, cleanupEarlyPropagations } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
+import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
 import MatchPicker from './MatchPicker';
@@ -47,12 +48,12 @@ export default function SafetyTab() {
 
   // 種目削除機能
   const [deleteTournamentType, setDeleteTournamentType] = useState<TournamentType>('mens_doubles');
-  const [deleteDivision, setDeleteDivision] = useState<'all' | '1' | '2'>('all');
+  const [deleteDivision, setDeleteDivision] = useState<string>('all');
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   // クリーンアップ機能
   const [cleanupTournamentType, setCleanupTournamentType] = useState<TournamentType>('mens_doubles');
-  const [cleanupDivision, setCleanupDivision] = useState<'all' | '1' | '2'>('all');
+  const [cleanupDivision, setCleanupDivision] = useState<string>('all');
   const [cleanupLoading, setCleanupLoading] = useState(false);
 
   /**
@@ -605,14 +606,15 @@ export default function SafetyTab() {
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block text-slate-700">部門</label>
-              <Select value={cleanupDivision} onValueChange={(v) => setCleanupDivision(v as 'all' | '1' | '2')}>
+              <Select value={cleanupDivision} onValueChange={(v) => setCleanupDivision(v)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部門</SelectItem>
-                  <SelectItem value="1">1部のみ</SelectItem>
-                  <SelectItem value="2">2部のみ</SelectItem>
+                  {DEFAULT_DIVISIONS.map((d) => (
+                    <SelectItem key={d} value={String(d)}>{d}部のみ</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -656,14 +658,15 @@ export default function SafetyTab() {
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block text-slate-700">部門</label>
-              <Select value={deleteDivision} onValueChange={(v) => setDeleteDivision(v as 'all' | '1' | '2')}>
+              <Select value={deleteDivision} onValueChange={(v) => setDeleteDivision(v)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部門</SelectItem>
-                  <SelectItem value="1">1部のみ</SelectItem>
-                  <SelectItem value="2">2部のみ</SelectItem>
+                  {DEFAULT_DIVISIONS.map((d) => (
+                    <SelectItem key={d} value={String(d)}>{d}部のみ</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
