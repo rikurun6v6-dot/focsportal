@@ -134,7 +134,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
       setNewName("");
     } catch (error) {
       console.error("Error adding player:", error);
-      alert("選手の追加に失敗しました");
+      toastError('選手の追加に失敗しました', '通信を確認して、もう一度お試しください');
     } finally {
       setLoading(false);
     }
@@ -151,7 +151,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
       const { players: parsedPlayers } = parsePlayersCSV(textContent);
 
       if (parsedPlayers.length === 0) {
-        alert("CSVに有効なデータがありませんでした。");
+        toastError('CSVに有効なデータがありませんでした', '氏名・性別・部の列がそろっているか確認してください');
         return;
       }
 
@@ -186,10 +186,10 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
         successCount += chunk.length;
       }
 
-      alert(`${successCount} 名の選手を追加しました。`);
+      toastSuccess(`${successCount} 名の選手を追加しました`);
     } catch (error) {
       console.error("CSV Import Error:", error);
-      alert("CSVの読み込みに失敗しました。");
+      toastError('CSVの読み込みに失敗しました', 'ファイル形式（UTF-8のCSV）を確認して、もう一度お試しください');
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
