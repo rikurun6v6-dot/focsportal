@@ -21,6 +21,7 @@ import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { toastSuccess, toastInfo, toastError } from "@/lib/toast";
 import { validateMatchScore } from "@/lib/score-validation";
+import { pairSideLabel } from "@/lib/pair-label";
 
 const LS_KEY_TYPE = 'vb_tournamentType';
 const LS_KEY_DIV = 'vb_division';
@@ -784,15 +785,11 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                                             </div>
                                             <div className="text-sm">
                                                 <p className="font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
-                                                    {getPlayerName(match.player1_id)}
-                                                    {match.player3_id && ` / ${getPlayerName(match.player3_id)}`}
-                                                    {match.player5_id && ` / ${getPlayerName(match.player5_id)}`}
+                                                    {pairSideLabel(match, 1, getPlayerName)}
                                                 </p>
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 my-1">vs</p>
                                                 <p className="font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
-                                                    {getPlayerName(match.player2_id)}
-                                                    {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
-                                                    {match.player6_id && ` / ${getPlayerName(match.player6_id)}`}
+                                                    {pairSideLabel(match, 2, getPlayerName)}
                                                 </p>
                                                 {match.status === 'completed' && (
                                                     <div className="mt-2 flex items-center gap-2 text-xs font-bold">

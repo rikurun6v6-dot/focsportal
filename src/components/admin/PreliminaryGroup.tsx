@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Users, Trophy, ArrowLeftRight } from "lucide-react";
 import type { Match } from "@/types";
+import { pairSideLabel } from "@/lib/pair-label";
 
 interface PreliminaryGroupProps {
   groups: string[];
@@ -81,9 +82,7 @@ export default function PreliminaryGroup({
                           <Users className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0 text-xs leading-relaxed text-slate-900">
                             <div className="break-words font-medium">
-                              {getPlayerName(match.player1_id)}
-                              {match.player3_id && ` / ${getPlayerName(match.player3_id)}`}
-                              {match.player5_id && ` / ${getPlayerName(match.player5_id)}`}
+                              {pairSideLabel(match, 1, getPlayerName)}
                             </div>
                             {match.seed_p1 && (
                               <span className="inline-block mt-1 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">
@@ -110,9 +109,7 @@ export default function PreliminaryGroup({
                           <Users className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0 text-xs leading-relaxed text-slate-900">
                             <div className="break-words font-medium">
-                              {getPlayerName(match.player2_id)}
-                              {match.player4_id && ` / ${getPlayerName(match.player4_id)}`}
-                              {match.player6_id && ` / ${getPlayerName(match.player6_id)}`}
+                              {pairSideLabel(match, 2, getPlayerName)}
                             </div>
                             {match.seed_p2 && (
                               <span className="inline-block mt-1 text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">

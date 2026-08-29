@@ -47,6 +47,7 @@ const TabLoading = () => (
 const VisualBracket = dynamic(() => import("@/components/admin/VisualBracket"), { loading: TabLoading, ssr: false });
 const AwardsTab = dynamic(() => import("@/components/admin/AwardsTab"), { loading: TabLoading, ssr: false });
 const PairSeedManager = dynamic(() => import("@/components/admin/PairSeedManager"), { loading: TabLoading, ssr: false });
+const PairAssignManager = dynamic(() => import("@/components/admin/PairAssignManager"), { loading: TabLoading, ssr: false });
 const GroupRankingManager = dynamic(() => import("@/components/admin/GroupRankingManager"), { loading: TabLoading, ssr: false });
 const PreliminaryGroupEditor = dynamic(() => import("@/components/admin/PreliminaryGroupEditor"), { loading: TabLoading, ssr: false });
 const SafetyTab = dynamic(() => import("@/components/admin/SafetyTab"), { loading: TabLoading, ssr: false });
@@ -80,6 +81,7 @@ const NAV_GROUPS: {
     items: [
       { value: 'setup', label: '初期設定', icon: Settings },
       { value: 'players', label: '選手', icon: Users },
+      { value: 'pairassign', label: 'ペア割り当て', icon: Users },
       { value: 'pairseed', label: 'ペア・シード', icon: Settings },
       { value: 'groupedit', label: '予選配置編集', icon: ArrowLeftRight },
     ],
@@ -1401,6 +1403,10 @@ export default function AdminDashboard() {
 
               <TabsContent value="awards" className="space-y-6">
                 <AwardsTab />
+              </TabsContent>
+
+              <TabsContent value="pairassign" className="space-y-6">
+                <PairAssignManager readOnly={isArchived} />
               </TabsContent>
 
               <TabsContent value="pairseed" className="space-y-6">

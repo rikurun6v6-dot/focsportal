@@ -36,6 +36,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [newName, setNewName] = useState("");
+  const [newKana, setNewKana] = useState("");
   const [newGender, setNewGender] = useState<"male" | "female">("male");
   const [newDivision, setNewDivision] = useState<string>("1");
   const [loading, setLoading] = useState(false);
@@ -126,6 +127,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
       await addDoc(collection(db, 'players'), {
         campId: camp.id,
         name: newName,
+        ...(newKana.trim() ? { name_kana: newKana.trim() } : {}),
         gender: newGender,
         division: parseInt(newDivision),
         team_id: "",
@@ -136,6 +138,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
         created_at: serverTimestamp(),
       });
       setNewName("");
+      setNewKana("");
     } catch (error) {
       console.error("Error adding player:", error);
       alert("選手の追加に失敗しました");
@@ -175,6 +178,7 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
           batch.set(docRef, {
             campId: camp.id,
             name: p.name,
+            ...(p.name_kana ? { name_kana: p.name_kana } : {}),
             gender: p.gender,
             division: p.division,
             team_id: "",
@@ -275,6 +279,19 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
                 placeholder="名前を入力"
                 className="bg-slate-50"
               />
+            </div>
+
+            <div className="w-full md:flex-1 space-y-2">
+              <label className="text-xs font-bold text-slate-500">フリガナ</label>
+              <Input
+                value={newKana}
+                onChange={(e) => setNewKana(e.target.value)}
+                placeholder="やまだ たろう"
+                className="bg-slate-50"
+              />
+              <p className="text-[10px] text-slate-400 leading-tight">
+                当日のペア割り当てでひらがな検索に使います
+              </p>
             </div>
 
             <div className="flex gap-2 w-full md:w-auto">

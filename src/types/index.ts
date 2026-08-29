@@ -43,6 +43,8 @@ export interface Player {
   id: string;
   campId?: string; // 👈 追加: 合宿ID
   name: string;
+  /** フリガナ。当日のペア割り当てでひらがな検索に使う（任意） */
+  name_kana?: string;
   gender: Gender;
   division: Division;
   /** 種目ごとの部の例外（既定は division）。実効部 = division_overrides?.[種目] ?? division */
@@ -98,6 +100,13 @@ export interface Match {
   bracket_order?: number;       // 👈 決勝T: 同一ラウンド内の自然な出場順（0始まり, 上→下＝左上→左下→右上→右下）
   bracket_order_count?: number; // 👈 決勝T: そのラウンド内の試合数（bracket_order の正規化に使用）
   priority_dispatch?: boolean;  // 👈 「次に優先して割り当て」指定。dispatcher が最優先で割り当て、割当後にクリア
+  /**
+   * 👈 ペア番号（当日くじで決めるため、選手未定のまま形だけ作ったときに入る）
+   * pair_no_p1 = player1/player3 側、pair_no_p2 = player2/player4 側。
+   * 選手が割り当て済みでも残るので、番号での再割り当て・表示に使える。
+   */
+  pair_no_p1?: number;
+  pair_no_p2?: number;
 }
 
 /**
