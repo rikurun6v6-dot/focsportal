@@ -29,6 +29,7 @@ import { getSettings, subscribeToMessages, savePushSubscription, subscribeToTeam
 import { rankTeamGroup, normalizeTeamRankOrder, type TeamRankCriterion } from "@/lib/tournament-logic";
 import type { TeamEncounter, TeamRankEntry } from "@/types";
 import type { Settings, Message } from "@/types";
+import { toastError } from '@/lib/toast';
 
 const isPlayerInMatch = (match: Match, playerId: string) => {
     return (
@@ -306,7 +307,7 @@ export default function UserDashboard() {
     const handleNotifToggle = async () => {
         if (!('Notification' in window)) return;
         if (notifPermission === 'denied') {
-            alert('ブラウザの設定から通知を許可してください');
+            toastError('通知がブロックされています', 'ブラウザの設定から、このサイトの通知を許可してください');
             return;
         }
         if (notifPermission === 'default') {

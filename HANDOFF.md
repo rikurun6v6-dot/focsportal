@@ -796,6 +796,18 @@
   - ペア割り当ての「表に反映」は、**入力済みの番号だけを上書きする**。空欄にした番号は書き込まれないので、割り当てを消したい場合は「試合ごとに直す」で消すこと。
 - オーナー承認: rikurun6v6-dot / 2026-08-29（オーナー本人の指示によりマージ・デプロイ）
 
+## 2026-08-29 — [ui] alert() をトースト通知に置き換え
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/hi-errors-safety / #（PR作成後）
+- 変更内容:
+  - 管理画面と参加者画面に残っていた `alert()` を全廃し、トースト通知に置き換えた（`PlayerManager` `TournamentSetup` `CampManager` `MatchResultInput` `ResultsTab` `SafetyTab` `GroupRankingManager` `app/admin/page.tsx` `app/user/page.tsx`）。
+  - 文言も揃えた: 失敗系は「〜に失敗しました」＋対処（「通信を確認して、もう一度お試しください」など）の2段。
+  - 参加者画面の通知許可ブロック時のメッセージもトースト化。
+- 変更理由: `alert()` はモーダルなので、押すまで他の操作が止まる。運営が急いでいる場面（CSV取り込み・結果入力）で毎回止まるのは実害がある。加えて、ブラウザ自動操作や一部の埋め込み環境ではモーダルが画面を固めるため、当日の確認作業の妨げにもなる。
+- 影響範囲: 通知の出し方と文言のみ。処理の流れ・データ構造の変更なし。`npm run build` 成功・`tsc --noEmit` 通過。
+- 注意点 / 引き継ぎ事項:
+  - `confirm()` 系（削除の確認など）は元から `useConfirmDialog` を使っており、今回は触っていない。
+  - `src` 配下に `alert(` は残っていない。今後追加しないこと（`toastSuccess` / `toastError` / `toastInfo` を使う）。
 ## 2026-08-29 — [safety] 棄権が自動割り当てに効かない不具合の修正と、試合IDの手入力の廃止
 - 担当者: rikurun6v6-dot（Claude Code 経由）
 - ブランチ / PR: fix/withdrawal-and-match-picker / #（PR作成後）

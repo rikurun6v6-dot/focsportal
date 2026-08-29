@@ -317,7 +317,7 @@ export default function ResultsTab() {
         return newScores;
       });
     } catch (error) {
-      alert('エラーが発生しました');
+      toastError('結果の確定に失敗しました', '通信を確認して、もう一度「確定」を押してください。結果はまだ記録されていません');
     }
 
     setSubmitting(null);
@@ -371,7 +371,7 @@ export default function ResultsTab() {
       await updateDocument('courts', courtId, { current_match_id: null });
       toastSuccess(`${winnerName} の不戦勝を記録しました`);
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('不戦勝の記録に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setSubmitting(null);
   };
@@ -394,7 +394,7 @@ export default function ResultsTab() {
         toastError('コートのフリー化に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('コートをフリーにできませんでした', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -416,7 +416,7 @@ export default function ResultsTab() {
         toastError('操作に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('停止の設定に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -438,7 +438,7 @@ export default function ResultsTab() {
         toastError('再開に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('自動割り当ての再開に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -447,7 +447,7 @@ export default function ResultsTab() {
       await updateDocument('courts', courtId, { manual_gender_unlock: true });
       toastSuccess('逆性別の試合を許可しました。次回の自動割り当てで反映されます。');
     } catch {
-      toastError('エラーが発生しました');
+      toastError('逆性別の許可に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -455,7 +455,7 @@ export default function ResultsTab() {
     try {
       await updateDocument('courts', courtId, { manual_gender_unlock: false });
     } catch {
-      toastError('エラーが発生しました');
+      toastError('許可の取り消しに失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -493,7 +493,7 @@ export default function ResultsTab() {
         toastError('コート変更に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('試合の移動に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -519,7 +519,7 @@ export default function ResultsTab() {
         toastError('休憩設定に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('休憩の設定に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -541,7 +541,7 @@ export default function ResultsTab() {
         toastError('休憩解除に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('休憩の解除に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -567,7 +567,7 @@ export default function ResultsTab() {
         toastError('休憩延長に失敗しました');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('休憩の追加に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -618,7 +618,7 @@ export default function ResultsTab() {
       toastSuccess('試合を割り当てました');
       setShowForceAssignFor(null);
     } catch {
-      toastError('エラーが発生しました');
+      toastError('試合の割り当てに失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -636,7 +636,7 @@ export default function ResultsTab() {
       if (success) toastSuccess('結果を取り消しました');
       else toastError('取り消しに失敗しました');
     } catch {
-      toastError('エラーが発生しました');
+      toastError('結果の取り消しに失敗しました', '通信を確認して、もう一度お試しください。結果はまだ取り消されていません');
     }
   };
 
@@ -654,7 +654,7 @@ export default function ResultsTab() {
       if (result.success) toastSuccess('勝者を入れ替えました');
       else toastError(result.error || '入れ替えに失敗しました');
     } catch {
-      toastError('エラーが発生しました');
+      toastError('勝者の入れ替えに失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -678,7 +678,7 @@ export default function ResultsTab() {
         toastError(result.error || '修正に失敗しました');
       }
     } catch {
-      toastError('エラーが発生しました');
+      toastError('スコアの修正に失敗しました', '通信を確認して、もう一度お試しください。結果はまだ変更されていません');
     }
     setSubmitting(null);
   };
@@ -714,7 +714,7 @@ export default function ResultsTab() {
         toastError('試合開始に失敗しました（コートが使用中の可能性があります）');
       }
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('試合の開始に失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 

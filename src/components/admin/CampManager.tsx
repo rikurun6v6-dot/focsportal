@@ -281,15 +281,15 @@ export default function CampManager() {
             const result = await deleteCompleteCampData(campId);
 
             if (result.success) {
-                alert(`✓ 削除完了\n\n削除件数：\n• 選手: ${result.deletedCounts.players}件\n• 試合: ${result.deletedCounts.matches}件\n• コート: ${result.deletedCounts.courts}件\n• トーナメント設定: ${result.deletedCounts.tournamentConfigs}件`);
+                toastSuccess('大会を削除しました', `選手${result.deletedCounts.players}・試合${result.deletedCounts.matches}・コート${result.deletedCounts.courts}・設定${result.deletedCounts.tournamentConfigs}件`);
             } else {
-                alert(`⚠️ 削除中にエラーが発生しました\n\n${result.errors.join('\n')}`);
+                toastError('削除中に一部が失敗しました', result.errors.join(' / '));
             }
 
             await refreshCamp();
             window.location.reload();
         } catch (error) {
-            alert(`✗ 予期せぬエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
+            toastError('削除に失敗しました', `通信を確認して、もう一度お試しください（${error instanceof Error ? error.message : String(error)}）`);
         }
         setDeleting(null);
     };
