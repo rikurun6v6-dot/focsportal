@@ -121,7 +121,18 @@ export default function MatchResultInput({ readOnly = false }: { readOnly?: bool
         delete newScores[match.id];
         return newScores;
       });
+
+      // 保存できたことを必ず知らせる。無言だと『入ったのか？』が分からず、
+      // 二重入力や入力漏れの原因になる。
+      const winnerName = winnerId === match.player1_id
+        ? [match.player1?.name, match.player3?.name].filter(Boolean).join(' / ')
+        : [match.player2?.name, match.player4?.name].filter(Boolean).join(' / ');
+      toastSuccess(
+        `${winnerName} の勝ちで記録しました（${scoreP1}-${scoreP2}）`,
+        '間違えたら、この画面の「結果を修正」から直せます'
+      );
     } catch (error) {
+      console.error('Error submitting match result:', error);
       toastError('結果の確定に失敗しました', '通信を確認して、もう一度「確定」を押してください。結果はまだ記録されていません');
     }
 
