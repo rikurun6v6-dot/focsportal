@@ -89,9 +89,9 @@ function buildAdminSections(): Section[] {
             {[
               ['キャンプ管理', '合宿を事前に作成しておく（名前・コート数・日程を設定）。これがないと何もできません。'],
               ['初期設定タブ', '「コートを初期化」でコートを作成。コート数は合宿設定の court_count に従います。'],
-              ['選手タブ', 'CSVインポートまたは手動で選手を一括登録します。'],
-              ['ペア・シードタブ', 'ダブルス種目のペアを組みます（ランダム / 手動 / ミックス）。'],
+              ['選手タブ', 'CSVインポートまたは手動で選手を一括登録します。フリガナを入れておくと当日ひらがなで探せます。'],
               ['初期設定タブ', '「トーナメント作成」で試合を自動生成します。種目・部門・形式を事前に設定してから実行。'],
+              ['ペア割り当てタブ', 'ダブルス種目のペアを決めます。当日くじなら「番号で割り当て」、事前に組むなら「試合ごとに直す」。'],
               ['コート状況タブ', '自動割り当てをONにすると空きコートへ試合が入り始めます。'],
               ['コート結果タブ', '試合が終わるたびにスコアを入力します。'],
             ].map(([tab, desc], i) => (
@@ -206,7 +206,7 @@ function buildAdminSections(): Section[] {
             <h4 className="font-semibold text-slate-800 mb-2">登録方法（2通り）</h4>
             <div className="space-y-2">
               <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">
-                <p className="font-semibold text-slate-800">① ペア・シードタブから手動登録</p>
+                <p className="font-semibold text-slate-800">① 「ペア割り当て」タブ →「試合ごとに直す」から手動登録</p>
                 <p className="text-slate-600 text-xs mt-1">
                   「ペア作成」で2人を選択した後、「3人目を追加」ボタンで3人目を選択します。
                 </p>
@@ -243,15 +243,37 @@ function buildAdminSections(): Section[] {
       ),
     },
 
-    // ─── 4. ペア・シード設定 ──────────────────────────────────
+    // ─── 4. ペア割り当て ──────────────────────────────────────
     {
       id: 'pairing',
-      title: 'ペア・シード設定',
-      keywords: ['ペア', 'シード', 'ダブルス', 'ミックス', 'ランダム', '手動', '配置', 'スワップ', '入れ替え', 'ビジュアル', 'ドラッグ', 'シャッフル', 'ブラケット配置'],
+      title: 'ペア割り当て',
+      keywords: ['ペア', 'シード', 'ダブルス', 'ミックス', 'ランダム', '手動', '配置', 'スワップ', '入れ替え', 'ビジュアル', 'ドラッグ', 'シャッフル', 'ブラケット配置', '番号', 'くじ', '割り箸', 'フリガナ', 'ひらがな'],
       content: (
         <div className="space-y-5">
+          <div className="p-3 rounded-lg border border-sky-200 bg-sky-50 text-sm">
+            <p className="font-semibold text-slate-800 mb-1">「ペア割り当て」タブは3つに分かれています</p>
+            <ul className="text-slate-600 text-xs space-y-1 list-disc list-inside">
+              <li><strong>番号で割り当て</strong> — 当日くじで決まったペアを番号ごとに入れる。ふだんはここだけ使う。</li>
+              <li><strong>試合ごとに直す</strong> — 1回戦の1試合だけ選手を差し替える。3人ペア・シード番号もここ。</li>
+              <li><strong>ブロック入れ替え</strong> — 予選ブロックをまたいでペアを移す。割り当て後にしか使えない。</li>
+            </ul>
+          </div>
+
           <div>
-            <h4 className="font-semibold text-slate-800 mb-2">ペア作成の3つの方法</h4>
+            <h4 className="font-semibold text-slate-800 mb-2">当日くじで決める場合（番号で割り当て）</h4>
+            <p className="text-sm text-slate-600 mb-2">
+              事前に「初期設定」→ トーナメント生成で <strong>「番号だけで形を作る」</strong> を選び、
+              ペア数だけ入れて表を作っておきます。選手は入らず、①②③… の番号だけが入った表ができます。
+            </p>
+            <p className="text-sm text-slate-600">
+              当日は番号ごとに<strong>ひらがなを打って選手を選び</strong>、「表に反映」を押します。
+              その番号が出る全試合に一度に入るので、リーグ戦でも入力は1回で済みます。
+              <strong>割り当てを終えてから自動割り当てをONにしてください。</strong>
+            </p>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-2">ペア作成の3つの方法（試合ごとに直す）</h4>
             <div className="space-y-2">
               {[
                 ['ランダム', '同性・同部門内でランダムにペアを自動生成します。'],
@@ -279,7 +301,7 @@ function buildAdminSections(): Section[] {
           <div>
             <h4 className="font-semibold text-slate-800 mb-2">ビジュアル配置エディタ（ドラッグ＆ドロップ）</h4>
             <p className="text-sm text-slate-600 mb-3">
-              「ペア・シード」タブ上部に表示される<strong>ビジュアル配置エディタ</strong>を使うと、
+              「ペア割り当て」タブ →「試合ごとに直す」の上部に表示される<strong>ビジュアル配置エディタ</strong>を使うと、
               ブラケットの初戦スロットを視覚的に編集できます。
             </p>
             <div className="space-y-2">
