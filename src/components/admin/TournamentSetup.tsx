@@ -17,6 +17,7 @@ import {
 import type { TournamentConfig, EventType, Division, TournamentFormat } from '@/types';
 import { Trash2, Save, ArrowUp, ArrowDown } from 'lucide-react';
 import { useCamp } from '@/context/CampContext';
+import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
 export default function TournamentSetup({ readOnly = false }: { readOnly?: boolean }) {
@@ -258,10 +259,10 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
             <div>
               <label className="text-xs font-medium mb-1 block">部門</label>
               <select
-                value={newConfig.division === 1 || newConfig.division === 2 ? newConfig.division : 'custom'}
+                value={DEFAULT_DIVISIONS.includes(newConfig.division) ? newConfig.division : 'custom'}
                 onChange={(e) => {
                   if (e.target.value === 'custom') {
-                    setNewConfig({ ...newConfig, division: 3 });
+                    setNewConfig({ ...newConfig, division: DEFAULT_DIVISIONS.length + 1 });
                   } else {
                     setNewConfig({ ...newConfig, division: parseInt(e.target.value) });
                   }
@@ -270,11 +271,12 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
                 style={{ backgroundColor: 'white', color: 'black' }}
                 disabled={readOnly}
               >
-                <option value="1">1部</option>
-                <option value="2">2部</option>
+                {DEFAULT_DIVISIONS.map((d) => (
+                  <option key={d} value={d}>{d}部</option>
+                ))}
                 <option value="custom">その他（手入力）</option>
               </select>
-              {(newConfig.division !== 1 && newConfig.division !== 2) && (
+              {!DEFAULT_DIVISIONS.includes(newConfig.division) && (
                 <Input
                   type="number"
                   min="1"

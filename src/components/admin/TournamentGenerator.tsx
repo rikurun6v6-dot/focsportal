@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEff
 import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-helpers";
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
+import { getDivisionOptions } from "@/lib/divisions";
 import type { Player, TournamentType, Division, TournamentFormat, TeamGroup } from "@/types";
 
 type TournamentGeneratorState = {
@@ -203,10 +204,10 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkLog, setBulkLog] = useState<{ key: string; status: 'ok' | 'error'; message: string }[]>([]);
 
-  // 1部用の状態
-  const [division1State, setDivision1State] = useState<TournamentGeneratorState>({
+  // 部門ごとの状態。以前は1部・2部の2つを別々に持っていたため3部以上が作れなかった。
+  const makeInitialState = (division: Division): TournamentGeneratorState => ({
     tournamentType: "mens_doubles",
-    division: 1,
+    division,
     format: "single-elimination",
     pointsPerGame: 15,
     priority: 999,
@@ -221,37 +222,56 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
     baselineDuration21: 15,
   });
 
-  // 2部用の状態
-  const [division2State, setDivision2State] = useState<TournamentGeneratorState>({
-    tournamentType: "mens_doubles",
-    division: 2,
-    format: "single-elimination",
-    pointsPerGame: 15,
-    priority: 999,
-    pointsByRound: {},
-    groupCount: 4,
-    qualifiersPerGroup: 2,
-    loading: false,
-    result: null,
-    error: null,
-    baselineDuration11: 8,
-    baselineDuration15: 12,
-    baselineDuration21: 15,
-  });
+  const [divisionStates, setDivisionStates] = useState<Record<number, TournamentGeneratorState>>({});
+
+  const getDivisionState = (division: Division): TournamentGeneratorState =>
+    divisionStates[division] ?? makeInitialState(division);
+
+  const updateDivisionState = (
+    division: Division,
+    updater: (prev: TournamentGeneratorState) => TournamentGeneratorState
+  ) => {
+    setDivisionStates(prev => ({
+      ...prev,
+      [division]: updater(prev[division] ?? makeInitialState(division)),
+    }));
+  };
+
+  // 選べる部門。既定の1〜3部に、登録済みの選手が使っている部門を足す
+  const [knownPlayers, setKnownPlayers] = useState<Player[]>([]);
+  const divisionOptions = getDivisionOptions(knownPlayers);
+
+  useEffect(() => {
+    if (!camp) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await safeGetDocs(
+          query(collection(db, "players"), where("campId", "==", camp.id))
+        );
+        if (!cancelled) {
+          setKnownPlayers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Player)));
+        }
+      } catch (e) {
+        console.error("[トーナメント生成] 部門一覧の取得に失敗:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [camp]);
 
   const handleGenerate = async (division: Division, stateOverride?: Partial<TournamentGeneratorState>) => {
     console.log('[トーナメント生成] 開始:', { division, campId: camp?.id });
 
     if (!camp) {
       console.error('[トーナメント生成] エラー: 合宿未選択');
-      const setState = division === 1 ? setDivision1State : setDivision2State;
-      setState(prev => ({ ...prev, error: "合宿データが選択されていません" }));
+      updateDivisionState(division, prev => ({ ...prev, error: "合宿データが選択されていません" }));
       return;
     }
 
-    const baseState = division === 1 ? division1State : division2State;
+    const baseState = getDivisionState(division);
     const currentState = stateOverride ? { ...baseState, ...stateOverride } : baseState;
-    const setState = division === 1 ? setDivision1State : setDivision2State;
+    const setState = (updater: (prev: TournamentGeneratorState) => TournamentGeneratorState) =>
+      updateDivisionState(division, updater);
 
     console.log('[トーナメント生成] 設定:', {
       tournamentType: currentState.tournamentType,
@@ -1009,15 +1029,35 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
   };
 
   const renderDivisionCard = (division: Division) => {
-    const state = division === 1 ? division1State : division2State;
-    const setState = division === 1 ? setDivision1State : setDivision2State;
+    const state = getDivisionState(division);
+    const setState = (updater: (prev: TournamentGeneratorState) => TournamentGeneratorState) =>
+      updateDivisionState(division, updater);
 
-    // 固定のクラス名（Tailwindの動的クラスは使えないため）
-    const cardBorderClass = division === 1 ? "border-t-sky-400" : "border-t-violet-400";
-    const titleColorClass = division === 1 ? "text-sky-700" : "text-violet-700";
-    const buttonClass = division === 1
-      ? "w-full h-11 bg-sky-600 hover:bg-sky-700 text-white font-semibold"
-      : "w-full h-11 bg-violet-600 hover:bg-violet-700 text-white font-semibold";
+    // 固定のクラス名（Tailwindの動的クラスは使えないため、部門ごとに配色を用意して循環させる）
+    const palette = [
+      {
+        border: "border-t-sky-400",
+        title: "text-sky-700",
+        button: "w-full h-11 bg-sky-600 hover:bg-sky-700 text-white font-semibold",
+      },
+      {
+        border: "border-t-violet-400",
+        title: "text-violet-700",
+        button: "w-full h-11 bg-violet-600 hover:bg-violet-700 text-white font-semibold",
+      },
+      {
+        border: "border-t-amber-400",
+        title: "text-amber-700",
+        button: "w-full h-11 bg-amber-600 hover:bg-amber-700 text-white font-semibold",
+      },
+      {
+        border: "border-t-emerald-400",
+        title: "text-emerald-700",
+        button: "w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold",
+      },
+    ];
+    const { border: cardBorderClass, title: titleColorClass, button: buttonClass } =
+      palette[(division - 1) % palette.length];
 
     return (
       <Card className={`border-t-4 ${cardBorderClass}`}>
@@ -1303,7 +1343,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {(['mens_doubles', 'womens_doubles', 'mixed_doubles', 'mens_singles', 'womens_singles'] as TournamentType[]).flatMap(type =>
-              ([1, 2] as Division[]).map(div => {
+              divisionOptions.map(div => {
                 const key = `${type}_div_${div}`;
                 const checked = bulkSelected.has(key);
                 return (
@@ -1442,8 +1482,9 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       {currentStep === 1 && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {renderDivisionCard(1)}
-            {renderDivisionCard(2)}
+            {divisionOptions.map(div => (
+              <div key={div}>{renderDivisionCard(div)}</div>
+            ))}
           </div>
           <div className="flex justify-end">
             <Button onClick={() => setCurrentStep(2)} className="bg-blue-600 hover:bg-blue-700">
@@ -1476,8 +1517,9 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       {currentStep === 3 && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {renderDivisionCard(1)}
-            {renderDivisionCard(2)}
+            {divisionOptions.map(div => (
+              <div key={div}>{renderDivisionCard(div)}</div>
+            ))}
           </div>
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => setCurrentStep(2)}>
