@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { collection, query, where, writeBatch, doc, serverTimestamp, Timestamp, updateDoc, setDoc } from "firebase/firestore";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
-import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEffectiveDivision } from "@/lib/tournament-generator";
+import { generateRandomPairs, generateMixedPairs, generateSinglesMatches, getEffectiveDivision, generateNumberedPairs, generateNumberedSingles, extractPairSlots, isPairSlotId } from "@/lib/tournament-generator";
 import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-helpers";
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
@@ -25,6 +25,10 @@ type TournamentGeneratorState = {
   format: TournamentFormat;
   /** 点数の明示指定。null = 大会の形から自動で決める */
   pointsPerGame: PointsOverride;
+  /** true = 選手を割り当てず、ペア番号だけの空の表を作る（当日くじ用） */
+  slotMode: boolean;
+  /** slotMode のときの組数（シングルスは人数） */
+  slotCount: number;
   priority: number;
   groupCount: number;
   qualifiersPerGroup: number;
@@ -212,6 +216,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
     division,
     format: "single-elimination",
     pointsPerGame: null,
+    slotMode: false,
+    slotCount: 8,
     priority: 999,
     groupCount: 4,
     qualifiersPerGroup: 2,
@@ -354,6 +360,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       }
 
       // 1. 現在の合宿に参加している選手のみを取得
+      //    （形だけ作るモードでは選手を見ないので、後段でスキップする）
       const playersRef = collection(db, "players");
       const q = query(
         playersRef,
@@ -420,7 +427,20 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
       let singlePlayers: Player[] = [];
       let pairErrors: string[] = [];
 
-      if (currentState.tournamentType.includes("singles")) {
+      if (currentState.slotMode) {
+        // 当日くじ用: 選手を入れず、ペア番号だけの枠を作る
+        if (currentState.tournamentType.includes("singles")) {
+          const r = generateNumberedSingles(currentState.slotCount, currentState.tournamentType, division);
+          singlePlayers = r.players;
+          pairErrors = r.errors;
+          if (singlePlayers.length === 0) throw new Error(r.errors.join(", "));
+        } else {
+          const r = generateNumberedPairs(currentState.slotCount, currentState.tournamentType, division);
+          pairs = r.pairs;
+          pairErrors = r.errors;
+          if (pairs.length === 0) throw new Error(r.errors.join(", "));
+        }
+      } else if (currentState.tournamentType.includes("singles")) {
         // シングルス: 個人戦として1名ずつ登録
         const singlesResult = generateSinglesMatches(targetPlayers, currentState.tournamentType, division);
         singlePlayers = singlesResult.players;
@@ -468,7 +488,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           currentState.tournamentType,
           division,
           currentState.pointsPerGame
-        );
+        ).map(m => ({ ...m, ...extractPairSlots(m) }));
 
         // ===== 決勝トーナメント枠を生成（2^k >= N アルゴリズム）=====
         // N人の予選通過者に対し最小の2^k枠を計算し、余った枠をBYEとして上位シードに配置する。
@@ -773,13 +793,21 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           let byeWinner: Player | undefined;
 
           if (slot.player1 && !slot.player2) {
-            matchData.status = "completed";
-            matchData.winner_id = slot.player1.id;
             byeWinner = slot.player1;
           } else if (!slot.player1 && slot.player2) {
-            matchData.status = "completed";
-            matchData.winner_id = slot.player2.id;
             byeWinner = slot.player2;
+          }
+
+          if (byeWinner) {
+            if (isPairSlotId(byeWinner.id)) {
+              // 選手未定: 予選リーグ+決勝Tのシード枠と同じ形にしておく。
+              // 当日ペアを割り当てると、この枠にもそのペアが入る。
+              matchData.is_walkover = true;
+              matchData.walkover_winner = slot.player1 ? 1 : 2;
+            } else {
+              matchData.status = "completed";
+              matchData.winner_id = byeWinner.id;
+            }
           }
 
           // 次の試合への参照
@@ -831,7 +859,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             }
           }
 
-          currentBatch.set(matchDocRef, matchData);
+          // 形だけ作るモードでは、ダミー選手を「空の選手 + ペア番号」に置き換える
+          currentBatch.set(matchDocRef, { ...matchData, ...extractPairSlots(matchData) });
           batchCount++;
 
           // 500件ごとにバッチをコミット
@@ -957,7 +986,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             }
           }
 
-          await updateDoc(nextMatchRef, nextMatchUpdate);
+          await updateDoc(nextMatchRef, extractPairSlots(nextMatchUpdate) as Record<string, unknown>);
           console.log(`[Bye進出] ${byeWinner.name} → ${nextMatchDocId} (position ${nextPosition})`);
         }
         console.log(`[Bye処理] ${byeMatches.length}件の進出処理完了 ✅`);
@@ -1208,6 +1237,59 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
               </>
             )}
 
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                <Users className="w-4 h-4" />
+                出場者の決め方
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, slotMode: false }))}
+                  className={`flex-1 text-left rounded-md border px-3 py-2 transition-colors ${
+                    !state.slotMode
+                      ? 'border-sky-400 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="block text-sm font-bold">登録済みの選手から組む</span>
+                  <span className="block text-xs mt-0.5">その場でランダムにペアを作って表を埋める</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, slotMode: true }))}
+                  className={`flex-1 text-left rounded-md border px-3 py-2 transition-colors ${
+                    state.slotMode
+                      ? 'border-sky-400 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="block text-sm font-bold">番号だけで形を作る</span>
+                  <span className="block text-xs mt-0.5">当日くじで決めた人を後から流し込む</span>
+                </button>
+              </div>
+
+              {state.slotMode && (
+                <div className="rounded-md border border-sky-200 bg-sky-50/50 px-3 py-2 space-y-2">
+                  <label className="text-xs font-medium text-slate-700">
+                    {state.tournamentType.includes('singles') ? '人数' : 'ペア数'}
+                  </label>
+                  <Input
+                    type="number"
+                    min={2}
+                    max={128}
+                    value={state.slotCount}
+                    onChange={(e) => setState(prev => ({ ...prev, slotCount: parseInt(e.target.value) || 2 }))}
+                    className="h-9 w-32 bg-white"
+                  />
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    選手を入れずに表だけ作ります。当日は「ペア割り当て」タブで、
+                    番号ごとにフリガナを打って選手を入れてください。
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
                 <Settings2 className="w-4 h-4" />
@@ -1290,6 +1372,14 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             <Badge variant="secondary" className="text-xs">
               {state.pointsPerGame === null ? '点数=自動' : `全試合 ${state.pointsPerGame}点`}
             </Badge>
+            {state.slotMode && (
+              <>
+                <span className="text-xs text-slate-500">×</span>
+                <Badge className="bg-amber-100 text-amber-800 text-xs">
+                  番号のみ {state.slotCount}{state.tournamentType.includes('singles') ? '名' : '組'}
+                </Badge>
+              </>
+            )}
           </div>
 
           <Button

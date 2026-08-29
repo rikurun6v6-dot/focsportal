@@ -5,6 +5,9 @@ import type { Player, Gender, Division } from '@/types';
 const HEADER_ALIASES: Record<string, string> = {
   // 氏名
   name: 'name', 氏名: 'name', 名前: 'name',
+  // フリガナ（任意列）
+  kana: 'name_kana', name_kana: 'name_kana', furigana: 'name_kana',
+  フリガナ: 'name_kana', ふりがな: 'name_kana', カナ: 'name_kana', よみ: 'name_kana', 読み: 'name_kana',
   // 性別
   gender: 'gender', 性別: 'gender',
   // 部門/レベル
@@ -154,8 +157,11 @@ function parsePlayerRow(
     );
   }
 
+  const nameKana = row['name_kana']?.trim() ?? '';
+
   return {
     name: row['name'].trim(),
+    ...(nameKana ? { name_kana: nameKana } : {}),
     gender,
     division,
     team_id: row['team']?.trim() ?? '',
@@ -183,9 +189,10 @@ function normalizeDivision(v: string): Division | null {
 
 // ── エクスポート用 ─────────────────────────────────────────────────────────────
 export function generatePlayersCSV(players: Player[]): string {
-  const headers = ['name', 'gender', 'division', 'team_id'];
+  const headers = ['name', 'kana', 'gender', 'division', 'team_id'];
   const rows = players.map((p) => [
     p.name,
+    p.name_kana || '',
     p.gender === 'male' ? '男' : '女',
     String(p.division),
     p.team_id || '',
@@ -194,10 +201,10 @@ export function generatePlayersCSV(players: Player[]): string {
 }
 
 export function generateSampleCSV(): string {
-  return `name,gender,division,team_id,third_member
-山田太郎,男,1,team_a,田中次郎
-佐藤花子,女,1,team_a,
-鈴木一郎,男,2,team_b,
+  return `name,kana,gender,division,team_id,third_member
+山田太郎,やまだたろう,男,1,team_a,田中次郎
+佐藤花子,さとうはなこ,女,1,team_a,
+鈴木一郎,すずきいちろう,男,2,team_b,
 田中美咲,女,2,team_b,
 高橋健太,男,1,team_c,伊藤さくら`;
 }

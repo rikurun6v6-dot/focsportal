@@ -262,3 +262,125 @@ export function getMatchPoints(round: number, totalRounds: number): 15 | 21 {
   }
   return 15;
 }
+
+// ── 当日くじ用: 選手未定のペア枠 ──────────────────────────────────────────────
+//
+// ペアを当日の割り箸くじで決めるため、「人数だけ決まっていて誰が入るかは未定」の
+// 状態でトーナメント表・リーグ表を先に作れるようにする。
+//
+// 既存の生成ロジック（generateGroupStageMatches / generatePowerOf2Bracket）は
+// Player の配列を受け取る作りなので、ペア番号を id に埋め込んだダミーの Player を
+// 流し、Firestore に書く直前に「空の player_id + pair_no」へ変換する。
+
+const PAIR_SLOT_PREFIX = '__pairslot__';
+
+/** ペア番号を埋め込んだダミー選手の id を作る */
+function pairSlotId(pairNumber: number): string {
+  return `${PAIR_SLOT_PREFIX}${pairNumber}`;
+}
+
+/** ダミー選手の id ならペア番号を、そうでなければ null を返す */
+export function parsePairSlotId(id: string | undefined | null): number | null {
+  if (!id || !id.startsWith(PAIR_SLOT_PREFIX)) return null;
+  const n = parseInt(id.slice(PAIR_SLOT_PREFIX.length), 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** ダミー選手かどうか */
+export function isPairSlotId(id: string | undefined | null): boolean {
+  return parsePairSlotId(id) !== null;
+}
+
+/**
+ * 選手未定のペア枠を pairCount 組ぶん作る。
+ * 同じペアの2人は同じ id を持つ（＝同じペア番号）。
+ */
+export function generateNumberedPairs(
+  pairCount: number,
+  tournamentType: TournamentType,
+  division: Division
+): { pairs: [Player, Player][]; errors: string[] } {
+  const errors: string[] = [];
+  if (pairCount < 2) {
+    errors.push(`ペア数が不足しています（最低2組必要、現在${pairCount}組）`);
+    return { pairs: [], errors };
+  }
+
+  const gender: Gender = tournamentType.includes('womens') ? 'female' : 'male';
+  const makeSlot = (pairNumber: number): Player => ({
+    id: pairSlotId(pairNumber),
+    name: `${pairNumber}番ペア`,
+    gender,
+    division,
+    team_id: '',
+    is_active: true,
+  });
+
+  const pairs: [Player, Player][] = [];
+  for (let n = 1; n <= pairCount; n++) {
+    pairs.push([makeSlot(n), makeSlot(n)]);
+  }
+  return { pairs, errors };
+}
+
+/**
+ * 選手未定の「個人」枠を playerCount 人ぶん作る（シングルス用）。
+ * シングルスは1人=1枠なので、番号がそのまま出場順になる。
+ */
+export function generateNumberedSingles(
+  playerCount: number,
+  tournamentType: TournamentType,
+  division: Division
+): { players: Player[]; errors: string[] } {
+  const errors: string[] = [];
+  if (playerCount < 2) {
+    errors.push(`人数が不足しています（最低2名必要、現在${playerCount}名）`);
+    return { players: [], errors };
+  }
+
+  const gender: Gender = tournamentType.includes('womens') ? 'female' : 'male';
+  const players: Player[] = [];
+  for (let n = 1; n <= playerCount; n++) {
+    players.push({
+      id: pairSlotId(n),
+      name: `${n}番`,
+      gender,
+      division,
+      team_id: '',
+      is_active: true,
+    });
+  }
+  return { players, errors };
+}
+
+/**
+ * 試合データの player_id を「空文字 + pair_no」に変換する。
+ * ダミー選手が入っていないフィールドはそのまま返す。
+ */
+export function extractPairSlots(fields: {
+  player1_id?: string;
+  player2_id?: string;
+  player3_id?: string;
+  player4_id?: string;
+  player5_id?: string;
+  player6_id?: string;
+}): {
+  player1_id?: string; player2_id?: string; player3_id?: string;
+  player4_id?: string; player5_id?: string; player6_id?: string;
+  pair_no_p1?: number; pair_no_p2?: number;
+} {
+  const out = { ...fields };
+  // player1/3/5 が1組目、player2/4/6 が2組目
+  const side1 = parsePairSlotId(fields.player1_id) ?? parsePairSlotId(fields.player3_id);
+  const side2 = parsePairSlotId(fields.player2_id) ?? parsePairSlotId(fields.player4_id);
+
+  for (const key of ['player1_id', 'player2_id', 'player3_id', 'player4_id', 'player5_id', 'player6_id'] as const) {
+    if (isPairSlotId(out[key])) out[key] = '';
+  }
+
+  return {
+    ...out,
+    ...(side1 !== null ? { pair_no_p1: side1 } : {}),
+    ...(side2 !== null ? { pair_no_p2: side2 } : {}),
+  };
+}
