@@ -16,13 +16,15 @@ import { getTournamentConfigs, createTournamentConfig } from "@/lib/firestore-he
 import { generatePowerOf2Bracket, calculateBracketSize, calculateRounds, getRoundNameByNumber, getFinalMatchId } from "@/lib/tournament-logic";
 import { useCamp } from "@/context/CampContext"; // 👈 Contextから合宿情報を取得
 import { getDivisionOptions } from "@/lib/divisions";
-import { pointsForGroupMatch, pointsForKnockoutMatch, POINTS_STANDARD } from "@/lib/match-points";
+import { resolveGroupPoints, resolveKnockoutPoints, POINTS_STANDARD, type PointsOverride } from "@/lib/match-points";
 import type { Player, TournamentType, Division, TournamentFormat, TeamGroup } from "@/types";
 
 type TournamentGeneratorState = {
   tournamentType: TournamentType;
   division: Division;
   format: TournamentFormat;
+  /** 点数の明示指定。null = 大会の形から自動で決める */
+  pointsPerGame: PointsOverride;
   priority: number;
   groupCount: number;
   qualifiersPerGroup: number;
@@ -127,7 +129,8 @@ function generateGroupStageMatches(
   groupCount: number,
   campId: string,
   tournamentType: TournamentType,
-  division: Division
+  division: Division,
+  pointsOverride: PointsOverride
 ): MatchData[] {
   const matches: MatchData[] = [];
   const groupLabels: TeamGroup[] = ['A', 'B', 'C', 'D'];
@@ -181,8 +184,8 @@ function generateGroupStageMatches(
           winner_id: null,
           start_time: null,
           end_time: null,
-          // 4ペア以上のブロックは11点、3ペアのブロックは15点
-          points_per_match: pointsForGroupMatch(groups[g].pairs.length),
+          // 明示指定がなければ、4ペア以上のブロックは11点・3ペアのブロックは15点
+          points_per_match: resolveGroupPoints(pointsOverride, groups[g].pairs.length),
         });
       }
     }
@@ -197,6 +200,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
 
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkFormat, setBulkFormat] = useState<TournamentFormat>('group-stage-knockout');
+  const [bulkPoints, setBulkPoints] = useState<PointsOverride>(null);
   const [bulkGroupCount, setBulkGroupCount] = useState(4);
   const [bulkQualifiers, setBulkQualifiers] = useState(2);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -207,6 +211,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
     tournamentType: "mens_doubles",
     division,
     format: "single-elimination",
+    pointsPerGame: null,
     priority: 999,
     groupCount: 4,
     qualifiersPerGroup: 2,
@@ -272,7 +277,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
     console.log('[トーナメント生成] 設定:', {
       tournamentType: currentState.tournamentType,
       division,
-      format: currentState.format
+      format: currentState.format,
+      pointsPerGame: currentState.pointsPerGame ?? '自動'
     });
 
     if (!stateOverride) {
@@ -286,8 +292,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         event_type: getTournamentEventType(currentState.tournamentType),
         division: division,
         format: currentState.format,
-        // 点数は試合ごとに構造から決めるため、設定側は既定値のみ保持する
-        points_per_game: POINTS_STANDARD,
+        // 「自動」のときは既定値を保持する（試合ごとの実際の点数は points_per_match に入る）
+        points_per_game: currentState.pointsPerGame ?? POINTS_STANDARD,
         priority: currentState.priority,
         points_by_round: {},
         group_count: currentState.groupCount,
@@ -460,7 +466,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           groupCount,
           camp.id,
           currentState.tournamentType,
-          division
+          division,
+          currentState.pointsPerGame
         );
 
         // ===== 決勝トーナメント枠を生成（2^k >= N アルゴリズム）=====
@@ -507,7 +514,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // 最初の byeCount 枠が上位シードのBYE。残りは予選後に選手が入るプレースホルダー。
         for (let pos = 1; pos <= round1Total; pos++) {
           const isBye = pos <= byeCount;
-          const pointsForRound = pointsForKnockoutMatch(1, totalRounds);
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, 1, totalRounds);
           const nextPos = Math.ceil(pos / 2);
           const nextMatchNum = totalRounds >= 2 ? matchNumMap.get(`2_${nextPos}`) : undefined;
           const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
@@ -543,7 +550,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // --- 2回戦以降（準々決勝・準決勝・決勝）---
         for (let round = 2; round <= totalRounds; round++) {
           const matchesInRound = bracketSize / Math.pow(2, round);
-          const pointsForRound = pointsForKnockoutMatch(round, totalRounds);
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, round, totalRounds);
           const isLastRound = round === totalRounds;
 
           for (let pos = 1; pos <= matchesInRound; pos++) {
@@ -582,7 +589,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // subtitle: '3位決定戦' を付けることでVisualBracketのフィルターが正しく除外し、
         // 決勝は round=totalRounds に唯一の1試合として表示される
         if (has3rdPlace) {
-          const pointsFor3rd = pointsForKnockoutMatch(totalRounds, totalRounds);
+          const pointsFor3rd = resolveKnockoutPoints(currentState.pointsPerGame, totalRounds, totalRounds);
           knockoutMatches.push({
             campId: camp.id,
             tournament_type: currentState.tournamentType,
@@ -702,7 +709,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
 
         // 各スロットを試合データに変換してFirestoreに保存
         for (const slot of bracket.slots) {
-          const pointsForRound = pointsForKnockoutMatch(slot.roundNumber, bracket.totalRounds);
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, slot.roundNumber, bracket.totalRounds);
 
           // ドキュメントIDの強制固定: getFinalMatchId()を使用
           const matchDocId = getFinalMatchId(
@@ -877,7 +884,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             end_time: null,
             created_at: serverTimestamp(),
             updated_at: serverTimestamp(),
-            points_per_match: pointsForKnockoutMatch(bracket.totalRounds, bracket.totalRounds),
+            points_per_match: resolveKnockoutPoints(currentState.pointsPerGame, bracket.totalRounds, bracket.totalRounds),
             subtitle: '3位決定戦',
           });
           batchCount++;
@@ -1062,6 +1069,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         await handleGenerate(division, {
           tournamentType: type,
           format: bulkFormat,
+          pointsPerGame: bulkPoints,
           groupCount: bulkGroupCount,
           qualifiersPerGroup: bulkQualifiers,
         });
@@ -1205,9 +1213,22 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
                 <Settings2 className="w-4 h-4" />
                 点数
               </label>
-              <p className="text-xs text-slate-500 leading-relaxed border border-slate-200 rounded-md px-3 py-2 bg-slate-50">
-                大会の形から自動で決まります。<br />
-                4人ブロックの総当り 11点 / 3人ブロックと準々決勝より前 15点 / 準決勝・決勝・3位決定戦 21点
+              <Select
+                value={state.pointsPerGame === null ? 'auto' : String(state.pointsPerGame)}
+                onValueChange={(v) => setState(prev => ({ ...prev, pointsPerGame: v === 'auto' ? null : parseInt(v) }))}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自動（推奨）</SelectItem>
+                  <SelectItem value="11">全試合 11点</SelectItem>
+                  <SelectItem value="15">全試合 15点</SelectItem>
+                  <SelectItem value="21">全試合 21点</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                自動のとき: 4人ブロックの総当り 11点 / 3人ブロックと準々決勝より前 15点 / 準決勝・決勝・3位決定戦 21点
               </p>
             </div>
           </div>
@@ -1264,6 +1285,10 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             <span className="text-xs text-slate-500">×</span>
             <Badge variant="outline" className="text-xs">
               {getFormatName(state.format)}
+            </Badge>
+            <span className="text-xs text-slate-500">×</span>
+            <Badge variant="secondary" className="text-xs">
+              {state.pointsPerGame === null ? '点数=自動' : `全試合 ${state.pointsPerGame}点`}
             </Badge>
           </div>
 
@@ -1368,6 +1393,23 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
                 <SelectContent>
                   <SelectItem value="single-elimination">シングルエリミネーション</SelectItem>
                   <SelectItem value="group-stage-knockout">予選リーグ + 決勝トーナメント</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">点数</label>
+              <Select
+                value={bulkPoints === null ? 'auto' : String(bulkPoints)}
+                onValueChange={v => setBulkPoints(v === 'auto' ? null : parseInt(v))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自動（推奨）</SelectItem>
+                  <SelectItem value="11">全試合 11点</SelectItem>
+                  <SelectItem value="15">全試合 15点</SelectItem>
+                  <SelectItem value="21">全試合 21点</SelectItem>
                 </SelectContent>
               </Select>
             </div>

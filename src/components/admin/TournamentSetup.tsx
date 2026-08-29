@@ -17,7 +17,7 @@ import {
 import type { TournamentConfig, EventType, Division, TournamentFormat } from '@/types';
 import { Trash2, Save, ArrowUp, ArrowDown } from 'lucide-react';
 import { useCamp } from '@/context/CampContext';
-import { POINTS_STANDARD } from '@/lib/match-points';
+import { POINTS_STANDARD, type PointsOverride } from '@/lib/match-points';
 import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
@@ -32,6 +32,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
     event_type: 'MD' as EventType,
     division: 1 as Division,
     format: 'double-elimination' as TournamentFormat,
+    points_per_game: null as PointsOverride,
     group_count: 4,
     qualifiers_per_group: 2,
     priority: 999 as number,
@@ -60,8 +61,8 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
     try {
       const configToSave = {
         ...newConfig,
-        // 点数は試合ごとに大会の形から決めるため、設定側は既定値のみ保持する
-        points_per_game: POINTS_STANDARD,
+        // 「自動」のときは既定値を保持する（実際の点数は試合ごとに points_per_match に入る）
+        points_per_game: newConfig.points_per_game ?? POINTS_STANDARD,
         points_by_round: {},
         campId: camp.id,
       };
@@ -71,6 +72,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
         event_type: 'MD',
         division: 1,
         format: 'double-elimination',
+        points_per_game: null,
         group_count: 4,
         qualifiers_per_group: 2,
         priority: 999,
@@ -218,7 +220,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
       <Card>
         <CardHeader>
           <CardTitle className="text-sm md:text-base">新規トーナメント設定</CardTitle>
-          <CardDescription>種目・部門・トーナメント形式を設定（点数は大会の形から自動で決まります）</CardDescription>
+          <CardDescription>種目・部門・トーナメント形式・点数を設定</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -327,6 +329,28 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
             )}
 
             <div>
+              <label className="text-xs font-medium mb-1 block">点数</label>
+              <select
+                value={newConfig.points_per_game === null ? 'auto' : String(newConfig.points_per_game)}
+                onChange={(e) => setNewConfig({
+                  ...newConfig,
+                  points_per_game: e.target.value === 'auto' ? null : parseInt(e.target.value),
+                })}
+                className="h-8 text-xs md:text-sm w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white text-slate-900 px-3"
+                style={{ backgroundColor: 'white', color: 'black' }}
+                disabled={readOnly}
+              >
+                <option value="auto">自動（推奨）</option>
+                <option value="11">全試合 11点</option>
+                <option value="15">全試合 15点</option>
+                <option value="21">全試合 21点</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                自動: 4人ブロック11点 / 3人ブロック・準々決勝より前15点 / 準決勝以降21点
+              </p>
+            </div>
+
+            <div>
               <label className="text-xs font-medium mb-1 block">進行順位（優先度）</label>
               <select
                 value={newConfig.priority}
@@ -398,6 +422,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
                         <Badge className="bg-indigo-100 text-indigo-800 font-bold">{index + 1}</Badge>
                         <Badge>{getEventTypeName(config.event_type)}</Badge>
                         <Badge variant="outline">{config.division}部</Badge>
+                        <Badge variant="secondary">{config.points_per_game}点</Badge>
                         <Badge className="bg-purple-100 text-purple-800">優先度: {config.priority || 999}</Badge>
                       </div>
                       <p className="text-xs text-gray-600 dark:text-gray-400">

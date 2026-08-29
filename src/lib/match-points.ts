@@ -24,10 +24,30 @@ export function pointsForGroupMatch(groupSize: number): number {
 }
 
 /**
+ * 運営が点数を明示指定した場合はそれを、「自動」の場合は null を返すための型。
+ * null = 大会の形から自動で決める。
+ */
+export type PointsOverride = number | null;
+
+/**
  * 決勝トーナメントの点数。
  * 準決勝（totalRounds - 1）以降は21点、それより前は15点。
  * 3位決定戦は決勝と同じラウンド番号で作られるため、同じく21点になる。
  */
 export function pointsForKnockoutMatch(round: number, totalRounds: number): number {
   return round >= totalRounds - 1 ? POINTS_FINALS : POINTS_STANDARD;
+}
+
+/** 予選ブロック: 明示指定があればそれを、なければブロック人数から決める */
+export function resolveGroupPoints(override: PointsOverride, groupSize: number): number {
+  return override ?? pointsForGroupMatch(groupSize);
+}
+
+/** 決勝T: 明示指定があればそれを、なければラウンドから決める */
+export function resolveKnockoutPoints(
+  override: PointsOverride,
+  round: number,
+  totalRounds: number
+): number {
+  return override ?? pointsForKnockoutMatch(round, totalRounds);
 }
