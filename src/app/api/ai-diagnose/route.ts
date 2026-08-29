@@ -8,12 +8,12 @@ export interface AIDiagnosePayload {
   totalCourts: number;
   waitingTotal: number;
   assignable: number;
-  div1Progress: number;
-  div2Progress: number;
-  div1Comp: number;
-  div1Total: number;
-  div2Comp: number;
-  div2Total: number;
+  divisions: {
+    division: number;
+    completed: number;
+    total: number;
+    progress: number;
+  }[];
   blockedMatches: {
     matchNumber: number;
     label: string;
@@ -91,9 +91,10 @@ function buildContext(d: AIDiagnosePayload): string {
     `- 待機中の試合数: ${d.waitingTotal}試合`,
     `- 即座に割り当て可能な試合: ${d.assignable}試合`,
     "",
-    "## 1部/2部 進行状況",
-    `- 1部: ${d.div1Comp}/${d.div1Total}完了 (${Math.round(d.div1Progress * 100)}%)`,
-    `- 2部: ${d.div2Comp}/${d.div2Total}完了 (${Math.round(d.div2Progress * 100)}%)`,
+    "## 部門別 進行状況",
+    ...d.divisions.map(
+      (v) => `- ${v.division}部: ${v.completed}/${v.total}完了 (${Math.round(v.progress * 100)}%)`
+    ),
     "",
   ];
 

@@ -683,3 +683,42 @@
 - 注意点 / 引き継ぎ事項:
   - タブの内部キーは `live` / `control` のまま。今後コードを読むときは「live = コート状況」「control = 種目設定」と読み替えること。名前を揃えたい場合は `activeTab` の既定値・`PINNED_ITEMS`・`TabsContent` の3箇所を同時に変える必要がある。
 - オーナー承認: rikurun6v6-dot / 2026-07-23（オーナー本人の指示によりマージ・デプロイ）
+
+## 2026-08-29 — [tournament] 案B（3部制・男女別ダブルスのみブロック戦）で運営できるようにする
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: feat/plan-b-3divisions / #（PR作成後）
+- 変更内容:
+  **① 3部以上の部門に対応（`lib/divisions.ts` 新規）**
+  - 部門の扱いを `DEFAULT_DIVISIONS`（既定 1〜3部）/ `isValidDivision` / `getDivisionsInUse` / `getDivisionOptions` に集約。
+  - `PlayerManager`: レベル選択が 1部・2部の2択固定で、**3部の選手を画面から登録できなかった**。選択肢を可変にした（CSV 取り込みは元から 1〜99 を通していた）。種目別の部の例外（`division_overrides`）の判定 `(v === 1 || v === 2)` も `isValidDivision` に置き換え。
+  - `GroupRankingManager`: 部門選択が2択固定で、**3部はブロック戦をやっても決勝Tに進出させる手段がなかった**（「全グループ1位のみ決勝Tへ」はこの画面にしかない）。その種目に実際に試合がある部門を出すようにした。
+  - `TournamentGenerator`: `division1State` / `division2State` の2つしか状態を持たず、`division === 1 ? ... : ...` で分岐していたため、3部を渡すと2部の状態を壊していた。`Record<number, TournamentGeneratorState>` に変更し、部門カードと一括生成の一覧を `divisionOptions` から描画する。カードの配色は4色を循環。
+  - `TournamentSetup` / `PreliminaryGroupEditor` / `VisualSeedingEditor` / `SafetyTab`: 同じ2択固定を可変に。
+  **② 部門バランスの計算を部門数に依存しない形に**
+  - `matchScoring.buildScoreContext`: 1部/2部の進行率2値で `preferredDivision` を決めていたのを、全部門の進行率から「最も遅れている部」と「最速との差」を出す方式に変更。`ScoreContext.preferredDivision` の型を `1 | 2` → `Division`。
+  - `dispatcher.autoDispatchAll`: コート別の部優先が「先頭コート=1部・末尾コート=2部・中間=試合数の多い部」だったため、**3部がどのコートの優先にもならなかった**。待機試合が多い部の順に並べ、コート番号順に総当たりで配る方式に変更（隣接コートが別の部になる）。2部門のときの挙動も `1,2,1,2…` に変わる。
+  - `AdvancedAnalytics` / `api/ai-diagnose`: `div1*` / `div2*` の固定フィールドを `divisions[]` のリストに変更。画面の見出しも「1部 / 2部 進行バランス」→「部門別 進行バランス」。
+  **③ 3位決定戦の生成を修正**
+  - 予選リーグ+決勝Tで `has3rdPlace = totalRounds >= 2` としていたため、**3ペア通過（4枠ブラケット + BYE1）のとき準決勝が実質1試合しかないのに3位決定戦が作られ、敗者が1組しか出ず埋まらなかった**。準決勝が2試合とも実試合になる場合のみ作るよう修正。
+  - 通常トーナメント（シングル/ダブルエリミネーション）には3位決定戦が生成されず、毎回手作業だった。空のスロットを自動生成するようにした（準決勝終了後に既存の「3位決定戦を作成」で敗者を流し込む運用は同じ）。
+  **④ 点数を「自動」既定にする（`lib/match-points.ts` 新規）**
+  - 種目設定・トーナメント生成の点数欄に **「自動（推奨）」** を追加し、既定値にした。「ラウンド別点数設定（詳細）」は削除。
+  - ブロックの人数で点数を変える運用（4人ブロックだけ11点）が設定では表現できなかったため、自動時は構造から導出する。全試合を同じ点数にしたい場合は 11/15/21 を選べば上書きできる。
+    - 4人以上のブロックの総当り → 11点 / 3人ブロックの総当り → 15点
+    - 決勝T 準々決勝より前 → 15点 / 準決勝・決勝・3位決定戦 → 21点
+  - `eta.getMatchPoints`: 試合の `points_per_match` を最優先で見るようにした（従来は `tournament_config_id` 経由で TournamentConfig を引いていたが、生成側が `tournament_config_id` を設定していないため実際には常にフォールバックの旧ロジックに落ちていた）。
+- 変更理由: 2026年夏合宿のバド大会を「案B（3部制・男女別ダブルス1〜3部のみブロック戦、他種目は通常トーナメント）」で実施するため。現状のコードは 1部/2部 の2部門を前提に組まれており、3部の選手登録すらできなかった。
+- 影響範囲:
+  - 新規: `src/lib/divisions.ts`, `src/lib/match-points.ts`
+  - 変更: `PlayerManager` `GroupRankingManager` `TournamentGenerator` `TournamentSetup` `PreliminaryGroupEditor` `VisualSeedingEditor` `SafetyTab` `AdvancedAnalytics` `api/ai-diagnose/route.ts` `lib/matchScoring.ts` `lib/dispatcher.ts` `lib/eta.ts`
+  - **データ構造の変更なし。** `TournamentConfig.points_per_game` / `points_by_round` はスキーマを残したまま既定値（15 / {}）を書き込む。既存データはそのまま読める。
+  - `npm run build` 成功・`tsc --noEmit` 通過。
+  - 検算: 自動判定した点数と試合数が、提案資料「バド大会 形式決定：案A vs 案B」の案Bの内訳（男子1部11 / 男子2部16 / 男子3部14 / 女子1部4 / 女子2部10 / 女子3部13 / 混合18・23 / シングルス18、15点77・11点24・21点26・計127試合）と完全に一致することを確認済み。
+- 注意点 / 引き継ぎ事項:
+  - **部門の既定は 1〜3部**（`DEFAULT_DIVISIONS`）。4部以上を使う場合、`PlayerManager` と `GroupRankingManager` は実データから拾うので自動で出るが、`PreliminaryGroupEditor` / `VisualSeedingEditor` / `SafetyTab` / `TournamentSetup` のプルダウンは `DEFAULT_DIVISIONS` を見ているので、この定数を増やすこと。
+  - **コート別の部優先の配り方を変えた**ため、2部門の大会でもコートへの部の割り当て順が変わる。進行の偏りが以前と違って見える場合はここが原因。
+  - **点数は「自動」が既定。** 全試合を同じ点数にしたいときは種目設定・生成画面で 11/15/21 を選ぶ。ラウンドごとに細かく変えたい場合は `src/lib/match-points.ts` の定数と関数を直すこと。試合ごとの値は生成時に `matches.points_per_match` に焼き込まれるので、生成済みの試合は再生成しないと変わらない。
+  - 何点マッチかは `matches.points_per_match` に必ず入るので、コート状況（`ActiveMatchesView`）と結果入力（`MatchResultInput`）に「N点マッチ」として表示される。試合アナウンス時のコールはこれを見る。
+  - 女子1部（4ペア）は案Bでも例外でブロック戦をしない。生成時に **形式=シングルエリミネーション** を選ぶこと。ブロックが1つしか作れず決勝Tが成立しないため。
+  - 3位決定戦は空のスロットとして生成されるだけで、選手は自動で入らない。準決勝が両方終わってから管理画面の「3位決定戦を作成」を押す運用は従来どおり。
+- オーナー承認: rikurun6v6-dot / 2026-08-29（オーナー本人の指示によりマージ・デプロイ）

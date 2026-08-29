@@ -1,8 +1,9 @@
-import type { Match, Court, Config, Camp, Player, TournamentType } from '@/types';
+import type { Match, Court, Config, Camp, Player, TournamentType, Division } from '@/types';
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
 import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase } from './matchScoring';
+import { getDivisionsInUse } from './divisions';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
   const allCourts = await getAllDocuments<Court>('courts');
@@ -31,22 +32,30 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   // 団体戦マルチコート: このループで既に確保済みのコートIDを追跡
   const claimedCourtIds = new Set<string>();
 
-  // 全体の待機試合数で「試合数の多い部」を判定（中間コートに割り当てる dominant division）
-  const div1Total = waitingMatches.filter(m => m.division === 1).length;
-  const div2Total = waitingMatches.filter(m => m.division === 2).length;
-  const dominant: 1 | 2 = div2Total > div1Total ? 2 : 1;
+  // 待機試合が多い部の順に並べる（同数なら部の番号順）
+  // 以前は1部/2部の2択で、先頭コート=1部・末尾コート=2部・中間=多い部としていたため、
+  // 3部以上の大会では3部がどのコートの優先にもならなかった。
+  const waitingCountByDivision = new Map<Division, number>();
+  for (const m of waitingMatches) {
+    if (m.division === undefined) continue;
+    waitingCountByDivision.set(m.division, (waitingCountByDivision.get(m.division) ?? 0) + 1);
+  }
+  const orderedDivisions = getDivisionsInUse(waitingMatches, []).sort((a, b) => {
+    const diff = (waitingCountByDivision.get(b) ?? 0) - (waitingCountByDivision.get(a) ?? 0);
+    return diff !== 0 ? diff : a - b;
+  });
 
-  // コートに部優先を割り当て: 先頭=1部、末尾=2部、中間=試合数の多い部（1,x,2）
-  const courtDivisionPreference = new Map<string, 1 | 2>();
-  for (const gender of ['male', 'female', null] as const) {
-    const group = emptyCourts
-      .filter(c => (gender === null ? !c.preferred_gender : c.preferred_gender === gender))
-      .sort((a, b) => a.number - b.number);
-    if (group.length === 0) continue;
-    for (let i = 0; i < group.length; i++) {
-      if (i === 0)                     courtDivisionPreference.set(group[i].id, 1);
-      else if (i === group.length - 1) courtDivisionPreference.set(group[i].id, 2);
-      else                             courtDivisionPreference.set(group[i].id, dominant);
+  // コートに部優先を割り当て: 並べた部をコート番号順に総当たりで配る（隣接コートが別の部になる）
+  const courtDivisionPreference = new Map<string, Division>();
+  if (orderedDivisions.length > 0) {
+    for (const gender of ['male', 'female', null] as const) {
+      const group = emptyCourts
+        .filter(c => (gender === null ? !c.preferred_gender : c.preferred_gender === gender))
+        .sort((a, b) => a.number - b.number);
+      if (group.length === 0) continue;
+      for (let i = 0; i < group.length; i++) {
+        courtDivisionPreference.set(group[i].id, orderedDivisions[i % orderedDivisions.length]);
+      }
     }
   }
 
@@ -91,7 +100,7 @@ export async function dispatchToEmptyCourt(
   waitingMatches: Match[],
   defaultRestMinutes: number = 10,
   assignedMatchIds: Set<string> = new Set(),
-  divisionPreference?: 1 | 2
+  divisionPreference?: Division
 ): Promise<Match | null> {
   const now = Date.now();
   // 同一ループ内で既に割り当て済みの試合を除外（二重割り当て防止の第二防衛線）
