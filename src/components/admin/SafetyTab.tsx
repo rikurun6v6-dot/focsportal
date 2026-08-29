@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { RotateCcw, Flag, Tag, UserX, Trash2, Wrench } from 'lucide-react';
-import { resetMatchResult, updateDocument, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory, cleanupEarlyPropagations } from '@/lib/firestore-helpers';
+import { resetMatchResult, getAllDocuments, propagateByePlayerChange, deleteMatchesByCategory, cleanupEarlyPropagations } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
+import MatchPicker from './MatchPicker';
 import type { Match, TournamentType } from '@/types';
 import { where, Timestamp, QueryConstraint } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -60,13 +61,13 @@ export default function SafetyTab() {
    */
   const handleUndo = async () => {
     if (!undoMatchId.trim()) {
-      alert('試合IDを入力してください');
+      toastError('試合を選んでください', '上の欄で選手名から試合を選ぶと取り消せます');
       return;
     }
 
     const confirmed = await confirm({
       title: '試合結果の取り消し',
-      message: `試合 ${undoMatchId} の結果を取り消しますか？\n\n次の試合への進出も取り消されます。`,
+      message: `この試合の結果を取り消しますか？\n\n次の試合への進出も取り消されます。`,
       confirmText: '取り消す',
       cancelText: 'キャンセル',
       type: 'warning',
@@ -78,14 +79,14 @@ export default function SafetyTab() {
     try {
       const success = await resetMatchResult(undoMatchId);
       if (success) {
-        alert('試合結果を取り消しました');
+        toastSuccess('試合結果を取り消しました');
         setUndoMatchId('');
       } else {
-        alert('試合が見つかりませんでした');
+        toastError('この試合が見つかりませんでした', 'すでに削除されたか、別の合宿の試合の可能性があります。トーナメント表で確認してください');
       }
     } catch (error) {
       console.error('Undo error:', error);
-      alert('エラーが発生しました');
+      toastError('取り消しに失敗しました', '通信を確認して、もう一度お試しください。結果はまだ取り消されていません');
     }
     setUndoLoading(false);
   };
@@ -95,13 +96,13 @@ export default function SafetyTab() {
    */
   const handleWalkover = async () => {
     if (!walkoverMatchId.trim()) {
-      alert('試合IDを入力してください');
+      toastError('試合を選んでください', '上の欄で選手名から試合を選んでください');
       return;
     }
 
     const confirmed = await confirm({
       title: '不戦勝の設定',
-      message: `試合 ${walkoverMatchId} でPlayer ${walkoverWinner}を不戦勝とします。\n\nこの操作は取り消せません。`,
+      message: `${walkoverWinner === '1' ? '上側' : '下側'}のチームを不戦勝とします。\n\nこの操作は取り消せません。`,
       confirmText: '設定',
       cancelText: 'キャンセル',
       type: 'warning',
@@ -117,7 +118,7 @@ export default function SafetyTab() {
       ]);
 
       if (matches.length === 0) {
-        alert('試合が見つかりませんでした');
+        toastError('この試合が見つかりませんでした', 'トーナメント表で選び直してください');
         setWalkoverLoading(false);
         return;
       }
@@ -169,11 +170,11 @@ export default function SafetyTab() {
         await updateDoc(nextMatchRef, nextMatchUpdate);
       }
 
-      alert('不戦勝を設定しました');
+      toastSuccess('不戦勝を設定しました');
       setWalkoverMatchId('');
     } catch (error) {
       console.error('Walkover error:', error);
-      alert('エラーが発生しました');
+      toastError('不戦勝の設定に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setWalkoverLoading(false);
   };
@@ -183,18 +184,18 @@ export default function SafetyTab() {
    */
   const handleSubtitle = async () => {
     if (!subtitleMatchId.trim()) {
-      alert('試合IDを入力してください');
+      toastError('試合を選んでください', '上の欄で選手名から試合を選んでください');
       return;
     }
 
     if (!subtitleText.trim()) {
-      alert('補足情報を入力してください');
+      toastError('補足情報を入力してください', '例:「敗者復活戦」「1部決勝」など');
       return;
     }
 
     const confirmed = await confirm({
       title: '補足情報の設定',
-      message: `試合 ${subtitleMatchId} に「${subtitleText}」を表示します。`,
+      message: `この試合に「${subtitleText}」を表示します。`,
       confirmText: '設定',
       cancelText: 'キャンセル',
       type: 'info',
@@ -210,12 +211,12 @@ export default function SafetyTab() {
         updated_at: Timestamp.now(),
       });
 
-      alert('補足情報を設定しました');
+      toastSuccess('補足情報を設定しました');
       setSubtitleMatchId('');
       setSubtitleText('');
     } catch (error) {
       console.error('Subtitle error:', error);
-      alert('エラーが発生しました（試合が存在しない可能性があります）');
+      toastError('補足情報の設定に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setSubtitleLoading(false);
   };
@@ -225,13 +226,13 @@ export default function SafetyTab() {
    */
   const handleAbsence = async () => {
     if (!absenceMatchId.trim()) {
-      alert('試合IDを入力してください');
+      toastError('試合を選んでください', '上の欄で選手名から試合を選んでください');
       return;
     }
 
     const confirmed = await confirm({
       title: '欠場処理',
-      message: `試合 ${absenceMatchId} のPlayer ${absencePosition}を欠場とします。\n\n対戦相手が自動的に次ラウンドへ進出します。\n\n※ この操作は取り消しできません。`,
+      message: `${absencePosition === '1' ? '上側' : '下側'}のチームを欠場とします。\n\n対戦相手が自動的に次ラウンドへ進出します。\n\n※ この操作は取り消しできません。`,
       confirmText: '欠場処理を実行',
       cancelText: 'キャンセル',
       type: 'warning',
@@ -245,7 +246,7 @@ export default function SafetyTab() {
         where('id', '==', absenceMatchId),
       ]);
       if (matchList.length === 0) {
-        alert('試合が見つかりませんでした');
+        toastError('この試合が見つかりませんでした', 'トーナメント表で選び直してください');
         setAbsenceLoading(false);
         return;
       }
@@ -253,7 +254,7 @@ export default function SafetyTab() {
 
       // 結果済み試合は対象外
       if (match.status === 'completed') {
-        alert('この試合はすでに結果が入力されています。Undoで取り消してから再度お試しください。');
+        toastError('この試合はすでに結果が入っています', '「Undo（結果取り消し）」で取り消してから、もう一度お試しください');
         setAbsenceLoading(false);
         return;
       }
@@ -261,7 +262,7 @@ export default function SafetyTab() {
       const absentPos = Number(absencePosition) as 1 | 2;
       const winnerId = absentPos === 1 ? match.player2_id : match.player1_id;
       if (!winnerId) {
-        alert('対戦相手が登録されていません');
+        toastError('対戦相手が登録されていません', '相手のいない試合には欠場処理を使えません');
         setAbsenceLoading(false);
         return;
       }
@@ -310,11 +311,11 @@ export default function SafetyTab() {
       const allMatchesUpdated = allMatches.map(m => m.id === absenceMatchId ? updatedMatch : m);
       await propagateByePlayerChange(updatedMatch, allMatchesUpdated);
 
-      alert('欠場処理が完了しました。対戦相手が次ラウンドへ進出しました。');
+      toastSuccess('欠場処理が完了しました', '対戦相手が次ラウンドへ進出しました');
       setAbsenceMatchId('');
     } catch (error) {
       console.error('Absence error:', error);
-      alert('エラーが発生しました');
+      toastError('欠場処理に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setAbsenceLoading(false);
   };
@@ -324,7 +325,7 @@ export default function SafetyTab() {
    */
   const handleDeleteCategory = async () => {
     if (!camp?.id) {
-      alert('合宿が選択されていません');
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
       return;
     }
 
@@ -353,13 +354,13 @@ export default function SafetyTab() {
       const divisionNum = deleteDivision === 'all' ? null : Number(deleteDivision);
       const count = await deleteMatchesByCategory(camp.id, deleteTournamentType, divisionNum);
       if (count === 0) {
-        alert('該当する試合データが見つかりませんでした');
+        toastInfo('削除する試合はありませんでした', `${typeLabel} ${divisionLabel} の試合データは見つかりませんでした`);
       } else {
-        alert(`${typeLabel} ${divisionLabel} の試合データ ${count} 件を削除しました`);
+        toastSuccess('削除しました', `${typeLabel} ${divisionLabel} の試合データ ${count} 件`);
       }
     } catch (error) {
       console.error('Delete category error:', error);
-      alert('エラーが発生しました');
+      toastError('削除に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setDeleteLoading(false);
   };
@@ -369,7 +370,7 @@ export default function SafetyTab() {
    */
   const handleCleanup = async () => {
     if (!camp?.id) {
-      alert('合宿が選択されていません');
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
       return;
     }
 
@@ -398,13 +399,13 @@ export default function SafetyTab() {
       const divisionNum = cleanupDivision === 'all' ? null : Number(cleanupDivision);
       const count = await cleanupEarlyPropagations(camp.id, cleanupTournamentType, divisionNum);
       if (count === 0) {
-        alert('修復が必要な枠は見つかりませんでした');
+        toastInfo('修復は不要でした', `${typeLabel} ${divisionLabel} に、直すべき枠はありませんでした`);
       } else {
-        alert(`${typeLabel} ${divisionLabel}: ${count} 枠を修復しました`);
+        toastSuccess('修復しました', `${typeLabel} ${divisionLabel}: ${count} 枠`);
       }
     } catch (error) {
       console.error('Cleanup error:', error);
-      alert('エラーが発生しました');
+      toastError('修復に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setCleanupLoading(false);
   };
@@ -426,17 +427,13 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">対象の試合</label>
+              <MatchPicker
                 value={undoMatchId}
-                onChange={(e) => setUndoMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setUndoMatchId}
+                statuses={['completed']}
+                placeholder="選手名で終わった試合を探す"
               />
-              <p className="text-xs text-slate-500 mt-1">
-                ※ トーナメント表で確認できます
-              </p>
             </div>
             <Button
               onClick={handleUndo}
@@ -461,13 +458,11 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">対象の試合</label>
+              <MatchPicker
                 value={walkoverMatchId}
-                onChange={(e) => setWalkoverMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setWalkoverMatchId}
+                placeholder="選手名で試合を探す"
               />
             </div>
             <div>
@@ -505,13 +500,11 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">対象の試合</label>
+              <MatchPicker
                 value={subtitleMatchId}
-                onChange={(e) => setSubtitleMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setSubtitleMatchId}
+                placeholder="選手名で試合を探す"
               />
             </div>
             <div>
@@ -552,14 +545,16 @@ export default function SafetyTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <label className="text-xs font-medium mb-1 block text-slate-700">試合ID</label>
-              <Input
-                type="text"
-                placeholder="例: camp123_MD_1_1_1"
+              <label className="text-xs font-medium mb-1 block text-slate-700">対象の試合</label>
+              <MatchPicker
                 value={absenceMatchId}
-                onChange={(e) => setAbsenceMatchId(e.target.value)}
-                className="h-8 text-sm"
+                onChange={setAbsenceMatchId}
+                statuses={['waiting', 'calling', 'playing']}
+                placeholder="選手名で未着手の試合を探す"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                選手ひとりを丸ごと棄権にする場合は、「選手」タブの棄権ボタンを使うとまとめて処理されます
+              </p>
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block text-slate-700">欠場するペア</label>

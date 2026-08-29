@@ -25,10 +25,11 @@ import ChatWindow from "@/components/ChatWindow";
 import ChatNotification from "@/components/ChatNotification";
 import VisualBracket from "@/components/admin/VisualBracket";
 import TeamStandingsTable from "@/components/TeamStandingsTable";
-import { getSettings, subscribeToMessages, savePushSubscription, subscribeToTeamTournamentState } from "@/lib/firestore-helpers";
+import { getSettings, subscribeToMessages, savePushSubscription, subscribeToTeamTournamentState, getDocument } from "@/lib/firestore-helpers";
 import { rankTeamGroup, normalizeTeamRankOrder, type TeamRankCriterion } from "@/lib/tournament-logic";
 import type { TeamEncounter, TeamRankEntry } from "@/types";
 import type { Settings, Message } from "@/types";
+import { toastError } from '@/lib/toast';
 
 const isPlayerInMatch = (match: Match, playerId: string) => {
     return (
@@ -306,7 +307,7 @@ export default function UserDashboard() {
     const handleNotifToggle = async () => {
         if (!('Notification' in window)) return;
         if (notifPermission === 'denied') {
-            alert('ブラウザの設定から通知を許可してください');
+            toastError('通知がブロックされています', 'ブラウザの設定から、このサイトの通知を許可してください');
             return;
         }
         if (notifPermission === 'default') {
@@ -391,6 +392,28 @@ export default function UserDashboard() {
             setMyPlayer(player);
             setManualCamp(campData);
             setCampStatus(campData.status ?? null);
+
+            // 保存された選手が今も居るかを確かめる。
+            // 確かめないと、削除された選手や棄権した選手の画面がそのまま残り、
+            // 「まだ自分の試合がある」ように見えてしまう。
+            // ついでに最新の氏名で上書きするので、名前を直した場合も追従する。
+            getDocument<Player>('players', player.id)
+                .then((fresh) => {
+                    if (!fresh) {
+                        localStorage.removeItem('focs_user');
+                        setMyPlayer(null);
+                        toastError('登録が見つかりませんでした', '名前を選び直してください');
+                        return;
+                    }
+                    if (fresh.is_active === false) {
+                        localStorage.removeItem('focs_user');
+                        setMyPlayer(null);
+                        toastError('棄権として登録されています', '間違いであれば運営に伝えてください');
+                        return;
+                    }
+                    setMyPlayer(fresh);
+                })
+                .catch(() => { /* 通信できないときは保存された内容のまま表示する */ });
 
             // 初回アクセス時のみガイドを表示
             if (!guideCompleted) {

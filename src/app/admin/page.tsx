@@ -16,6 +16,7 @@ import { collection, query, terminate, clearIndexedDbPersistence, where, doc, se
 import TournamentGenerator from "@/components/admin/TournamentGenerator";
 import AutoDispatchEngine from "@/components/AutoDispatchEngine";
 import MatchResultInput from "@/components/admin/MatchResultInput";
+import InactivePlayerWarning from "@/components/admin/InactivePlayerWarning";
 import ResultsTab from "@/components/admin/ResultsTab";
 import PlayerManager from "@/components/admin/PlayerManager";
 import AdminGuard from "@/components/admin/AdminGuard";
@@ -244,7 +245,7 @@ export default function AdminDashboard() {
     setInitializing(true);
     const success = await initializeCourts(camp.court_count, camp.id);
     if (success) toastSuccess(`コートを初期化しました（${camp.court_count}面）`);
-    else toastError("エラーが発生しました");
+    else toastError("コートの初期化に失敗しました", "通信を確認して、もう一度お試しください");
     setInitializing(false);
   };
 
@@ -443,7 +444,7 @@ export default function AdminDashboard() {
       setAutoDispatchEnabled(newValue);
       toastSuccess(newValue ? "Auto-Dispatchを有効にしました" : "Auto-Dispatchを無効にしました");
     } catch (error) {
-      toastError("エラーが発生しました");
+      toastError("自動割り当ての切り替えに失敗しました", "通信を確認して、もう一度お試しください");
     }
   };
 
@@ -491,7 +492,7 @@ export default function AdminDashboard() {
           : '全コートの割り当てを再開しました'
       );
     } catch (error) {
-      toastError('エラーが発生しました');
+      toastError('割り当て停止の切り替えに失敗しました', '通信を確認して、もう一度お試しください');
     }
   };
 
@@ -513,7 +514,7 @@ export default function AdminDashboard() {
       setIsSequentialMode(newValue);
       toastSuccess(newValue ? "順次進行モードを有効にしました" : "順次進行モードを無効にしました");
     } catch (error) {
-      toastError("エラーが発生しました");
+      toastError("順次進行モードの切り替えに失敗しました", "通信を確認して、もう一度お試しください");
     }
   };
 
@@ -524,7 +525,7 @@ export default function AdminDashboard() {
       await updateDocument('config', camp!.id, { finals_wait_mode: newMode });
       toastSuccess(newMode[key] ? "決勝戦待機モードを有効化しました" : "決勝戦待機モードを解除しました");
     } catch (error) {
-      toastError("エラーが発生しました");
+      toastError("決勝戦待機モードの切り替えに失敗しました", "通信を確認して、もう一度お試しください");
     }
   };
   const handleRestMinutesChange = async (value: string) => {
@@ -535,7 +536,7 @@ export default function AdminDashboard() {
       await updateDocument('config', camp!.id, { default_rest_minutes: minutes });
       toastSuccess(`デフォルト休息時間を ${minutes}分 に設定しました`);
     } catch (error) {
-      toastError("エラーが発生しました");
+      toastError("休息時間の設定に失敗しました", "通信を確認して、もう一度お試しください");
     }
   };
 
@@ -1356,6 +1357,9 @@ export default function AdminDashboard() {
               </TabsContent>
 
               <TabsContent value="live" className="space-y-4">
+                {/* 棄権した選手が残っている試合の警告（あるときだけ出る） */}
+                <InactivePlayerWarning />
+
                 {/* コート状況: 自動割り当てON/OFF ＋ コート結果（入力）を1画面に集約 */}
                 <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${autoDispatchEnabled ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="flex items-center gap-2.5 min-w-0">

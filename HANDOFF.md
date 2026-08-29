@@ -796,6 +796,60 @@
   - ペア割り当ての「表に反映」は、**入力済みの番号だけを上書きする**。空欄にした番号は書き込まれないので、割り当てを消したい場合は「試合ごとに直す」で消すこと。
 - オーナー承認: rikurun6v6-dot / 2026-08-29（オーナー本人の指示によりマージ・デプロイ）
 
+## 2026-08-29 — [ui] alert() をトースト通知に置き換え
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/hi-errors-safety / #（PR作成後）
+- 変更内容:
+  - 管理画面と参加者画面に残っていた `alert()` を全廃し、トースト通知に置き換えた（`PlayerManager` `TournamentSetup` `CampManager` `MatchResultInput` `ResultsTab` `SafetyTab` `GroupRankingManager` `app/admin/page.tsx` `app/user/page.tsx`）。
+  - 文言も揃えた: 失敗系は「〜に失敗しました」＋対処（「通信を確認して、もう一度お試しください」など）の2段。
+  - 参加者画面の通知許可ブロック時のメッセージもトースト化。
+- 変更理由: `alert()` はモーダルなので、押すまで他の操作が止まる。運営が急いでいる場面（CSV取り込み・結果入力）で毎回止まるのは実害がある。加えて、ブラウザ自動操作や一部の埋め込み環境ではモーダルが画面を固めるため、当日の確認作業の妨げにもなる。
+- 影響範囲: 通知の出し方と文言のみ。処理の流れ・データ構造の変更なし。`npm run build` 成功・`tsc --noEmit` 通過。
+- 注意点 / 引き継ぎ事項:
+  - `confirm()` 系（削除の確認など）は元から `useConfirmDialog` を使っており、今回は触っていない。
+  - `src` 配下に `alert(` は残っていない。今後追加しないこと（`toastSuccess` / `toastError` / `toastInfo` を使う）。
+## 2026-08-29 — [safety] 棄権が自動割り当てに効かない不具合の修正と、試合IDの手入力の廃止
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/withdrawal-and-match-picker / #（PR作成後）
+- 変更内容:
+  **① 棄権にしても試合が呼ばれ続ける（`firestore-helpers.ts` / `PlayerManager.tsx`）**
+  - `dispatcher.ts` の候補フィルタ `validMatches` は、選手IDの有無・重複・休息・予約コート・決勝待機は見ているが、**選手の `is_active` を一切見ていない**。`toggleActive` も `is_active` を反転するだけだった。
+  - つまり **棄権にしても、その選手の試合はコートに呼ばれ続ける**。当日キャンセルで確実に事故る。
+  - `withdrawPlayerAndForfeit(playerId, campId)` を追加。棄権と同時に、その選手の未消化の試合を**相手の不戦勝**として確定させ、呼び出し中だったコートも解放し、`propagateByePlayerChange` で次ラウンドへ勝ち上がりを反映する。
+  - **進行中（playing）の試合には手を付けない。** コート上で起きていることを勝手に確定させるのは危険なので、件数だけ返して運営の判断に委ねる（結果は通常どおり入力してもらう）。
+  - 相手が未確定（`player1_id` / `player2_id` が空）の試合も触らず、件数を返す。
+  - 復帰させるときは確認ダイアログを出し、「不戦勝として確定させた試合は元に戻らない」ことを明示する。
+  - 確認用に `countMatchesWithInactivePlayers(matches, players)` も追加（未使用。棄権選手が残る試合の検知に使える）。
+  **② 安全タブの試合IDを手入力させていた（`SafetyTab.tsx`）**
+  - 「結果の取り消し」「不戦勝」「補足表示」「欠場処理」の4つが、`camp123_MD_1_1_1` のような**試合IDを手で打たせていた**。当日これを打つのは現実的でない。
+  - `MatchPicker.tsx`（選手名・コート・種目で検索して選ぶ部品）が**完成済みなのにどこからも使われていなかった**ので、4箇所すべてに配線した。用途に応じて候補の状態を絞る（取り消し=完了済み / 不戦勝=未完了 / 欠場=待機・呼出中）。
+- 変更理由: 本番の通し確認と、当日トラブル（入力ミス・当日キャンセル）への備えの洗い出しで見つかった。①は運営が止まる致命的な問題。
+- 影響範囲: `src/lib/firestore-helpers.ts`（関数2つ追加）、`src/components/admin/PlayerManager.tsx`（棄権処理）、`src/components/admin/SafetyTab.tsx`（入力UI）、`src/components/admin/MatchPicker.tsx`（新規配線）。既存のデータ構造・割り当てロジックの変更なし。`npm run build` 成功・`tsc --noEmit` 通過。
+- 注意点 / 引き継ぎ事項:
+  - **dispatcher 側には `is_active` チェックを入れていない。** 入れると、棄権選手を含む試合が候補から外れたまま残り、`minRoundByGroup` のラウンドロックでそのグループ全体が進まなくなる（デッドロック）。棄権は「試合を確定させて前に進める」方向で解決するのが正しい。
+  - 棄権処理は取り消せない。誤って棄権にした場合、復帰させても不戦勝は残るので「安全」タブの「結果の取り消し」で個別に戻すこと。
+  - `countMatchesWithInactivePlayers` は未使用。棄権選手が残っている試合を管理画面で警告表示したくなったら使える。
+- オーナー承認: rikurun6v6-dot / 2026-08-29（オーナー本人の指示によりマージ・デプロイ）
+
+## 2026-08-29 — [day-of] 当日運用の穴を3件修正（結果保存の無言・参加者画面の陳腐化・棄権の取り残し）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/day-of-hardening / #（PR作成後） ※ `fix/withdrawal-and-match-picker`（#59）に積んでいる
+- 変更内容:
+  **① 結果を保存しても何も出ない（`MatchResultInput.tsx`）**
+  - `handleSubmit` は成功時に**通知を一切出していなかった**。保存できたのか分からないまま次に進むことになり、二重入力や入力漏れの原因になる。
+  - 勝者名とスコアを添えた成功トーストを出し、あわせて「間違えたら『結果を修正』から直せる」ことを伝える。失敗時も `alert` ではなくトーストにした。
+  **② 参加者画面が保存済みの選手情報を検証していなかった（`app/user/page.tsx`）**
+  - `localStorage` の `focs_user` をそのまま復元しており、**削除された選手・棄権した選手の画面がそのまま残り続ける**。棄権した人に「まだ自分の試合がある」ように見えるのは混乱のもと。
+  - 復元後に Firestore で存在と `is_active` を確認し、居なければ保存を消して名前選択に戻す。ついでに最新の氏名で上書きするので、**運営が名前を直した場合も追従する**。
+  - 通信できないときは黙って保存された内容のまま表示する（オフラインで締め出さない）。
+  **③ 棄権した選手が残ったままの試合に気づけない（`InactivePlayerWarning.tsx` 新規）**
+  - 「選手」タブの棄権ボタンを使えば未消化の試合は自動で不戦勝になるが、直接データを触った場合や処理が途中で失敗した場合には取り残しが出る。取り残されたままだと、その試合はコートに呼ばれて来ない選手を待つことになる。
+  - `countMatchesWithInactivePlayers`（#59 で追加済み・未使用だった）を使い、コート状況タブの先頭に件数と対処方法を出す。0件のときは何も出さない。60秒ごとに確認。
+- 変更理由: 当日トラブル（入力ミス・当日キャンセル）への備えの洗い出し。
+- 影響範囲: `MatchResultInput.tsx` / `app/user/page.tsx` / `app/admin/page.tsx` / `InactivePlayerWarning.tsx`（新規）。データ構造・割り当てロジックの変更なし。`npm run build` 成功・`tsc --noEmit` 通過。
+- 注意点 / 引き継ぎ事項:
+  - **調査の結果、訂正の導線は問題なかった。** `MatchResultInput`（コート状況）に「結果を修正」と「取り消し」が既にあり、`ResultsTab`（結果一覧）と `VisualBracket`（トーナメント表）にも同等の手段がある。足りていなかったのは「保存できたという通知」だけ。
+  - `app/user/page.tsx` に `toastError` の import を足している。`fix/hi-errors-safety`（#58）でも同じ import を足しているので、マージ順によっては1行の衝突が出る（両方残す／片方消すだけ）。
 ## 2026-08-29 — [admin] 開催日の切り替えをダッシュボードのヘッダーに追加
 - 担当者: rikurun6v6-dot（Claude Code 経由）
 - ブランチ / PR: feat/dashboard-day-switcher / #（PR作成後）

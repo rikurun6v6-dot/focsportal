@@ -2391,3 +2391,113 @@ export const savePushSubscription = async (playerId: string, sub: object | null)
     await updateDoc(ref, { pushSubscription: deleteField() });
   }
 };
+
+// ── 棄権（当日キャンセル） ────────────────────────────────────────────────────
+
+/** 試合の中で、その選手がどちら側にいるか */
+function findPlayerSide(match: Match, playerId: string): 1 | 2 | null {
+  if ([match.player1_id, match.player3_id, match.player5_id].includes(playerId)) return 1;
+  if ([match.player2_id, match.player4_id, match.player6_id].includes(playerId)) return 2;
+  return null;
+}
+
+export interface WithdrawResult {
+  /** 相手の不戦勝として確定させた試合数 */
+  forfeited: number;
+  /** 相手が未確定などで処理できなかった試合数 */
+  skipped: number;
+  /** 進行中だったため手を付けなかった試合数 */
+  playing: number;
+}
+
+/**
+ * 選手を棄権にし、その選手の未消化の試合を相手の不戦勝として確定させる。
+ *
+ * これが無いと、棄権フラグを立てても自動割り当ては止まらない
+ * （dispatcher の候補フィルタは選手の is_active を見ていない）。
+ * 棄権にしただけでは、その選手の試合がコートに呼ばれ続けてしまう。
+ *
+ * 進行中（playing）の試合には手を付けない。コート上で起きていることを
+ * 勝手に確定させるのは危険なので、件数だけ返して運営の判断に委ねる。
+ */
+export async function withdrawPlayerAndForfeit(
+  playerId: string,
+  campId: string
+): Promise<WithdrawResult> {
+  const allMatches = await getAllDocuments<Match>('matches', [where('campId', '==', campId)]);
+
+  const result: WithdrawResult = { forfeited: 0, skipped: 0, playing: 0 };
+  const updatedMatches: Match[] = [];
+  const batch = writeBatch(db);
+  const courtsToFree: string[] = [];
+
+  for (const match of allMatches) {
+    const side = findPlayerSide(match, playerId);
+    if (side === null) continue;
+    if (match.status === 'completed') continue;
+    if (match.status === 'playing') { result.playing++; continue; }
+
+    // 相手側の代表選手。いなければ勝者を決められないので触らない
+    const opponentId = side === 1 ? match.player2_id : match.player1_id;
+    if (!opponentId) { result.skipped++; continue; }
+
+    // 共通部分。Firestore へは空きスロットを null で書き、
+    // メモリ上の Match 型では undefined として扱う（型の都合で分けている）
+    const common = {
+      is_walkover: true,
+      walkover_winner: (side === 1 ? 2 : 1) as 1 | 2,
+      status: 'completed' as const,
+      winner_id: opponentId,
+      subtitle: '欠場',
+      court_id: null,
+      end_time: Timestamp.now(),
+      updated_at: Timestamp.now(),
+    };
+
+    const writeUpdate = side === 1
+      ? { ...common, player1_id: '', player3_id: null, player5_id: null }
+      : { ...common, player2_id: '', player4_id: null, player6_id: null };
+
+    batch.update(doc(db, 'matches', match.id), writeUpdate);
+    if (match.court_id) courtsToFree.push(match.court_id);
+
+    const memoryUpdate: Partial<Match> = side === 1
+      ? { ...common, player1_id: '', player3_id: undefined, player5_id: undefined }
+      : { ...common, player2_id: '', player4_id: undefined, player6_id: undefined };
+
+    updatedMatches.push({ ...match, ...memoryUpdate });
+    result.forfeited++;
+  }
+
+  // 呼び出し中だったコートを空ける（そのままだと埋まったままになる）
+  for (const courtId of [...new Set(courtsToFree)]) {
+    batch.update(doc(db, 'courts', courtId), { current_match_id: null });
+  }
+
+  // 選手を棄権にする
+  batch.update(doc(db, 'players', playerId), { is_active: false });
+
+  await batch.commit();
+
+  // 不戦勝の勝ち上がりを次ラウンドへ反映する
+  const merged = allMatches.map(m => updatedMatches.find(u => u.id === m.id) ?? m);
+  for (const m of updatedMatches) {
+    await propagateByePlayerChange(m, merged);
+  }
+
+  return result;
+}
+
+/**
+ * 棄権中の選手が入ったまま残っている未消化の試合を数える。
+ * 「棄権にしたのに試合が呼ばれ続ける」状態に気づけるようにするための確認用。
+ */
+export function countMatchesWithInactivePlayers(matches: Match[], players: Player[]): number {
+  const inactive = new Set(players.filter(p => !p.is_active).map(p => p.id));
+  if (inactive.size === 0) return 0;
+  return matches.filter(m => {
+    if (m.status === 'completed') return false;
+    return [m.player1_id, m.player2_id, m.player3_id, m.player4_id, m.player5_id, m.player6_id]
+      .some(id => id && inactive.has(id));
+  }).length;
+}
