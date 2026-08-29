@@ -28,6 +28,7 @@ import type { Config, Team, TeamBattle as TeamBattleData, TournamentConfig, Matc
 import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Home, Menu, LogOut, HelpCircle, MessageCircle, Lock, PauseCircle, Medal } from "lucide-react";
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
+import CampDaySwitcher from "@/components/admin/CampDaySwitcher";
 import { Toaster } from "sonner";
 import { toastSuccess, toastError, toastInfo } from "@/lib/toast";
 import StatusBar from "@/components/admin/StatusBar";
@@ -948,7 +949,10 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                {/* 開催日の切り替え（2日開催のとき、朝いちで使う） */}
+                <CampDaySwitcher readOnly={isArchived} />
+
                 {/* AIアドバイザー（インライン配置） */}
                 {!isArchived && <OperationalAdvisor />}
 
