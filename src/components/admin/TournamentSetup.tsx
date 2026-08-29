@@ -17,6 +17,7 @@ import {
 import type { TournamentConfig, EventType, Division, TournamentFormat } from '@/types';
 import { Trash2, Save, ArrowUp, ArrowDown } from 'lucide-react';
 import { useCamp } from '@/context/CampContext';
+import { toastSuccess, toastError } from '@/lib/toast';
 import { POINTS_STANDARD, type PointsOverride } from '@/lib/match-points';
 import { DEFAULT_DIVISIONS } from '@/lib/divisions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
@@ -54,7 +55,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
 
   const handleSaveConfig = async () => {
     if (!camp) {
-      alert('合宿が選択されていません');
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
       return;
     }
     setSaving(true);
@@ -78,7 +79,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
         priority: 999,
       });
     } catch (error) {
-      alert('設定の保存に失敗しました');
+      toastError('設定の保存に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setSaving(false);
   };
@@ -117,7 +118,7 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
 
   const handleDeleteAllMatches = async () => {
     if (!camp) {
-      alert('合宿が選択されていません');
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
       return;
     }
     const confirmed = await confirm({
@@ -131,16 +132,16 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
     setSaving(true);
     try {
       await deleteAllMatches(camp.id);
-      alert('全試合を削除しました');
+      toastSuccess('全試合を削除しました');
     } catch (error) {
-      alert('削除中にエラーが発生しました');
+      toastError('削除に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setSaving(false);
   };
 
   const handleDeleteTournamentMatches = async (config: TournamentConfig) => {
     if (!camp) {
-      alert('合宿が選択されていません');
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
       return;
     }
     const confirmed = await confirm({
@@ -154,16 +155,16 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
     setSaving(true);
     try {
       await deleteTournamentMatches(camp.id, config.event_type, config.division);
-      alert('トーナメントの試合を削除しました');
+      toastSuccess('トーナメントの試合を削除しました');
     } catch (error) {
-      alert('削除中にエラーが発生しました');
+      toastError('削除に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setSaving(false);
   };
 
   const handleDeleteTournamentComplete = async (config: TournamentConfig) => {
     if (!camp) {
-      alert('合宿が選択されていません');
+      toastError('大会が選ばれていません', 'ヘッダーから大会を選んでください');
       return;
     }
     const confirmed = await confirm({
@@ -180,9 +181,9 @@ export default function TournamentSetup({ readOnly = false }: { readOnly?: boole
       await deleteTournamentMatches(camp.id, config.event_type, config.division);
       // トーナメント設定を削除
       await deleteTournamentConfig(config.id);
-      alert('トーナメントを完全に削除しました');
+      toastSuccess('トーナメントを完全に削除しました');
     } catch (error) {
-      alert('削除中にエラーが発生しました');
+      toastError('削除に失敗しました', '通信を確認して、もう一度お試しください');
     }
     setSaving(false);
   };
