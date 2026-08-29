@@ -491,7 +491,11 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             matchNumMap.set(`${round}_${pos}`, nextMN++);
           }
         }
-        const has3rdPlace = totalRounds >= 2;
+        // 3位決定戦は「準決勝が2試合とも実試合になる」ときだけ作る。
+        // 例: 3ペア通過だと4枠ブラケット + BYE1 で準決勝が実質1試合しかなく、
+        //     3位決定戦を作っても敗者が1組しか出ないため成立しない。
+        const realSemiFinals = totalRounds === 2 ? round1Total - byeCount : 2;
+        const has3rdPlace = totalRounds >= 2 && realSemiFinals >= 2;
         if (has3rdPlace) {
           matchNumMap.set('3rd', nextMN++);
         }
@@ -700,6 +704,8 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         const BATCH_SIZE = 500;
         let currentBatch = writeBatch(db);
         let batchCount = 0;
+        // ブラケットのスロット以外に追加した試合数（3位決定戦など）
+        let extraMatchCount = 0;
 
         // 各スロットを試合データに変換してFirestoreに保存
         for (const slot of bracket.slots) {
@@ -838,6 +844,55 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
           }
         }
 
+        // --- 3位決定戦 ---
+        // 準決勝が2試合とも実試合になる場合のみ作る。空のまま作っておき、
+        // 準決勝終了後に管理画面の「3位決定戦を作成」で敗者を流し込む。
+        const semiRound = bracket.totalRounds - 1;
+        const realSemiCount = semiRound === 1
+          ? bracket.slots.filter(s => s.roundNumber === 1 && s.player1 && s.player2).length
+          : 2;
+
+        if (bracket.totalRounds >= 2 && realSemiCount >= 2) {
+          const thirdPlaceMatchNumber =
+            bracket.slots.filter(s => s.roundNumber === bracket.totalRounds).length + 1;
+          const thirdPlaceDocId = getFinalMatchId(
+            camp.id,
+            currentState.tournamentType,
+            division,
+            bracket.totalRounds,
+            thirdPlaceMatchNumber
+          );
+
+          currentBatch.set(doc(matchesRef, thirdPlaceDocId), {
+            id: thirdPlaceDocId,
+            campId: camp.id,
+            tournament_type: currentState.tournamentType,
+            division: division,
+            round: bracket.totalRounds,
+            match_number: thirdPlaceMatchNumber,
+            phase: 'knockout' as const,
+            status: 'waiting',
+            court_id: null,
+            player1_id: '',
+            player2_id: '',
+            player3_id: '',
+            player4_id: '',
+            score_p1: 0,
+            score_p2: 0,
+            winner_id: null,
+            start_time: null,
+            end_time: null,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+            points_per_match:
+              pointsByRound[bracket.totalRounds] || pointsByRound[bracket.totalRounds - 1] || defaultPoints,
+            subtitle: '3位決定戦',
+          });
+          batchCount++;
+          extraMatchCount++;
+          console.log(`[トーナメント生成] 3位決定戦を追加 (round=${bracket.totalRounds}, id=${thirdPlaceDocId})`);
+        }
+
         // 残りのバッチをコミット
         if (batchCount > 0) {
           console.log(`[トーナメント生成] 最終バッチコミット (${batchCount}件)`);
@@ -909,7 +964,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         console.log(`[Bye処理] ${byeMatches.length}件の進出処理完了 ✅`);
 
         console.log('[トーナメント生成] 成功 🎉', {
-          matchCount: bracket.slots.length,
+          matchCount: bracket.slots.length + extraMatchCount,
           roundCount: bracket.totalRounds
         });
 
@@ -919,7 +974,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             ...prev,
             loading: false,
             result: {
-              matchCount: bracket.slots.length,
+              matchCount: bracket.slots.length + extraMatchCount,
               roundCount: bracket.totalRounds,
               warnings: pairErrors.length > 0 ? pairErrors : undefined,
             }
