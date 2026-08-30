@@ -107,11 +107,15 @@ export default function CourtGrid() {
     return map[type as string] || (type as string);
   };
 
-  const getRoundLabel = (round: number | undefined) => {
-    if (round === undefined) return "-";
-    if (round === 100) return "決勝";
-    if (round === 99) return "準決勝";
-    return `${round}回戦`;
+  const getRoundLabel = (match: MatchWithPlayers | null) => {
+    if (!match || match.round === undefined) return "-";
+    // 予選リーグの試合に決勝トーナメントのラウンド名を付けない
+    if (match.phase === 'preliminary') {
+      return match.group ? `予選 ${match.group}組` : '予選';
+    }
+    if (match.round === 100) return "決勝";
+    if (match.round === 99) return "準決勝";
+    return `${match.round}回戦`;
   };
 
   const getElapsedTime = (match: MatchWithPlayers | null) => {
@@ -307,7 +311,7 @@ export default function CourtGrid() {
                     {getCategoryLabel(match.tournament_type)}
                   </span>
                   <span className="text-[10px] font-medium text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full">
-                    {getRoundLabel(match.round)}
+                    {getRoundLabel(match)}
                   </span>
                   {match.division && (
                     <span className="text-[10px] font-medium text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
