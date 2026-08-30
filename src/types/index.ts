@@ -123,6 +123,33 @@ export interface Court {
   manually_freed?: boolean; // 👈 管理者が手動でフリーに設定したコート（自動割り当て対象外）
   freed_match_id?: string | null; // 👈 フリーにされた試合のID（復帰用）
   manual_gender_unlock?: boolean; // 👈 管理者が逆性別試合の割り当てを承認済み（次回割り当て後に自動リセット）
+  /**
+   * 均等化ルールで割り当てが止まっている状態が始まった時刻。
+   * 「空いている」ではなく「空いていて、かつルール上は次を入れられない」時刻。
+   * 割り当てが成功した時点で null に戻る。
+   */
+  stuck_since?: Timestamp | null;
+  /** 承認待ちの例外投入。承認・却下・投入のいずれかで null に戻る */
+  pending_dispatch?: PendingDispatch | null;
+  /** 「空けたままにする」を押されたときの、次に聞き直す時刻 */
+  dispatch_muted_until?: Timestamp | null;
+}
+
+/** 例外投入の候補1件 */
+export interface PendingDispatchCandidate {
+  match_id: string;
+  /** 「1部 A組 2回戦 テスト一部H/A vs テスト一部J/L」 */
+  label: string;
+  /** なぜルール上は入れられないのか。「1部だけ進みすぎます（29% → 43%）」 */
+  reason: string;
+}
+
+/** コートが詰まったときに出す承認待ち */
+export interface PendingDispatch {
+  candidates: PendingDispatchCandidate[];
+  created_at: Timestamp;
+  /** この時刻を過ぎたら候補の先頭を自動で入れる。null なら自動投入しない */
+  auto_at: Timestamp | null;
 }
 
 /**
@@ -222,6 +249,10 @@ export interface Config {
   dispatch_owner_id?: string;
   /** その端末が最後に生存を知らせた時刻。一定時間途切れたら他の端末が引き継ぐ */
   dispatch_owner_at?: Timestamp;
+  /** 例外承認: 「詰まった」と判断するまでの秒数（既定90） */
+  approval_stuck_seconds?: number;
+  /** 例外承認: 無応答のとき自動投入するまでの分数（0 で自動投入しない。既定3） */
+  approval_auto_minutes?: number;
 }
 
 /**

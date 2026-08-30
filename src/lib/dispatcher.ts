@@ -1,4 +1,5 @@
-import type { Match, Court, Config, Camp, Player, TournamentType, Division } from '@/types';
+import type { Match, Court, Config, Camp, Player, TournamentType, Division,
+  PendingDispatchCandidate } from '@/types';
 import { getAllDocuments, getDocument, updateDocument, claimCourtForMatch, claimExtraCourt } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
@@ -13,6 +14,13 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const courts = campId ? allCourts.filter(c => c.campId === campId) : allCourts;
   // 手動でフリーに設定されたコート（manually_freed=true）は自動割り当て対象外
   const emptyCourts = courts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed);
+
+  // 手動割り当てなどで埋まったコートに承認待ちが残っていたら消す
+  await Promise.all(
+    courts
+      .filter(c => c.current_match_id && (c.pending_dispatch || c.stuck_since))
+      .map(c => updateDocument('courts', c.id, { pending_dispatch: null, stuck_since: null }).catch(() => {}))
+  );
 
   if (emptyCourts.length === 0) return 0;
 
@@ -62,12 +70,31 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
     }
   }
 
+  // 例外承認の設定（既定: 90秒で聞く / 3分無応答で自動投入）
+  const stuckSeconds = topConfig?.approval_stuck_seconds ?? 90;
+  const autoMinutes = topConfig?.approval_auto_minutes ?? 3;
+  const nowMs = Date.now();
+
   for (const court of emptyCourts) {
     // 団体戦マルチコートとして既に確保済みのコートはスキップ
     if (claimedCourtIds.has(court.id)) continue;
 
     const divPref = courtDivisionPreference.get(court.id);
-    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, divPref);
+    const blockInfo: DispatchBlockInfo = { overridable: [] };
+    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, divPref, blockInfo);
+
+    if (!assigned) {
+      await handleStuckCourt(court, blockInfo, nowMs, stuckSeconds, autoMinutes);
+      continue;
+    }
+
+    // 入ったので詰まりの記録を消す
+    if (court.stuck_since || court.pending_dispatch) {
+      await updateDocument('courts', court.id, {
+        stuck_since: null, pending_dispatch: null,
+      }).catch(() => {});
+    }
+
     if (assigned) {
       dispatchedCount++;
       assignedMatchIds.add(assigned.id);
@@ -99,12 +126,21 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   return dispatchedCount;
 }
 
+/**
+ * 均等化ルールだけで弾かれた候補。承認して例外投入できるもの。
+ * 選手が試合中・休息中・コートの性別違いのものは含まない（例外にしても入らないため）。
+ */
+export interface DispatchBlockInfo {
+  overridable: { match: Match; reason: string }[];
+}
+
 export async function dispatchToEmptyCourt(
   court: Court,
   waitingMatches: Match[],
   defaultRestMinutes: number = 10,
   assignedMatchIds: Set<string> = new Set(),
-  divisionPreference?: Division
+  divisionPreference?: Division,
+  blockInfo?: DispatchBlockInfo
 ): Promise<Match | null> {
   const now = Date.now();
   // 同一ループ内で既に割り当て済みの試合を除外（二重割り当て防止の第二防衛線）
@@ -372,13 +408,60 @@ export async function dispatchToEmptyCourt(
 
   // 性別ガード: manual_gender_unlock が設定されていない限り、
   // コートの preferred_gender と異なる試合を候補から完全除外する
-  const genderPreFilteredMatches = (court.preferred_gender && !court.manual_gender_unlock)
-    ? balancedMatches.filter(match => {
-        const mg = getPreferredGender(match);
-        // neutral (mixed_doubles, team_battle) は OK。同性別も OK。逆性別は除外。
-        return mg === null || mg === court.preferred_gender;
-      })
-    : balancedMatches;
+  const genderOk = (match: Match): boolean => {
+    if (!court.preferred_gender || court.manual_gender_unlock) return true;
+    const mg = getPreferredGender(match);
+    // neutral (mixed_doubles, team_battle) は OK。同性別も OK。逆性別は除外。
+    return mg === null || mg === court.preferred_gender;
+  };
+  const genderPreFilteredMatches = balancedMatches.filter(genderOk);
+
+  // ── 例外投入の候補を拾う ────────────────────────────────────────────────
+  // 均等化・ラウンド規制「だけ」で弾かれた試合を、理由つきで呼び出し元に返す。
+  // 選手が試合中・休息中やコートの性別違いは含めない。例外にしても入らないため。
+  if (blockInfo && genderPreFilteredMatches.length === 0) {
+    const nearMiss = restFilteredMatches.filter(genderOk);
+    if (nearMiss.length > 0) {
+      const minRoundByGroup = computeMinUnfinishedRound(campMatches);
+      const { ratioByTypeDiv, minRatioByType } = computeDivisionProgress(campMatches);
+      const minGroupDone = computeGroupBalance(campMatches, scoreCtx);
+
+      const reasonFor = (m: Match): string => {
+        const parts: string[] = [];
+
+        const minRound = minRoundByGroup.get(getGroupKey(m));
+        if (minRound !== undefined && m.round > minRound) {
+          parts.push(`${minRound}回戦がまだ全部終わっていません`);
+        }
+
+        if (m.division !== undefined) {
+          const min = minRatioByType.get(m.tournament_type);
+          const mine = ratioByTypeDiv.get(`${m.tournament_type}_${m.division}`);
+          if (min !== undefined && mine !== undefined && mine > min + BALANCE_TOLERANCE) {
+            parts.push(`${m.division}部だけ進みすぎます（${Math.round(mine * 100)}% / いちばん遅い部 ${Math.round(min * 100)}%）`);
+          }
+        }
+
+        const grp = (m as any).group;
+        if ((m as any).phase === 'preliminary' && grp) {
+          const tdKey = `${m.tournament_type}_${m.division}`;
+          const minDone = minGroupDone.get(tdKey);
+          const mineDone = scoreCtx.groupProgressMap.get(`${tdKey}_${grp}`) ?? 0;
+          if (minDone !== undefined && mineDone > minDone) {
+            parts.push(`${grp}組だけ進みすぎます（${mineDone}試合 / いちばん遅い組 ${minDone}試合）`);
+          }
+        }
+
+        return parts.join(' / ') || 'ルール上の理由は特定できませんでした';
+      };
+
+      blockInfo.overridable = nearMiss
+        .map(m => ({ match: m, score: (() => { try { return calcMatchScore(m, scoreCtx); } catch { return 0; } })() }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map(({ match }) => ({ match, reason: reasonFor(match) }));
+    }
+  }
 
   // 使用中コートの部門を取得（部門バランス制御用）。
   // Firestore 再取得（awaited write 反映済み）が唯一の真実なので、これだけを使う。
@@ -911,4 +994,115 @@ function getMixedDoublesCourtRestriction(
   const allowedDivision = courtNumber <= halfPoint ? 1 : 2;
 
   return { allowedDivision };
+}
+
+
+// ── 例外投入の承認 ────────────────────────────────────────────────────────────
+// 均等化を厳しくしたぶん、遅れている側が全員ふさがっているとコートが空いたままになる。
+// そのときだけ「例外で入れますか」と聞き、承認されたら既存の予約パスに流す。
+
+/** 「1部 A組 2回戦 テスト一部H/A vs テスト一部J/L」のような1行ラベル */
+function candidateLabel(match: Match, players: Player[]): string {
+  const nameOf = (id?: string | null) => players.find(p => p.id === id)?.name ?? '';
+  const side = (a?: string | null, b?: string | null, c?: string | null) =>
+    [nameOf(a), nameOf(b), nameOf(c)].filter(Boolean).join('/') || '未定';
+  const head = [
+    match.division !== undefined ? `${match.division}部` : '',
+    (match as any).group ? `${(match as any).group}組` : '',
+    `${match.round}回戦`,
+  ].filter(Boolean).join(' ');
+  const p1 = side(match.player1_id, match.player3_id, (match as any).player5_id);
+  const p2 = side(match.player2_id, match.player4_id, (match as any).player6_id);
+  return `${head} ${p1} vs ${p2}`;
+}
+
+/**
+ * 割り当てられなかったコートの後始末。
+ *  - 例外候補がない（＝そもそも入れる試合がない）なら、詰まりの記録を消す
+ *  - 詰まりが続いていて、しきい値を超えたら承認待ちを作る
+ *  - 承認待ちのまま自動投入の時刻を過ぎたら、先頭候補を入れる
+ */
+async function handleStuckCourt(
+  court: Court,
+  blockInfo: DispatchBlockInfo,
+  nowMs: number,
+  stuckSeconds: number,
+  autoMinutes: number
+): Promise<void> {
+  // 例外にしても入る試合がない → 詰まりではない（選手が全員コート上、など）
+  if (blockInfo.overridable.length === 0) {
+    if (court.stuck_since || court.pending_dispatch) {
+      await updateDocument('courts', court.id, { stuck_since: null, pending_dispatch: null }).catch(() => {});
+    }
+    return;
+  }
+
+  // 「空けたままにする」で黙らせている期間
+  const mutedUntil = court.dispatch_muted_until?.toMillis?.() ?? 0;
+  if (nowMs < mutedUntil) return;
+
+  // 承認待ちがすでにある → 自動投入の時刻だけ見る
+  const pending = court.pending_dispatch;
+  if (pending) {
+    const autoAt = pending.auto_at?.toMillis?.() ?? 0;
+    if (autoAt > 0 && nowMs >= autoAt && pending.candidates[0]) {
+      await approveDispatch(court.id, pending.candidates[0].match_id);
+    }
+    return;
+  }
+
+  // 詰まり始めの記録
+  const stuckSince = court.stuck_since?.toMillis?.() ?? 0;
+  if (stuckSince === 0) {
+    await updateDocument('courts', court.id, { stuck_since: Timestamp.now() }).catch(() => {});
+    return;
+  }
+
+  // しきい値を超えたら承認待ちを作る
+  if ((nowMs - stuckSince) / 1000 < stuckSeconds) return;
+
+  const players = await getAllDocuments<Player>('players');
+  const candidates: PendingDispatchCandidate[] = blockInfo.overridable.map(({ match, reason }) => ({
+    match_id: match.id,
+    label: candidateLabel(match, players),
+    reason,
+  }));
+
+  await updateDocument('courts', court.id, {
+    pending_dispatch: {
+      candidates,
+      created_at: Timestamp.now(),
+      auto_at: autoMinutes > 0
+        ? Timestamp.fromMillis(nowMs + autoMinutes * 60000)
+        : null,
+    },
+  }).catch(() => {});
+}
+
+/**
+ * 例外投入を承認する。
+ * 試合に予約を書くだけ。実際の投入は既存の予約パス（dispatchToEmptyCourt の先頭）が行う。
+ * 予約パスは均等化フィルタより前にあるので、そのまま例外として通る。
+ */
+export async function approveDispatch(
+  courtId: string,
+  matchId: string
+): Promise<void> {
+  await updateDocument('matches', matchId, {
+    reserved_court_id: courtId,
+    available_at: Timestamp.now(),
+  });
+  await updateDocument('courts', courtId, {
+    pending_dispatch: null,
+    stuck_since: null,
+  });
+}
+
+/** 「空けたままにする」。指定分だけ聞き直さない */
+export async function dismissDispatch(courtId: string, muteMinutes: number = 10): Promise<void> {
+  await updateDocument('courts', courtId, {
+    pending_dispatch: null,
+    stuck_since: null,
+    dispatch_muted_until: Timestamp.fromMillis(Date.now() + muteMinutes * 60000),
+  });
 }
