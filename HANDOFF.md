@@ -1057,3 +1057,38 @@
 - 消化しきった部・グループも基準から外れる
 - ラウンド規制 `filterByCompletedRound` は元から同じ「選手が確定している試合だけ数える」
   判定なので変更なし
+
+---
+
+## 2026-08-30 / Claude Code / fix/diagnostics-sync
+
+### 変更内容
+アサイン診断パネルの判定を、割り当て本体とまったく同じ基準に揃えた。
+
+- `matchScoring.ts` に基準値の計算を関数として切り出し、本体と診断の両方がこれを使う
+  - `computeDivisionProgress()` — 種目・部ごとの進捗率と、種目ごとの最小進捗率
+  - `computeGroupBalance()` — 種目・部ごとの「いちばん消化が少ない組の消化数」
+  - `computeMinUnfinishedRound()` — グループごとの「まだ完了していない最小ラウンド」
+  - `BALANCE_TOLERANCE` を export
+- `filterByDivisionBalance` / `filterByGroupBalance` / `filterByCompletedRound` は上記を呼ぶだけにした（挙動は変えていない）
+- `diagnoseWaitingMatches` も上記を使うよう変更。スキップ理由に `division_balance` `group_balance` を追加
+- `ResultsTab.tsx` に⚖バッジの配色を追加
+
+### 変更理由
+診断パネルが本体の判定を反映しておらず、表示と実際が食い違っていた。
+
+- ラウンド規制: 本体は「前ラウンドが全部 completed」まで止めるが、診断は
+  「待機中の試合の最小ラウンド」で判定していた。前ラウンドがコート上で進行中の試合が
+  「ロックされていない」と表示されていた
+- 部門均等・グループ均等: 診断がそもそも見ていなかった。均等化でコートが空いたまま
+  止まっても、理由がどこにも表示されない
+
+### 影響範囲
+- `src/lib/matchScoring.ts`（関数抽出。フィルタの挙動は変更なし）
+- `src/lib/dispatcher.ts`（`SkipReason` に2種追加 / `diagnoseWaitingMatches` の判定）
+- `src/components/admin/ResultsTab.tsx`（バッジ配色のみ）
+
+### 注意点
+- 今後、均等化の計算式を変えるときは必ず `matchScoring.ts` の3関数だけを直すこと。
+  dispatcher 側で独自計算に戻すと、また表示と実際がズレる
+- `diagnoseWaitingMatches` にあった `filteredWaiting` は使われなくなったので削除した

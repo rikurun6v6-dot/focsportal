@@ -390,6 +390,85 @@ function isLiveMatch(m: Match): boolean {
   return m.status !== 'completed' && !!m.player1_id && !!m.player2_id;
 }
 
+// ── 均等化の基準値 ────────────────────────────────────────────────────────────
+// フィルタ（dispatcher）と診断（アサイン診断パネル）の両方がここを使う。
+// 片方だけ計算式を変えると「本体はブロックしているのに、画面には理由が出ない」
+// という状態になるため、必ずこの3つの関数を通すこと。
+
+/** 率の比較は割り切れないことがあるので、この幅は同じとみなす */
+export const BALANCE_TOLERANCE = 0.001;
+
+/**
+ * 種目・部ごとの進捗率と、種目ごとの最小進捗率。
+ * 母数は「まだ試合が残っている部」だけ。消化しきった部や、
+ * 順位待ちで選手が入っていない枠しか残っていない部は基準から外す。
+ */
+export function computeDivisionProgress(allMatches: Match[]): {
+  ratioByTypeDiv: Map<string, number>;
+  minRatioByType: Map<string, number>;
+} {
+  const total = new Map<string, number>();
+  const done = new Map<string, number>();
+  for (const m of allMatches) {
+    if (m.division === undefined) continue;
+    const k = typeDivKey(m);
+    total.set(k, (total.get(k) ?? 0) + 1);
+    if (m.status === 'calling' || m.status === 'playing' || m.status === 'completed') {
+      done.set(k, (done.get(k) ?? 0) + 1);
+    }
+  }
+
+  const ratioByTypeDiv = new Map<string, number>();
+  total.forEach((t, k) => ratioByTypeDiv.set(k, t === 0 ? 1 : (done.get(k) ?? 0) / t));
+
+  const minRatioByType = new Map<string, number>();
+  for (const m of allMatches) {
+    if (m.division === undefined) continue;
+    if (!isLiveMatch(m)) continue;
+    const r = ratioByTypeDiv.get(typeDivKey(m)) ?? 1;
+    const cur = minRatioByType.get(m.tournament_type);
+    if (cur === undefined || r < cur) minRatioByType.set(m.tournament_type, r);
+  }
+
+  return { ratioByTypeDiv, minRatioByType };
+}
+
+/**
+ * 種目・部ごとの「いちばん消化が少ないグループの消化数」。
+ * 母数は、まだ試合が残っている予選グループだけ。
+ */
+export function computeGroupBalance(allMatches: Match[], ctx: ScoreContext): Map<string, number> {
+  const minDoneByTypeDiv = new Map<string, number>();
+  for (const m of allMatches) {
+    if ((m as any).phase !== 'preliminary' || !(m as any).group) continue;
+    if (!isLiveMatch(m)) continue;
+    const tdKey = typeDivKey(m);
+    const done = ctx.groupProgressMap.get(`${tdKey}_${(m as any).group}`) ?? 0;
+    const cur = minDoneByTypeDiv.get(tdKey);
+    if (cur === undefined || done < cur) minDoneByTypeDiv.set(tdKey, done);
+  }
+  return minDoneByTypeDiv;
+}
+
+/**
+ * グループごとの「まだ完了していない最小ラウンド」。
+ * 選手未確定の枠（決勝Tの空きスロット）は数えない。
+ * 数えてしまうと、順位を確定するまで次のラウンドが永久に出せなくなる。
+ */
+export function computeMinUnfinishedRound(allMatches: Match[]): Map<string, number> {
+  const minUnfinished = new Map<string, number>();
+  for (const m of allMatches) {
+    if (m.status === 'completed') continue;
+    if (!m.player1_id || !m.player2_id) continue;
+    const key = getGroupKey(m);
+    const cur = minUnfinished.get(key);
+    if (cur === undefined || m.round < cur) minUnfinished.set(key, m.round);
+  }
+  return minUnfinished;
+}
+
+// ── 均等化フィルタ（ハード制約） ──────────────────────────────────────────────
+
 /**
  * 予選リーグのグループ均等（ハード制約）。
  *
@@ -401,26 +480,15 @@ function isLiveMatch(m: Match): boolean {
  * たまたま全員試合中・休息中のときに、進んでいるグループが追い越してしまう。
  */
 export function filterByGroupBalance(matches: Match[], ctx: ScoreContext, allMatches: Match[]): Match[] {
-  const prelim = matches.filter(m => (m as any).phase === 'preliminary' && (m as any).group);
-  if (prelim.length === 0) return matches;
+  const hasPrelim = matches.some(m => (m as any).phase === 'preliminary' && (m as any).group);
+  if (!hasPrelim) return matches;
 
-  // 種目・部ごとに、まだ試合が残っているグループの最小消化数を求める
-  const minDoneByTypeDiv = new Map<string, number>();
-  for (const m of allMatches) {
-    if ((m as any).phase !== 'preliminary' || !(m as any).group) continue;
-    if (!isLiveMatch(m)) continue;
-    const tdKey = typeDivKey(m);
-    const gKey = `${tdKey}_${(m as any).group}`;
-    const done = ctx.groupProgressMap.get(gKey) ?? 0;
-    const cur = minDoneByTypeDiv.get(tdKey);
-    if (cur === undefined || done < cur) minDoneByTypeDiv.set(tdKey, done);
-  }
+  const minDoneByTypeDiv = computeGroupBalance(allMatches, ctx);
 
   return matches.filter(m => {
     if ((m as any).phase !== 'preliminary' || !(m as any).group) return true; // 決勝Tは対象外
     const tdKey = typeDivKey(m);
-    const gKey = `${tdKey}_${(m as any).group}`;
-    const done = ctx.groupProgressMap.get(gKey) ?? 0;
+    const done = ctx.groupProgressMap.get(`${tdKey}_${(m as any).group}`) ?? 0;
     return done === (minDoneByTypeDiv.get(tdKey) ?? done);
   });
 }
@@ -432,43 +500,15 @@ export function filterByGroupBalance(matches: Match[], ctx: ScoreContext, allMat
  * 部によって総試合数が違うので、消化「数」ではなく消化「率」で比べる。
  *
  * 最小進捗率は「まだ試合が残っている部全部」を見て決める。
- * 候補の中だけで決めると、遅れている部が全員試合中・休息中のときに
- * 進んでいる部が追い越してしまう。
  */
 export function filterByDivisionBalance(matches: Match[], allMatches: Match[]): Match[] {
-  // 種目・部ごとの進捗率を出す
-  const total = new Map<string, number>();
-  const done = new Map<string, number>();
-  for (const m of allMatches) {
-    if (m.division === undefined) continue;
-    const k = typeDivKey(m);
-    total.set(k, (total.get(k) ?? 0) + 1);
-    if (m.status === 'calling' || m.status === 'playing' || m.status === 'completed') {
-      done.set(k, (done.get(k) ?? 0) + 1);
-    }
-  }
-  const ratio = (k: string) => {
-    const t = total.get(k) ?? 0;
-    return t === 0 ? 1 : (done.get(k) ?? 0) / t;
-  };
+  const { ratioByTypeDiv, minRatioByType } = computeDivisionProgress(allMatches);
 
-  // まだ試合が残っている部の中で、種目ごとに最小の進捗率を求める
-  const minRatioByType = new Map<string, number>();
-  for (const m of allMatches) {
-    if (m.division === undefined) continue;
-    if (!isLiveMatch(m)) continue;
-    const r = ratio(typeDivKey(m));
-    const cur = minRatioByType.get(m.tournament_type);
-    if (cur === undefined || r < cur) minRatioByType.set(m.tournament_type, r);
-  }
-
-  // 率は割り切れないことがあるので、わずかな差は同じとみなす
-  const TOLERANCE = 0.001;
   return matches.filter(m => {
     if (m.division === undefined) return true;
     const min = minRatioByType.get(m.tournament_type);
     if (min === undefined) return true;
-    return ratio(typeDivKey(m)) <= min + TOLERANCE;
+    return (ratioByTypeDiv.get(typeDivKey(m)) ?? 1) <= min + BALANCE_TOLERANCE;
   });
 }
 
@@ -480,19 +520,10 @@ export function filterByDivisionBalance(matches: Match[], allMatches: Match[]): 
  * 前のラウンドがまだコート上で進行中でも次のラウンドが始まってしまっていた。
  */
 export function filterByCompletedRound(matches: Match[], allMatches: Match[]): Match[] {
-  // グループキーごとに「まだ完了していない最小ラウンド」を求める
-  const minUnfinished = new Map<string, number>();
-  for (const m of allMatches) {
-    if (m.status === 'completed') continue;
-    if (!m.player1_id || !m.player2_id) continue; // 選手未確定の枠は数えない
-    const key = getGroupKey(m);
-    const cur = minUnfinished.get(key);
-    if (cur === undefined || m.round < cur) minUnfinished.set(key, m.round);
-  }
+  const minUnfinished = computeMinUnfinishedRound(allMatches);
 
   return matches.filter(m => {
-    const key = getGroupKey(m);
-    const limit = minUnfinished.get(key);
+    const limit = minUnfinished.get(getGroupKey(m));
     return limit === undefined || m.round <= limit;
   });
 }
