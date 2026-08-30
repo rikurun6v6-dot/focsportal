@@ -142,6 +142,12 @@ export interface PendingDispatchCandidate {
   label: string;
   /** なぜルール上は入れられないのか。「1部だけ進みすぎます（29% → 43%）」 */
   reason: string;
+  /**
+   * 止めている理由の種類。カードの文面を変えるために使う。
+   * 'round' は「前のラウンドがまだ終わっていないだけ」なので、
+   * 部門・グループの偏りとは意味が違う。文面を分けないと運営が判断できない。
+   */
+  kind?: 'round' | 'division' | 'group';
 }
 
 /** コートが詰まったときに出す承認待ち */
