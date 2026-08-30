@@ -2,7 +2,8 @@ import type { Match, Court, Config, Camp, Player, TournamentType, Division } fro
 import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
-import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase } from './matchScoring';
+import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase,
+  filterByGroupBalance, filterByDivisionBalance, filterByCompletedRound } from './matchScoring';
 import { getDivisionsInUse } from './divisions';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
@@ -348,36 +349,33 @@ export async function dispatchToEmptyCourt(
   // 全員休息済みのカードがあればそれだけ使う。なければ全validMatchesで（連続試合フォールバック）
   const restFilteredMatches = restedMatches.length > 0 ? restedMatches : validMatches;
 
-  // ラウンド順序: グループごとに「今すぐ出せる」試合の最小ラウンドを下限にする。
-  // [コート稼働優先] 基準を waitingMatches（busy/休息中も含む全待機）ではなく
-  // restFilteredMatches（空き・休息チェック後＝今すぐ出せる試合）にすることで、
-  // 最小ラウンドの試合が他コートで試合中／休息中で出せない場合は、
-  // 出せる次のラウンドを解放してコートを空けない（水平進行よりコート稼働を優先）。
-  // グループキーに group フィールドを含める: 予選グループA/B/Cが互いにブロックしないようにする。
-  const minRoundByGroup = new Map<string, number>();
-  for (const match of restFilteredMatches) {
-    if (!match.player1_id || !match.player2_id) continue; // 選手未確定の枠はスキップ
-    const groupKey = getGroupKey(match);
-    const existing = minRoundByGroup.get(groupKey);
-    if (existing === undefined || match.round < existing) {
-      minRoundByGroup.set(groupKey, match.round);
-    }
-  }
-  const roundFilteredMatches = restFilteredMatches.filter(match => {
-    const groupKey = getGroupKey(match);
-    const minRound = minRoundByGroup.get(groupKey);
-    return minRound === undefined || match.round === minRound;
-  });
+  // ── 進行の均等化（ハード制約） ──────────────────────────────────────────
+  // ここは加減点ではなく候補そのものを絞る。スコアだけだと待機時間（1分1点）が
+  // 伸び続けて均等化のペナルティを押し切ってしまい、偏りが起きるため。
+  //
+  // ① ラウンド規制（厳しめ）: そのグループの前のラウンドが全部 completed に
+  //    なるまで次のラウンドを出さない。以前は待機中の最小ラウンドを見ていたので、
+  //    前のラウンドがコート上で進行中でも次が始まってしまっていた。
+  const roundFilteredMatches = filterByCompletedRound(restFilteredMatches, campMatches);
+
+  // ② 部門均等: 同じ種目の中で、進捗率がいちばん低い部だけを残す。
+  //    「1部は終わったのに3部が進んでいない」を防ぐ。部で総試合数が違うので率で比べる。
+  const divisionBalancedMatches = filterByDivisionBalance(roundFilteredMatches, campMatches);
+
+  // ③ グループ均等: 同じ種目・部の中で、消化数がいちばん少ないグループだけを残す。
+  //    「Aが2試合目に入る前に、まだ0試合のCを先に出す」を強制する。
+  //    判定は候補に含まれるグループだけで行う（休息中のグループを待つとコートが空く）。
+  const balancedMatches = filterByGroupBalance(divisionBalancedMatches, scoreCtx);
 
   // 性別ガード: manual_gender_unlock が設定されていない限り、
   // コートの preferred_gender と異なる試合を候補から完全除外する
   const genderPreFilteredMatches = (court.preferred_gender && !court.manual_gender_unlock)
-    ? roundFilteredMatches.filter(match => {
+    ? balancedMatches.filter(match => {
         const mg = getPreferredGender(match);
         // neutral (mixed_doubles, team_battle) は OK。同性別も OK。逆性別は除外。
         return mg === null || mg === court.preferred_gender;
       })
-    : roundFilteredMatches;
+    : balancedMatches;
 
   // 使用中コートの部門を取得（部門バランス制御用）。
   // Firestore 再取得（awaited write 反映済み）が唯一の真実なので、これだけを使う。
