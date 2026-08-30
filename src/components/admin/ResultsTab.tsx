@@ -733,6 +733,11 @@ export default function ResultsTab() {
 
   const getRoundLabel = (match: MatchWithPlayers | null) => {
     if (!match) return "-";
+    // 予選リーグの試合に決勝トーナメントのラウンド名（準決勝など）を付けない。
+    // 予選のラウンドは総当りの巡目であって、決勝までの残り段数ではない。
+    if (match.phase === 'preliminary') {
+      return match.group ? `予選 ${match.group}組` : '予選';
+    }
     // 全試合から計算したmaxRoundByTypeを使用（現在コート上の試合のみではなく全体から算出）
     const key = `${match.tournament_type}_${match.division}`;
     const maxRound = maxRoundByType[key] || match.round;
