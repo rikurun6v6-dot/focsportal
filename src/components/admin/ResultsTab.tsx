@@ -85,6 +85,9 @@ export default function ResultsTab() {
   // コートカードの「その他の操作」を開いている試合ID。
   // ふだん使うのは結果の確定だけなので、それ以外は畳んでおく。
   const [showMoreFor, setShowMoreFor] = useState<string | null>(null);
+  // 空きコートの「その他の操作」を開いているコートID。
+  // 性別の一時許可も強制アサインも例外操作なので、ふだんは畳んでおく。
+  const [showCourtMoreFor, setShowCourtMoreFor] = useState<string | null>(null);
   const [breakingMatches, setBreakingMatches] = useState<MatchWithPlayers[]>([]);
   const [showAddBreakFor, setShowAddBreakFor] = useState<string | null>(null);
   // 種目ごとの最大ラウンド数（全試合から算出）
@@ -1486,7 +1489,8 @@ export default function ResultsTab() {
                                 {genderLabel}専用 · 空き{emptyMins}分
                               </p>
                             )}
-                            {court.manual_gender_unlock ? (
+                            {/* 許可中であることは状態の告知なので畳まない */}
+                            {court.manual_gender_unlock && (
                               <div className="flex flex-col gap-1 w-full">
                                 <span className="text-[10px] text-green-700 font-medium bg-green-50 border border-green-200 rounded px-2 py-0.5 text-center">
                                   ✓ {oppositeLabel}の試合を許可中
@@ -1500,21 +1504,33 @@ export default function ResultsTab() {
                                   取り消す
                                 </Button>
                               </div>
-                            ) : (
-                              <Button
-                                onClick={() => handleGenderUnlock(court.id)}
-                                variant="outline"
-                                size="sm"
-                                className="w-full border-violet-300 text-violet-700 hover:bg-violet-50 h-7 text-xs"
-                              >
-                                {oppositeLabel}の試合を許可
-                              </Button>
                             )}
                           </div>
                         );
                       })()}
-                      {/* 強制アサイン */}
-                      <div className="mt-2 w-full">
+                      {/* その他の操作: 例外操作なので畳んでおく */}
+                      <Button
+                        onClick={() => setShowCourtMoreFor(showCourtMoreFor === court.id ? null : court.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2 w-full h-7 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                      >
+                        {showCourtMoreFor === court.id ? "▲ 閉じる" : "⋯ その他の操作"}
+                      </Button>
+
+                      {showCourtMoreFor === court.id && (
+                      <div className="mt-1 w-full space-y-1">
+                        {/* 逆性別の一時許可（まだ許可していないコートのみ） */}
+                        {court.preferred_gender && !court.manually_freed && !court.manual_gender_unlock && (
+                          <Button
+                            onClick={() => handleGenderUnlock(court.id)}
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-violet-300 text-violet-700 hover:bg-violet-50 h-7 text-xs"
+                          >
+                            {court.preferred_gender === 'male' ? '女子' : '男子'}の試合を許可
+                          </Button>
+                        )}
                         {showForceAssignFor === court.id ? (
                           <div className="bg-blue-50 border border-blue-200 rounded p-2 space-y-1.5">
                             <p className="text-[10px] font-bold text-blue-800">割り当てる試合を選択:</p>
@@ -1546,6 +1562,7 @@ export default function ResultsTab() {
                           </Button>
                         )}
                       </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
