@@ -1677,6 +1677,8 @@ export default function ResultsTab() {
                   busy:     'bg-rose-50 text-rose-700 border-rose-300',
                   resting:  'bg-orange-50 text-orange-700 border-orange-300',
                   round_locked: 'bg-blue-50 text-blue-700 border-blue-300',
+                  division_balance: 'bg-teal-50 text-teal-700 border-teal-300',
+                  group_balance: 'bg-teal-50 text-teal-700 border-teal-300',
                   gender_mismatch: 'bg-violet-50 text-violet-700 border-violet-300',
                 };
                 const reasonIcon: Record<string, string> = {
@@ -1684,6 +1686,8 @@ export default function ResultsTab() {
                   busy: '🔴',
                   resting: '⏰',
                   round_locked: '🔒',
+                  division_balance: '⚖',
+                  group_balance: '⚖',
                   gender_mismatch: '♂♀',
                 };
                 return (

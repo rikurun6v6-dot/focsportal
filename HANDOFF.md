@@ -1057,3 +1057,77 @@
 - 消化しきった部・グループも基準から外れる
 - ラウンド規制 `filterByCompletedRound` は元から同じ「選手が確定している試合だけ数える」
   判定なので変更なし
+
+---
+
+## 2026-08-30 / Claude Code / fix/diagnostics-sync
+
+### 変更内容
+アサイン診断パネルの判定を、割り当て本体とまったく同じ基準に揃えた。
+
+- `matchScoring.ts` に基準値の計算を関数として切り出し、本体と診断の両方がこれを使う
+  - `computeDivisionProgress()` — 種目・部ごとの進捗率と、種目ごとの最小進捗率
+  - `computeGroupBalance()` — 種目・部ごとの「いちばん消化が少ない組の消化数」
+  - `computeMinUnfinishedRound()` — グループごとの「まだ完了していない最小ラウンド」
+  - `BALANCE_TOLERANCE` を export
+- `filterByDivisionBalance` / `filterByGroupBalance` / `filterByCompletedRound` は上記を呼ぶだけにした（挙動は変えていない）
+- `diagnoseWaitingMatches` も上記を使うよう変更。スキップ理由に `division_balance` `group_balance` を追加
+- `ResultsTab.tsx` に⚖バッジの配色を追加
+
+### 変更理由
+診断パネルが本体の判定を反映しておらず、表示と実際が食い違っていた。
+
+- ラウンド規制: 本体は「前ラウンドが全部 completed」まで止めるが、診断は
+  「待機中の試合の最小ラウンド」で判定していた。前ラウンドがコート上で進行中の試合が
+  「ロックされていない」と表示されていた
+- 部門均等・グループ均等: 診断がそもそも見ていなかった。均等化でコートが空いたまま
+  止まっても、理由がどこにも表示されない
+
+### 影響範囲
+- `src/lib/matchScoring.ts`（関数抽出。フィルタの挙動は変更なし）
+- `src/lib/dispatcher.ts`（`SkipReason` に2種追加 / `diagnoseWaitingMatches` の判定）
+- `src/components/admin/ResultsTab.tsx`（バッジ配色のみ）
+
+### 注意点
+- 今後、均等化の計算式を変えるときは必ず `matchScoring.ts` の3関数だけを直すこと。
+  dispatcher 側で独自計算に戻すと、また表示と実際がズレる
+- `diagnoseWaitingMatches` にあった `filteredWaiting` は使われなくなったので削除した
+
+---
+
+## 2026-08-30 / Claude Code / feat/dispatch-approval
+
+### 変更内容
+コートが「空いているのに均等化ルールで次を入れられない」状態になったとき、
+承認モードONの端末に承認カードを出し、例外で1試合入れられるようにした。
+
+- `types/index.ts`（**保護対象**）
+  - `Court` に `stuck_since` / `pending_dispatch` / `dispatch_muted_until` を追加
+  - `PendingDispatch` / `PendingDispatchCandidate` を追加
+  - `Config` に `approval_stuck_seconds`（既定90）/ `approval_auto_minutes`（既定3）を追加
+- `dispatcher.ts`
+  - `DispatchBlockInfo` を追加。`dispatchToEmptyCourt` に任意の out 引数として渡すと、
+    均等化・ラウンド規制「だけ」で弾かれた候補を理由つきで返す
+  - `autoDispatchAll` に `handleStuckCourt()` を追加（詰まり検知・承認待ち作成・自動投入）
+  - `approveDispatch()` / `dismissDispatch()` を追加
+- `DispatchApprovalCards.tsx`（新規）— 承認カードと端末ごとの承認モード
+- `admin/page.tsx` — コート状況に承認カードと「承認 ON/OFF」ボタンを追加
+
+### 変更理由
+#70 で均等化を厳しくした結果、遅れている部・組の選手が全員ふさがっているあいだは
+コートが空いたまま待つようになった。オーナー判断で「そのときは例外で入れられるようにしたい。
+承認制にするとやりやすい」との要望。
+
+### 影響範囲
+- 自動割り当て全体。ただし**通常の割り当て経路は変えていない**。
+  承認は `match.reserved_court_id` を書くだけで、既存の予約パス
+  （`dispatchToEmptyCourt` の先頭、均等化フィルタより前）がそのまま拾う
+- Court ドキュメントに書き込みが増える（詰まり開始時と解消時の各1回）
+
+### 注意点
+- 端末判定（iPad かどうか）は**使っていない**。iPadOS の Safari は既定で Mac と名乗るため
+  判定が壊れる。端末ごとの localStorage トグル（`focs_approval_mode`）にした
+- 承認後にそのコートが別経路で埋まると、`reserved_court_id` が試合に残る。
+  そのコートが次に空いたときに入る。困る場合は予約を手動で外すこと
+- 「空けたままにする」は10分黙るだけ。10分後にまた聞く
+- `approval_auto_minutes` を 0 にすると自動投入しなくなる（人が決めるまで入らない）
