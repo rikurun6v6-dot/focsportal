@@ -17,6 +17,7 @@ import TournamentGenerator from "@/components/admin/TournamentGenerator";
 import AutoDispatchEngine from "@/components/AutoDispatchEngine";
 import MatchResultInput from "@/components/admin/MatchResultInput";
 import InactivePlayerWarning from "@/components/admin/InactivePlayerWarning";
+import DispatchApprovalCards, { isApprovalModeOn, setApprovalMode } from "@/components/admin/DispatchApprovalCards";
 import ResultsTab from "@/components/admin/ResultsTab";
 import PlayerManager from "@/components/admin/PlayerManager";
 import AdminGuard from "@/components/admin/AdminGuard";
@@ -111,6 +112,14 @@ export default function AdminDashboard() {
 
   const [initializing, setInitializing] = useState(false);
   const [autoDispatchEnabled, setAutoDispatchEnabled] = useState(false);
+  // 承認モードはこの端末だけの設定（localStorage）。サーバーには持たせない
+  const [approvalMode, setApprovalModeState] = useState(false);
+  useEffect(() => {
+    const sync = () => setApprovalModeState(isApprovalModeOn());
+    sync();
+    window.addEventListener('focs-approval-mode', sync);
+    return () => window.removeEventListener('focs-approval-mode', sync);
+  }, []);
   const [dispatching, setDispatching] = useState(false);
   const [isSequentialMode, setIsSequentialMode] = useState(false);
   const [finalsWaitMode, setFinalsWaitMode] = useState<{ [key: string]: boolean }>({});
@@ -1361,6 +1370,9 @@ export default function AdminDashboard() {
                 {/* 棄権した選手が残っている試合の警告（あるときだけ出る） */}
                 <InactivePlayerWarning />
 
+                {/* 例外投入の承認カード（承認モードONの端末だけに出る） */}
+                <DispatchApprovalCards />
+
                 {/* コート状況: 自動割り当てON/OFF ＋ コート結果（入力）を1画面に集約 */}
                 <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${autoDispatchEnabled ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -1377,13 +1389,25 @@ export default function AdminDashboard() {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    onClick={toggleAutoDispatch}
-                    disabled={isArchived}
-                    className={`shrink-0 ${autoDispatchEnabled ? 'bg-rose-500 hover:bg-rose-600' : 'bg-sky-500 hover:bg-sky-600'} text-white`}
-                  >
-                    {autoDispatchEnabled ? '停止' : '開始'}
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* 承認モードはこの端末だけの設定。iPad で ON にして使う想定 */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setApprovalMode(!approvalMode)}
+                      title="コートが詰まったとき、この端末に承認カードを出す"
+                      className={approvalMode ? 'border-amber-400 bg-amber-50 text-amber-800' : ''}
+                    >
+                      承認 {approvalMode ? 'ON' : 'OFF'}
+                    </Button>
+                    <Button
+                      onClick={toggleAutoDispatch}
+                      disabled={isArchived}
+                      className={`${autoDispatchEnabled ? 'bg-rose-500 hover:bg-rose-600' : 'bg-sky-500 hover:bg-sky-600'} text-white`}
+                    >
+                      {autoDispatchEnabled ? '停止' : '開始'}
+                    </Button>
+                  </div>
                 </div>
                 <ResultsTab />
               </TabsContent>
