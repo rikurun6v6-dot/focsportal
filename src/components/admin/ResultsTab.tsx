@@ -82,6 +82,9 @@ export default function ResultsTab() {
   const [showCourtChangeFor, setShowCourtChangeFor] = useState<string | null>(null);
   const [availableCourts, setAvailableCourts] = useState<Court[]>([]);
   const [showBreakFor, setShowBreakFor] = useState<string | null>(null);
+  // コートカードの「その他の操作」を開いている試合ID。
+  // ふだん使うのは結果の確定だけなので、それ以外は畳んでおく。
+  const [showMoreFor, setShowMoreFor] = useState<string | null>(null);
   const [breakingMatches, setBreakingMatches] = useState<MatchWithPlayers[]>([]);
   const [showAddBreakFor, setShowAddBreakFor] = useState<string | null>(null);
   // 種目ごとの最大ラウンド数（全試合から算出）
@@ -1344,31 +1347,45 @@ export default function ResultsTab() {
                               >
                                 {submitting === match.id ? '送信中...' : '結果を確定'}
                               </Button>
-                              {/* 補助操作 */}
-                              <div className="grid grid-cols-3 gap-1.5">
-                                <Button onClick={() => handleShowCourtChange(match.id)} variant="outline" size="sm"
-                                  className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs px-1 h-7">コート変更</Button>
-                                <Button onClick={() => setShowBreakFor(match.id)} variant="outline" size="sm"
-                                  className="border-orange-300 text-orange-700 hover:bg-orange-50 text-xs px-1 h-7">休憩</Button>
-                                <Button onClick={() => handleFreeCourt(court.id)} variant="outline" size="sm"
-                                  className="border-slate-300 text-slate-600 hover:bg-slate-50 text-xs px-1 h-7">フリー</Button>
-                              </div>
-                              <div className="grid grid-cols-2 gap-1.5">
-                                <Button onClick={() => handleWalkover(match, court.id, 1)} disabled={submitting === match.id}
-                                  variant="outline" size="sm" className="h-7 text-xs">上側 WO</Button>
-                                <Button onClick={() => handleWalkover(match, court.id, 2)} disabled={submitting === match.id}
-                                  variant="outline" size="sm" className="h-7 text-xs">下側 WO</Button>
-                              </div>
-                              {/* 次から割り当て停止（今の試合は継続） */}
-                              {court.manually_freed ? (
+                              {/* 割り当て停止中であることは状態の告知なので、畳まずに常に出す */}
+                              {court.manually_freed && (
                                 <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                                   <span className="text-[10px] text-amber-700 font-medium">⏹ 試合終了後、割り当て停止</span>
                                   <Button onClick={() => handleResumeAllocation(court.id)} variant="outline" size="sm"
                                     className="border-amber-400 text-amber-700 hover:bg-amber-100 text-[10px] h-6 px-2">解除</Button>
                                 </div>
-                              ) : (
-                                <Button onClick={() => handleStopAfterCurrent(court.id)} variant="outline" size="sm"
-                                  className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 text-xs h-7">次から割り当て停止（今の試合は継続）</Button>
+                              )}
+
+                              {/* その他の操作: ふだん使わないものは畳んでおく */}
+                              <Button
+                                onClick={() => setShowMoreFor(showMoreFor === match.id ? null : match.id)}
+                                variant="ghost" size="sm"
+                                className="w-full h-7 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                              >
+                                {showMoreFor === match.id ? "▲ 閉じる" : "⋯ その他の操作"}
+                              </Button>
+
+                              {showMoreFor === match.id && (
+                                <div className="space-y-1.5">
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    <Button onClick={() => handleShowCourtChange(match.id)} variant="outline" size="sm"
+                                      className="border-purple-300 text-purple-700 hover:bg-purple-50 text-xs px-1 h-7">コート変更</Button>
+                                    <Button onClick={() => setShowBreakFor(match.id)} variant="outline" size="sm"
+                                      className="border-orange-300 text-orange-700 hover:bg-orange-50 text-xs px-1 h-7">休憩</Button>
+                                    <Button onClick={() => handleFreeCourt(court.id)} variant="outline" size="sm"
+                                      className="border-slate-300 text-slate-600 hover:bg-slate-50 text-xs px-1 h-7">フリー</Button>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <Button onClick={() => handleWalkover(match, court.id, 1)} disabled={submitting === match.id}
+                                      variant="outline" size="sm" className="h-7 text-xs">上側 WO</Button>
+                                    <Button onClick={() => handleWalkover(match, court.id, 2)} disabled={submitting === match.id}
+                                      variant="outline" size="sm" className="h-7 text-xs">下側 WO</Button>
+                                  </div>
+                                  {!court.manually_freed && (
+                                    <Button onClick={() => handleStopAfterCurrent(court.id)} variant="outline" size="sm"
+                                      className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 text-xs h-7">次から割り当て停止（今の試合は継続）</Button>
+                                  )}
+                                </div>
                               )}
 
                               {/* コート変更ダイアログ */}
