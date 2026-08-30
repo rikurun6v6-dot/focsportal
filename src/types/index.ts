@@ -215,6 +215,13 @@ export interface Config {
   division_bonus_max?: number; // 部門バランスボーナス上限（デフォルト50）
   wait_factor?: number; // 待機時間係数（デフォルト1.0）
   team_battle_ranking_method?: 'wins_games_points' | 'wins_h2h_points'; // 団体戦の予選順位決定方法
+  /**
+   * 自動割り当てを回している端末のID。自動割り当てはブラウザ内で動くため、
+   * /admin を開いた端末が全部回すと二重割り当てが起きる。1台だけが回すようにする。
+   */
+  dispatch_owner_id?: string;
+  /** その端末が最後に生存を知らせた時刻。一定時間途切れたら他の端末が引き継ぐ */
+  dispatch_owner_at?: Timestamp;
 }
 
 /**

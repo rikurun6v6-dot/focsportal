@@ -1,5 +1,5 @@
 import type { Match, Court, Config, Camp, Player, TournamentType, Division } from '@/types';
-import { getAllDocuments, getDocument, updateDocument } from './firestore-helpers';
+import { getAllDocuments, getDocument, updateDocument, claimCourtForMatch, claimExtraCourt } from './firestore-helpers';
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
 import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase,
@@ -81,7 +81,8 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
           if (claimedCourtIds.has(extraCourt.id)) continue;
           if (!extraCourt.is_active || extraCourt.manually_freed) continue;
           try {
-            await updateDocument('courts', extraCourt.id, { current_match_id: assigned.id });
+            const ok = await claimExtraCourt(extraCourt.id, assigned.id);
+            if (!ok) continue; // 他の端末が先に取っていた
             claimedCourtIds.add(extraCourt.id);
             dispatchedCount++;
             extraCount++;
@@ -132,16 +133,14 @@ export async function dispatchToEmptyCourt(
   if (reservedMatch) {
     // 予約試合を最優先でアサイン（enabled_tournaments フィルタ済みの waitingMatches から取得）
     try {
-      await updateDocument('matches', reservedMatch.id, {
+      // コートと試合を同時に確保する。他の端末が先に取っていたら諦める。
+      const claimed = await claimCourtForMatch(court.id, reservedMatch.id, {
         status: 'calling',
         court_id: court.id,
         reserved_court_id: null, // 予約解除
         available_at: null // 休憩時間クリア
       });
-
-      await updateDocument('courts', court.id, {
-        current_match_id: reservedMatch.id
-      });
+      if (!claimed) return null;
 
       // Web Push 通知（fire-and-forget）
       fetch('/api/push/send', {
@@ -305,14 +304,14 @@ export async function dispatchToEmptyCourt(
       .map(m => ({ m, score: calcMatchScore(m, scoreCtx) }))
       .sort((a, b) => b.score - a.score)[0].m;
     try {
-      await updateDocument('matches', chosen.id, {
+      const claimed = await claimCourtForMatch(court.id, chosen.id, {
         status: 'calling',
         court_id: court.id,
         available_at: null,
         reserved_court_id: null,
         priority_dispatch: false,
       });
-      await updateDocument('courts', court.id, { current_match_id: chosen.id });
+      if (!claimed) return null;
       fetch('/api/push/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -517,15 +516,16 @@ export async function dispatchToEmptyCourt(
   }
 
   try {
-    await updateDocument('matches', candidate.match.id, {
+    const claimed = await claimCourtForMatch(court.id, candidate.match.id, {
       status: 'calling',
       court_id: court.id
     });
+    if (!claimed) return null;
 
     // manual_gender_unlock は割り当て成功後に自動リセット
-    const courtUpdate: Record<string, unknown> = { current_match_id: candidate.match.id };
-    if (court.manual_gender_unlock) courtUpdate.manual_gender_unlock = false;
-    await updateDocument('courts', court.id, courtUpdate);
+    if (court.manual_gender_unlock) {
+      await updateDocument('courts', court.id, { manual_gender_unlock: false });
+    }
 
     // Web Push 通知（fire-and-forget）
     fetch('/api/push/send', {

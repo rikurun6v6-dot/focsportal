@@ -1002,3 +1002,27 @@
   - 進捗率の計算は `campMatches`（その合宿のみ）で行う。`allMatches` は全合宿ぶんなので使ってはいけない。
   - 従来のスコア側の均等化（`groupPenalty` / `divisionBonus`）はそのまま残している。ハード制約で候補が複数残ったときの順位付けに効く。
 - オーナー承認: rikurun6v6-dot / 2026-08-30（オーナー本人の指示によりマージ・デプロイ）
+
+## 2026-08-30 — [dispatch] 複数端末での二重割り当てを防ぐ（トランザクション＋担当リース）
+- 担当者: rikurun6v6-dot（Claude Code 経由）
+- ブランチ / PR: fix/dispatch-race / #（PR作成後） ※ `feat/strict-progress-balance`（#68）に積んでいる
+- 変更内容:
+  **前提**: 自動割り当てはサーバーではなく**ブラウザ内**で動いている（`AutoDispatchEngine` が5秒ごとに `autoDispatchAll` を呼ぶ）。しかも `admin/page.tsx` に置かれているので、**`/admin` を開いている端末すべてが同時に割り当てを回していた**。
+  **① コートと試合を同時に確保（`firestore-helpers.ts`）**
+  - 従来は `updateDocument('matches', ...)` → `updateDocument('courts', ...)` の2回書き込みで、トランザクションを使っていなかった。読んでから書くまでの間に別端末が同じコートを取ると、後の書き込みが前を上書きし、**コートに乗らないまま「呼出中」になった試合**が残る。
+  - `claimCourtForMatch(courtId, matchId, matchUpdate)` を追加。Firestore のトランザクションで「コートが空いている」「試合がまだ待機中」を確かめてから両方を書く。どちらかが崩れていれば何も書かずに false を返し、呼び出し側はそのコートを諦める。
+  - 団体戦の追加コート用に `claimExtraCourt(courtId, matchId)` も追加（試合側は確保済みなのでコートだけ見る）。
+  - `dispatcher.ts` の割り当て4箇所（予約試合・優先割り当て・通常・団体戦の追加コート）をすべて置き換えた。
+  **② 割り当ての担当を1台に絞る（リース方式）**
+  - `Config` に `dispatch_owner_id` / `dispatch_owner_at` を追加。
+  - `AutoDispatchEngine` は毎回 `acquireDispatchLease` を呼び、**担当を取れた端末だけ**が割り当てを回す。
+  - リースは15秒（ポーリング5秒の3回分）で切れる。担当端末を閉じた・画面が寝た場合は他の端末が引き継ぐので、**「PCを閉じたら大会が止まる」ことはない。**
+  - 画面を離れるときは `releaseDispatchLease` で明け渡し、次の端末がすぐ引き継げるようにした。
+  - 端末IDは `sessionStorage`。再読み込みしても同じ端末として扱われる。
+- 変更理由: iPad での「割り当て承認」機能を検討する中で、そもそも**どの端末が割り当て役なのかが定義されていない**ことが判明した。承認機能の土台としても、既存の不具合としても先に直す必要がある。
+- 影響範囲: `src/lib/firestore-helpers.ts`（関数4つ追加）、`src/lib/dispatcher.ts`（割り当て4箇所）、`src/components/AutoDispatchEngine.tsx`、`src/types/index.ts`（**Config にフィールド2つ追加＝保護対象**）。`npm run build` 成功・`tsc --noEmit` 通過。
+- 注意点 / 引き継ぎ事項:
+  - **1台しか回さなくなるので、担当端末のブラウザが寝ると最大15秒割り当てが止まる。** iPad を割り当て役にする場合は自動ロックを切ること。PCを常時開いておき、iPadは閲覧・入力に使うのが安全。
+  - 担当は「先に取った端末」であって選べない。明示的に選びたくなったら、`dispatch_owner_id` を画面から設定できるようにする余地がある。
+  - リース取得に失敗したときは**回さない**（二重割り当てより一時停止のほうが安全）という判断にしている。
+- オーナー承認: rikurun6v6-dot / 2026-08-30（オーナー本人の指示によりマージ・デプロイ）
