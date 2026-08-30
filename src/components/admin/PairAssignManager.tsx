@@ -169,7 +169,11 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
       }
 
       const byNumber = new Map(filled.map(d => [d.pairNumber, d.members]));
-      const divisionMatches = matches.filter(m => m.division === division);
+      // 既に終わった試合は書き換えない。
+      // 棄権や不戦勝で確定した試合に選手が戻ってしまい、記録が壊れる。
+      const divisionMatches = matches.filter(
+        m => m.division === division && m.status !== 'completed'
+      );
       const batch = writeBatch(db);
       let touched = 0;
 
@@ -197,7 +201,7 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
       }
 
       if (touched === 0) {
-        toastError('反映できる試合がありません', 'この種目・部にペア番号付きの試合がありません');
+        toastError('反映できる試合がありません', '未実施の試合が残っていないか、ペア番号が付いていません（終わった試合は書き換えません）');
         setSaving(false);
         return;
       }
