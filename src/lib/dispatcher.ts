@@ -131,7 +131,7 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
  * 選手が試合中・休息中・コートの性別違いのものは含まない（例外にしても入らないため）。
  */
 export interface DispatchBlockInfo {
-  overridable: { match: Match; reason: string }[];
+  overridable: { match: Match; reason: string; kind: 'round' | 'division' | 'group' }[];
 }
 
 export async function dispatchToEmptyCourt(
@@ -426,12 +426,15 @@ export async function dispatchToEmptyCourt(
       const { ratioByTypeDiv, minRatioByType } = computeDivisionProgress(campMatches);
       const minGroupDone = computeGroupBalance(campMatches, scoreCtx);
 
-      const reasonFor = (m: Match): string => {
+      const reasonFor = (m: Match): { kind: 'round' | 'division' | 'group'; reason: string } => {
         const parts: string[] = [];
+        let kind: 'round' | 'division' | 'group' | null = null;
 
         const minRound = minRoundByGroup.get(getGroupKey(m));
         if (minRound !== undefined && m.round > minRound) {
-          parts.push(`${minRound}回戦がまだ全部終わっていません`);
+          const grpLabel = (m as any).group ? `${(m as any).group}組の` : '';
+          parts.push(`${grpLabel}${minRound}回戦がまだ全部終わっていません`);
+          kind = 'round';
         }
 
         if (m.division !== undefined) {
@@ -439,6 +442,7 @@ export async function dispatchToEmptyCourt(
           const mine = ratioByTypeDiv.get(`${m.tournament_type}_${m.division}`);
           if (min !== undefined && mine !== undefined && mine > min + BALANCE_TOLERANCE) {
             parts.push(`${m.division}部だけ進みすぎます（${Math.round(mine * 100)}% / いちばん遅い部 ${Math.round(min * 100)}%）`);
+            if (kind === null) kind = 'division';
           }
         }
 
@@ -449,17 +453,21 @@ export async function dispatchToEmptyCourt(
           const mineDone = scoreCtx.groupProgressMap.get(`${tdKey}_${grp}`) ?? 0;
           if (minDone !== undefined && mineDone > minDone) {
             parts.push(`${grp}組だけ進みすぎます（${mineDone}試合 / いちばん遅い組 ${minDone}試合）`);
+            if (kind === null) kind = 'group';
           }
         }
 
-        return parts.join(' / ') || 'ルール上の理由は特定できませんでした';
+        return {
+          kind: kind ?? 'division',
+          reason: parts.join(' / ') || 'ルール上の理由は特定できませんでした',
+        };
       };
 
       blockInfo.overridable = nearMiss
         .map(m => ({ match: m, score: (() => { try { return calcMatchScore(m, scoreCtx); } catch { return 0; } })() }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 3)
-        .map(({ match }) => ({ match, reason: reasonFor(match) }));
+        .map(({ match }) => ({ match, ...reasonFor(match) }));
     }
   }
 
@@ -1062,17 +1070,24 @@ async function handleStuckCourt(
   if ((nowMs - stuckSince) / 1000 < stuckSeconds) return;
 
   const players = await getAllDocuments<Player>('players');
-  const candidates: PendingDispatchCandidate[] = blockInfo.overridable.map(({ match, reason }) => ({
+  const candidates: PendingDispatchCandidate[] = blockInfo.overridable.map(({ match, reason, kind }) => ({
     match_id: match.id,
     label: candidateLabel(match, players),
     reason,
+    kind,
   }));
+
+  // ラウンド規制で止まっているだけのときは、自動では入れない。
+  // 前のラウンドがコート上に残っている状況は通常運用で何度も起きるので、
+  // ここで自動投入すると「ラウンド規制を厳しめに」が毎回迂回されてしまう。
+  // 部門・グループの偏りで止まっているときだけ、無応答なら自動で入れる。
+  const isRoundOnly = candidates[0]?.kind === 'round';
 
   await updateDocument('courts', court.id, {
     pending_dispatch: {
       candidates,
       created_at: Timestamp.now(),
-      auto_at: autoMinutes > 0
+      auto_at: (autoMinutes > 0 && !isRoundOnly)
         ? Timestamp.fromMillis(nowMs + autoMinutes * 60000)
         : null,
     },

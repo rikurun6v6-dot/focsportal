@@ -112,7 +112,7 @@ export default function AdminDashboard() {
 
   const [initializing, setInitializing] = useState(false);
   const [autoDispatchEnabled, setAutoDispatchEnabled] = useState(false);
-  // 承認モードはこの端末だけの設定（localStorage）。サーバーには持たせない
+  // 確認カードの表示はこの端末だけの設定（localStorage）。既定は出す
   const [approvalMode, setApprovalModeState] = useState(false);
   useEffect(() => {
     const sync = () => setApprovalModeState(isApprovalModeOn());
@@ -1390,15 +1390,15 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* 承認モードはこの端末だけの設定。iPad で ON にして使う想定 */}
+                    {/* 承認カードは既定で全端末に出る。この端末だけ黙らせたいときに OFF にする */}
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setApprovalMode(!approvalMode)}
-                      title="コートが詰まったとき、この端末に承認カードを出す"
+                      title="コートが止まったときの確認カードを、この端末に出すかどうか"
                       className={approvalMode ? 'border-amber-400 bg-amber-50 text-amber-800' : ''}
                     >
-                      承認 {approvalMode ? 'ON' : 'OFF'}
+                      確認カード {approvalMode ? 'ON' : 'OFF'}
                     </Button>
                     <Button
                       onClick={toggleAutoDispatch}

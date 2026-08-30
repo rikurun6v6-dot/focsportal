@@ -5,9 +5,13 @@
 // 均等化を厳しくしたぶん、遅れている部・組が全員ふさがっているとコートが空いたままになる。
 // そのときだけ「ルール上は入れられないけど、例外で入れますか」と聞く。
 //
-// 出す端末は「承認モード」を ON にした端末だけ。iPad かどうかは判定しない。
-// iPadOS の Safari は既定で Mac と名乗るので、端末判定は必ず壊れる。
-// トグルなら iPad が落ちても、別の端末で ON にすれば運用が続く。
+// カードは既定で全部の管理画面に出す。コートが1面止まっているという事実は、
+// 運営している全員が知っているべきもの。特定の端末にしか出さないと、
+// 他の端末では「なぜ入らないのか」が分からないまま待つことになる。
+//
+// 「承認 OFF」はこの端末だけカードを黙らせる（モニター用の画面など）。
+// iPad かどうかは判定しない。iPadOS の Safari は既定で Mac と名乗るため、
+// 端末判定は必ず壊れる。
 
 import { useEffect, useState } from 'react';
 import type { Court } from '@/types';
@@ -19,12 +23,13 @@ import { Button } from '@/components/ui/button';
 
 const APPROVAL_MODE_KEY = 'focs_approval_mode';
 
+/** 既定は ON。明示的に「0」を入れた端末だけカードを出さない */
 export function isApprovalModeOn(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return localStorage.getItem(APPROVAL_MODE_KEY) === '1';
+    return localStorage.getItem(APPROVAL_MODE_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -131,7 +136,9 @@ export default function DispatchApprovalCards() {
               </span>
             </div>
             <p className="text-sm text-amber-800 mb-3">
-              均等に進めるルールでは、次の試合を入れられません。例外で入れますか？
+              {pending.candidates[0]?.kind === 'round'
+                ? '前のラウンドがまだ全部終わっていないので、次のラウンドは自動では入れません。先に入れていいですか？'
+                : '均等に進めるルールでは、次の試合を入れられません。例外で入れますか？'}
             </p>
 
             <div className="space-y-2">
