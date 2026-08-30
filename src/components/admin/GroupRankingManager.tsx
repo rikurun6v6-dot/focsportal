@@ -50,6 +50,15 @@ export default function GroupRankingManager() {
       }
     } catch { /* ignore */ }
 
+    // 選んでいる部がこの種目に無い場合は、実際に試合がある部の先頭に寄せる。
+    // 寄せないと、既定の1部のまま『予選リーグの試合がありません』と出てしまう。
+    const available = getDivisionsInUse(matchList);
+    if (!available.includes(division)) {
+      setDivision(available[0]);
+      setLoading(false);
+      return;
+    }
+
     const preliminaryMatches = matchList.filter(m => m.phase === 'preliminary' && m.division === division);
     const groups = [...new Set(preliminaryMatches.map(m => m.group).filter(g => g))] as TeamGroup[];
 
