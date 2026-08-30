@@ -206,9 +206,10 @@ function buildAdminSections(): Section[] {
             <h4 className="font-semibold text-slate-800 mb-2">登録方法（2通り）</h4>
             <div className="space-y-2">
               <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">
-                <p className="font-semibold text-slate-800">① 「ペア割り当て」タブ →「試合ごとに直す」から手動登録</p>
+                <p className="font-semibold text-slate-800">① 「ペア割り当て」タブ →「番号で割り当て」から</p>
                 <p className="text-slate-600 text-xs mt-1">
-                  「ペア作成」で2人を選択した後、「3人目を追加」ボタンで3人目を選択します。
+                  番号の右にある「＋ 3人目」を押すと入力欄が1つ増えます。もう一度押すと外れます。
+                  当日くじで人数が奇数になったときはここで足すのが早いです。
                 </p>
               </div>
               <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm">

@@ -94,7 +94,11 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
           const existing = assigned.get(pairNumber) ?? [];
           return {
             pairNumber,
-            members: Array.from({ length: memberCount }, (_, i) => existing[i] ?? null),
+            // 既に3人入っているペア（人数が奇数のときの3人組）は3枠で読み込む
+            members: Array.from(
+              { length: Math.max(memberCount, existing.length) },
+              (_, i) => existing[i] ?? null
+            ),
           };
         })
       );
@@ -121,6 +125,15 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
     return counts;
   }, [drafts]);
 
+  // 3人目の枠を足す・外す（人数が奇数で3人組を作るとき）
+  const toggleThirdMember = (pairNumber: number) => {
+    setDrafts(prev => prev.map(d => {
+      if (d.pairNumber !== pairNumber) return d;
+      if (d.members.length > 2) return { ...d, members: d.members.slice(0, 2) };
+      return { ...d, members: [...d.members, null] };
+    }));
+  };
+
   const setMember = (pairNumber: number, index: number, playerId: string | null) => {
     setDrafts(prev => prev.map(d => {
       if (d.pairNumber !== pairNumber) return d;
@@ -130,7 +143,9 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
     }));
   };
 
-  const assignedCount = drafts.filter(d => d.members.every(Boolean)).length;
+  // 3人目は任意なので、先頭2つ（シングルスは1つ）が埋まっていれば確定とみなす
+  const requiredCount = isSingles ? 1 : 2;
+  const assignedCount = drafts.filter(d => d.members.slice(0, requiredCount).every(Boolean)).length;
 
   const handleSave = async () => {
     if (!camp) return;
@@ -165,13 +180,14 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
           const members = byNumber.get(m.pair_no_p1)!;
           update.player1_id = members[0] ?? '';
           if (!isSingles) update.player3_id = members[1] ?? '';
-          if (members[2]) update.player5_id = members[2];
+          // 3人目は外したときに消えるよう、常に書く
+          if (!isSingles) update.player5_id = members[2] ?? '';
         }
         if (m.pair_no_p2 && byNumber.has(m.pair_no_p2)) {
           const members = byNumber.get(m.pair_no_p2)!;
           update.player2_id = members[0] ?? '';
           if (!isSingles) update.player4_id = members[1] ?? '';
-          if (members[2]) update.player6_id = members[2];
+          if (!isSingles) update.player6_id = members[2] ?? '';
         }
 
         if (Object.keys(update).length > 0) {
@@ -274,6 +290,7 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
           isSingles={isSingles}
           readOnly={readOnly}
           onChange={setMember}
+          onToggleThird={toggleThirdMember}
         />
       ))}
     </div>
@@ -283,7 +300,7 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
 // ── 1ペア分の行 ───────────────────────────────────────────────────────────────
 
 function PairRow({
-  draft, players, playerById, usedPlayerIds, isMixed, isSingles, readOnly, onChange,
+  draft, players, playerById, usedPlayerIds, isMixed, isSingles, readOnly, onChange, onToggleThird,
 }: {
   draft: SlotDraft;
   players: Player[];
@@ -293,8 +310,12 @@ function PairRow({
   isSingles: boolean;
   readOnly: boolean;
   onChange: (pairNumber: number, index: number, playerId: string | null) => void;
+  onToggleThird: (pairNumber: number) => void;
 }) {
-  const complete = draft.members.every(Boolean);
+  // 3人目は任意。先頭2つ（シングルスは1つ）が埋まっていれば確定とみなす
+  const requiredCount = isSingles ? 1 : 2;
+  const complete = draft.members.slice(0, requiredCount).every(Boolean);
+  const hasThird = draft.members.length > 2;
 
   return (
     <Card className={complete ? 'border-emerald-200 bg-emerald-50/30' : ''}>
@@ -310,11 +331,11 @@ function PairRow({
             {complete && <Check className="w-4 h-4 text-emerald-600" />}
           </div>
 
-          <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className={`flex-1 grid grid-cols-1 gap-3 ${hasThird ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             {draft.members.map((playerId, i) => (
               <PlayerPicker
                 key={i}
-                label={isMixed ? (i === 0 ? '男子' : '女子') : undefined}
+                label={i === 2 ? '3人目' : isMixed ? (i === 0 ? '男子' : '女子') : undefined}
                 players={players}
                 selected={playerId ? playerById.get(playerId) ?? null : null}
                 duplicated={!!playerId && (usedPlayerIds.get(playerId) ?? 0) > 1}
@@ -323,6 +344,18 @@ function PairRow({
               />
             ))}
           </div>
+
+          {/* 人数が奇数のときの3人組。ダブルスのみ */}
+          {!isSingles && !readOnly && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onToggleThird(draft.pairNumber)}
+              className="h-8 px-2 text-xs text-slate-500 hover:text-slate-700 shrink-0 self-start"
+            >
+              {hasThird ? '3人目を外す' : '＋ 3人目'}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

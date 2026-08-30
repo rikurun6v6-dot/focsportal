@@ -29,6 +29,7 @@ import { ShieldAlert, Activity, Settings, Users, Trophy, Play, BarChart3, Home, 
 import { useCamp } from "@/context/CampContext";
 import CampManager from "@/components/admin/CampManager";
 import CampDaySwitcher from "@/components/admin/CampDaySwitcher";
+import { DEFAULT_DIVISIONS } from "@/lib/divisions";
 import { Toaster } from "sonner";
 import { toastSuccess, toastError, toastInfo } from "@/lib/toast";
 import StatusBar from "@/components/admin/StatusBar";
@@ -1281,19 +1282,19 @@ export default function AdminDashboard() {
                       { type: 'mens_singles' as TournamentType, label: '男子シングルス' },
                       { type: 'womens_singles' as TournamentType, label: '女子シングルス' }
                     ].map(({ type, label }) => (
-                      <div key={type} className="flex flex-col gap-2">
-                        <p className="font-semibold text-slate-700">{label}</p>
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          {[1, 2].map(div => (
+                      <div key={type} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                        <p className="font-semibold text-slate-700 w-32 shrink-0 text-sm">{label}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {DEFAULT_DIVISIONS.map(div => (
                             <Button
                               key={div}
                               onClick={() => create3rdPlaceMatch(type, div as Division)}
                               variant="outline"
                               size="sm"
                               disabled={isArchived}
-                              className="border-amber-200 text-amber-700 hover:bg-amber-50"
+                              className="border-amber-200 text-amber-700 hover:bg-amber-50 h-8 px-3 text-xs"
                             >
-                              {div}部 - 3位決定戦を作成
+                              {div}部
                             </Button>
                           ))}
                         </div>
@@ -1319,10 +1320,10 @@ export default function AdminDashboard() {
                       { type: 'mens_singles' as TournamentType, label: '男子シングルス' },
                       { type: 'womens_singles' as TournamentType, label: '女子シングルス' }
                     ].map(({ type, label }) => (
-                      <div key={type} className="flex flex-col gap-2">
-                        <p className="font-semibold text-slate-700">{label}</p>
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          {[1, 2].map(div => {
+                      <div key={type} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                        <p className="font-semibold text-slate-700 w-32 shrink-0 text-sm">{label}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {DEFAULT_DIVISIONS.map(div => {
                             const key = `${type}_${div}`;
                             const isWaiting = finalsWaitMode[key] || false;
                             return (
@@ -1333,10 +1334,10 @@ export default function AdminDashboard() {
                                 size="sm"
                                 disabled={isArchived}
                                 className={isWaiting
-                                  ? "bg-purple-500 hover:bg-purple-600 text-white"
-                                  : "border-purple-200 text-purple-700 hover:bg-purple-50"}
+                                  ? "bg-purple-500 hover:bg-purple-600 text-white h-8 px-3 text-xs"
+                                  : "border-purple-200 text-purple-700 hover:bg-purple-50 h-8 px-3 text-xs"}
                               >
-                                {div}部 - {isWaiting ? "待機中" : "通常通り"}
+                                {div}部 {isWaiting ? "待機" : "通常"}
                               </Button>
                             );
                           })}
