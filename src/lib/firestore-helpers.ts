@@ -1,7 +1,8 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, deleteField,
   query, where, orderBy, limit, onSnapshot, Timestamp, DocumentData, serverTimestamp, QueryConstraint,
-  getDocsFromCache, getDocsFromServer, getDocFromCache, getDocFromServer, Query, QuerySnapshot, DocumentSnapshot
+  getDocsFromCache, getDocsFromServer, getDocFromCache, getDocFromServer, Query, QuerySnapshot, DocumentSnapshot,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { Player, Match, Court, MatchHistory, Config, TournamentType, MatchStatus, TournamentConfig, Camp, MatchWithPlayers, Settings, Message } from '@/types';
@@ -2500,4 +2501,127 @@ export function countMatchesWithInactivePlayers(matches: Match[], players: Playe
     return [m.player1_id, m.player2_id, m.player3_id, m.player4_id, m.player5_id, m.player6_id]
       .some(id => id && inactive.has(id));
   }).length;
+}
+
+// ── コート確保（複数端末での二重割り当て防止） ──────────────────────────────
+
+/**
+ * コートと試合を「同時に」確保する。
+ *
+ * 自動割り当てはブラウザ内で動いており、`/admin` を開いている端末すべてが
+ * 5秒ごとに回している。読んでから書くまでの間に別の端末が同じコートを取ると、
+ * 後の書き込みが前を上書きし、**コートに乗らないまま「呼出中」になった試合**が残る。
+ * ここでは Firestore のトランザクションで、次の2つを不可分に行う。
+ *
+ *   - コートがまだ空いていること（current_match_id が空）
+ *   - 試合がまだ待機中であること（他の端末が既に取っていないこと）
+ *
+ * どちらかが崩れていれば何も書かずに false を返す。呼び出し側はそのコートを諦める。
+ *
+ * @returns 確保できたら true、既に取られていたら false
+ */
+export async function claimCourtForMatch(
+  courtId: string,
+  matchId: string,
+  matchUpdate: Record<string, unknown>
+): Promise<boolean> {
+  try {
+    return await runTransaction(db, async (tx) => {
+      const courtRef = doc(db, 'courts', courtId);
+      const matchRef = doc(db, 'matches', matchId);
+
+      const [courtSnap, matchSnap] = await Promise.all([tx.get(courtRef), tx.get(matchRef)]);
+      if (!courtSnap.exists() || !matchSnap.exists()) return false;
+
+      const court = courtSnap.data() as Court;
+      const match = matchSnap.data() as Match;
+
+      // 他の端末が先に取っていないか
+      if (court.current_match_id) return false;
+      if (!court.is_active || court.manually_freed) return false;
+      if (match.status !== 'waiting') return false;
+
+      tx.update(courtRef, { current_match_id: matchId });
+      tx.update(matchRef, { ...matchUpdate, updated_at: Timestamp.now() });
+      return true;
+    });
+  } catch (error) {
+    console.error('[claimCourtForMatch] 確保に失敗:', error);
+    return false;
+  }
+}
+
+/**
+ * 団体戦の追加コート確保（同じ試合を複数コートに乗せる）。
+ * 試合側は既に確保済みなので、コートが空いていることだけを確かめる。
+ */
+export async function claimExtraCourt(courtId: string, matchId: string): Promise<boolean> {
+  try {
+    return await runTransaction(db, async (tx) => {
+      const courtRef = doc(db, 'courts', courtId);
+      const courtSnap = await tx.get(courtRef);
+      if (!courtSnap.exists()) return false;
+
+      const court = courtSnap.data() as Court;
+      if (court.current_match_id) return false;
+      if (!court.is_active || court.manually_freed) return false;
+
+      tx.update(courtRef, { current_match_id: matchId });
+      return true;
+    });
+  } catch (error) {
+    console.error('[claimExtraCourt] 確保に失敗:', error);
+    return false;
+  }
+}
+
+// ── 自動割り当ての担当端末（リース） ────────────────────────────────────────
+
+/** 担当が途切れたとみなすまでの時間。ポーリング5秒の3回分 */
+const DISPATCH_LEASE_MS = 15000;
+
+/**
+ * 自動割り当ての担当を取りにいく（取れたら true）。
+ *
+ * 自動割り当てはブラウザ内で5秒ごとに回っており、`/admin` を開いた端末が
+ * すべて回すと二重割り当ての原因になる。担当を1台に絞る。
+ * 担当端末が閉じられた・寝た場合は、リースが切れて他の端末が引き継ぐので、
+ * 「PCを閉じたら大会が止まる」ことはない。
+ */
+export async function acquireDispatchLease(campId: string, deviceId: string): Promise<boolean> {
+  try {
+    return await runTransaction(db, async (tx) => {
+      const ref = doc(db, 'config', campId);
+      const snap = await tx.get(ref);
+      const cfg = snap.exists() ? (snap.data() as Config) : null;
+
+      const ownerId = cfg?.dispatch_owner_id;
+      const ownerAt = cfg?.dispatch_owner_at?.toMillis?.() ?? 0;
+      const expired = Date.now() - ownerAt > DISPATCH_LEASE_MS;
+
+      // 自分が担当、または担当不在／期限切れなら取りにいく
+      if (ownerId && ownerId !== deviceId && !expired) return false;
+
+      tx.set(ref, {
+        dispatch_owner_id: deviceId,
+        dispatch_owner_at: Timestamp.now(),
+      }, { merge: true });
+      return true;
+    });
+  } catch (error) {
+    console.error('[acquireDispatchLease] 取得に失敗:', error);
+    // 取得できないときは回さない（二重割り当てより停止のほうが安全）
+    return false;
+  }
+}
+
+/** 担当を明け渡す（画面を閉じるときに呼ぶ）。次の端末がすぐ引き継げる */
+export async function releaseDispatchLease(campId: string, deviceId: string): Promise<void> {
+  try {
+    const cfg = await getDocument<Config>('config', campId);
+    if (cfg?.dispatch_owner_id !== deviceId) return; // 既に他の端末が担当
+    await updateDocument('config', campId, { dispatch_owner_id: '', dispatch_owner_at: null });
+  } catch {
+    /* 明け渡せなくてもリースが切れれば引き継がれる */
+  }
 }
