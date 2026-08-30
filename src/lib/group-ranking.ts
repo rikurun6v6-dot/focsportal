@@ -30,41 +30,30 @@ export function calculateGroupStandings(
   const standingsMap = new Map<string, GroupStanding>();
 
   groupMatches.forEach(match => {
-    // プレイヤー1（上側）
     const p1Id = match.player1_id;
     const p3Id = match.player3_id;
     const p1Key = p3Id ? `${p1Id}-${p3Id}` : p1Id;
 
-    if (!standingsMap.has(p1Key)) {
-      const p1 = players.find(p => p.id === p1Id);
-      const p3 = p3Id ? players.find(p => p.id === p3Id) : undefined;
-      standingsMap.set(p1Key, {
-        playerId: p1Id,
-        partnerId: p3Id,
-        playerName: p1?.name || '不明',
-        partnerName: p3?.name,
-        wins: 0,
-        losses: 0,
-        gameDiff: 0,
-        pointDiff: 0,
-        totalPointsFor: 0,
-        totalPointsAgainst: 0,
-      });
-    }
-
-    // プレイヤー2（下側）
     const p2Id = match.player2_id;
     const p4Id = match.player4_id;
     const p2Key = p4Id ? `${p2Id}-${p4Id}` : p2Id;
 
-    if (!standingsMap.has(p2Key)) {
-      const p2 = players.find(p => p.id === p2Id);
-      const p4 = p4Id ? players.find(p => p.id === p4Id) : undefined;
-      standingsMap.set(p2Key, {
-        playerId: p2Id,
-        partnerId: p4Id,
-        playerName: p2?.name || '不明',
-        partnerName: p4?.name,
+    // 欠場・棄権で確定させた試合は、抜けた側の選手IDが空になっている。
+    // 空のまま集計すると順位表に「不明」という架空の行ができてしまうので、
+    // 居る側だけを登録し、相手の勝ちはきちんと数える。
+    const hasP1 = !!p1Id;
+    const hasP2 = !!p2Id;
+    if (!hasP1 && !hasP2) return;
+
+    const ensure = (key: string, mainId: string, partnerId: string | undefined) => {
+      if (standingsMap.has(key)) return;
+      const main = players.find(p => p.id === mainId);
+      const partner = partnerId ? players.find(p => p.id === partnerId) : undefined;
+      standingsMap.set(key, {
+        playerId: mainId,
+        partnerId,
+        playerName: main?.name || '不明',
+        partnerName: partner?.name,
         wins: 0,
         losses: 0,
         gameDiff: 0,
@@ -72,22 +61,25 @@ export function calculateGroupStandings(
         totalPointsFor: 0,
         totalPointsAgainst: 0,
       });
+    };
+
+    if (hasP1) ensure(p1Key, p1Id, p3Id);
+    if (hasP2) ensure(p2Key, p2Id, p4Id);
+
+    const p1Standing = hasP1 ? standingsMap.get(p1Key)! : null;
+    const p2Standing = hasP2 ? standingsMap.get(p2Key)! : null;
+
+    // 勝敗を記録（片側が抜けていても、残った側の勝ち負けは数える）
+    if (hasP1 && match.winner_id === p1Id) {
+      p1Standing!.wins++;
+      if (p2Standing) p2Standing.losses++;
+    } else if (hasP2 && match.winner_id === p2Id) {
+      p2Standing!.wins++;
+      if (p1Standing) p1Standing.losses++;
     }
 
-    // 勝敗を記録
-    const p1Standing = standingsMap.get(p1Key)!;
-    const p2Standing = standingsMap.get(p2Key)!;
-
-    if (match.winner_id === p1Id) {
-      p1Standing.wins++;
-      p2Standing.losses++;
-    } else if (match.winner_id === p2Id) {
-      p2Standing.wins++;
-      p1Standing.losses++;
-    }
-
-    // 得失ゲーム差・得失点差
-    if (!match.is_walkover) {
+    // 得失ゲーム差・得失点差（不戦勝は実際に打っていないので加算しない）
+    if (!match.is_walkover && p1Standing && p2Standing) {
       p1Standing.gameDiff += match.score_p1 - match.score_p2;
       p1Standing.pointDiff += match.score_p1 - match.score_p2;
       p1Standing.totalPointsFor += match.score_p1;

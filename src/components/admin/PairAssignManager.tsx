@@ -58,6 +58,16 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
       setMatches(matchList);
       setPlayers(playerList.filter(p => p.is_active));
 
+      // 選んでいる部がこの種目に無い場合は、実際に試合がある部の先頭に寄せる。
+      // 寄せないと、既定の1部のまま『試合がありません』と出て、
+      // 表が作られていないように見えてしまう。
+      const available = getDivisionsInUse(matchList);
+      if (!available.includes(division)) {
+        setDivision(available[0]);
+        setLoading(false);
+        return;
+      }
+
       // この種目・部にあるペア番号を集める
       const divisionMatches = matchList.filter(m => m.division === division);
       const numbers = new Set<number>();

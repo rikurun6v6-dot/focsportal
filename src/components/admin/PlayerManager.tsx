@@ -239,7 +239,10 @@ export default function PlayerManager({ readOnly = false }: { readOnly?: boolean
 
     const confirmed = await confirm({
       title: `${player.name} を棄権にしますか？`,
-      message: `この選手の未消化の試合を、相手の不戦勝として確定させます。
+      message: `代わりに出られる人がいる場合は、棄権にせず「ペア割り当て」で選手を差し替えてください。
+棄権にすると、ダブルスではペアごと相手の不戦勝になります。
+
+代わりがいない場合はこのまま進めてください。この選手の未消化の試合を、相手の不戦勝として確定させます。
 （そうしないと、棄権にしても試合がコートに呼ばれ続けます）
 
 進行中の試合には手を付けません。結果は通常どおり入力してください。`,
