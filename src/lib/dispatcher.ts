@@ -363,8 +363,10 @@ export async function dispatchToEmptyCourt(
 
   // ③ グループ均等: 同じ種目・部の中で、消化数がいちばん少ないグループだけを残す。
   //    「Aが2試合目に入る前に、まだ0試合のCを先に出す」を強制する。
-  //    判定は候補に含まれるグループだけで行う（休息中のグループを待つとコートが空く）。
-  const balancedMatches = filterByGroupBalance(divisionBalancedMatches, scoreCtx);
+  //    ②③とも「まだ試合が残っている部・グループ」全部を基準に最下位を決める。
+  //    候補の中だけで決めると、遅れている側が全員試合中・休息中のあいだに
+  //    進んでいる側が追い越してしまうため。
+  const balancedMatches = filterByGroupBalance(divisionBalancedMatches, scoreCtx, campMatches);
 
   // 性別ガード: manual_gender_unlock が設定されていない限り、
   // コートの preferred_gender と異なる試合を候補から完全除外する

@@ -379,21 +379,36 @@ function typeDivKey(m: Match): string {
 }
 
 /**
+ * まだ動かせる余地がある試合か。
+ *
+ * 「終わっていない」だけでなく「選手が決まっている」ことも見る。
+ * 決勝トーナメントの空きスロット（予選の順位待ち）は、いま出しようがないので
+ * 均等化の基準からは外す。これを数えてしまうと、順位を確定するまで
+ * 他の部・他のグループが永久に出せなくなる。
+ */
+function isLiveMatch(m: Match): boolean {
+  return m.status !== 'completed' && !!m.player1_id && !!m.player2_id;
+}
+
+/**
  * 予選リーグのグループ均等（ハード制約）。
  *
  * 同じ種目・部の中で、消化数がいちばん少ないグループの試合だけを残す。
  * 「Aが2試合目に入る前に、まだ0試合のCを先に出す」を強制する。
  *
- * 判定は候補（今すぐ出せる試合）の中にあるグループだけで行う。
- * 休息中などで今出せないグループまで待つと、コートが空いたままになるため。
+ * 最小消化数は「まだ試合が残っているグループ全部」を見て決める。
+ * 候補（いま出せる試合）の中だけで決めると、遅れているグループが
+ * たまたま全員試合中・休息中のときに、進んでいるグループが追い越してしまう。
  */
-export function filterByGroupBalance(matches: Match[], ctx: ScoreContext): Match[] {
+export function filterByGroupBalance(matches: Match[], ctx: ScoreContext, allMatches: Match[]): Match[] {
   const prelim = matches.filter(m => (m as any).phase === 'preliminary' && (m as any).group);
   if (prelim.length === 0) return matches;
 
-  // 種目・部ごとに、候補に含まれるグループの最小消化数を求める
+  // 種目・部ごとに、まだ試合が残っているグループの最小消化数を求める
   const minDoneByTypeDiv = new Map<string, number>();
-  for (const m of prelim) {
+  for (const m of allMatches) {
+    if ((m as any).phase !== 'preliminary' || !(m as any).group) continue;
+    if (!isLiveMatch(m)) continue;
     const tdKey = typeDivKey(m);
     const gKey = `${tdKey}_${(m as any).group}`;
     const done = ctx.groupProgressMap.get(gKey) ?? 0;
@@ -415,6 +430,10 @@ export function filterByGroupBalance(matches: Match[], ctx: ScoreContext): Match
  *
  * 1部だけ終わって3部がほとんど進んでいない、という偏りを防ぐ。
  * 部によって総試合数が違うので、消化「数」ではなく消化「率」で比べる。
+ *
+ * 最小進捗率は「まだ試合が残っている部全部」を見て決める。
+ * 候補の中だけで決めると、遅れている部が全員試合中・休息中のときに
+ * 進んでいる部が追い越してしまう。
  */
 export function filterByDivisionBalance(matches: Match[], allMatches: Match[]): Match[] {
   // 種目・部ごとの進捗率を出す
@@ -433,10 +452,11 @@ export function filterByDivisionBalance(matches: Match[], allMatches: Match[]): 
     return t === 0 ? 1 : (done.get(k) ?? 0) / t;
   };
 
-  // 候補に含まれる部の中で、種目ごとに最小の進捗率を求める
+  // まだ試合が残っている部の中で、種目ごとに最小の進捗率を求める
   const minRatioByType = new Map<string, number>();
-  for (const m of matches) {
+  for (const m of allMatches) {
     if (m.division === undefined) continue;
+    if (!isLiveMatch(m)) continue;
     const r = ratio(typeDivKey(m));
     const cur = minRatioByType.get(m.tournament_type);
     if (cur === undefined || r < cur) minRatioByType.set(m.tournament_type, r);
