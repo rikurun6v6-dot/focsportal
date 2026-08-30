@@ -3,7 +3,9 @@ import { getAllDocuments, getDocument, updateDocument, claimCourtForMatch, claim
 import { toastInfo } from './toast';
 import { Timestamp } from 'firebase/firestore';
 import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase,
-  filterByGroupBalance, filterByDivisionBalance, filterByCompletedRound } from './matchScoring';
+  filterByGroupBalance, filterByDivisionBalance, filterByCompletedRound,
+  computeDivisionProgress, computeGroupBalance, computeMinUnfinishedRound,
+  BALANCE_TOLERANCE } from './matchScoring';
 import { getDivisionsInUse } from './divisions';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
@@ -618,7 +620,8 @@ function getActiveCourtDivisions(
 
 // ===== アサイン診断 =====
 
-export type SkipReason = 'disabled' | 'busy' | 'resting' | 'round_locked' | 'gender_mismatch' | 'scoring_note';
+export type SkipReason = 'disabled' | 'busy' | 'resting' | 'round_locked'
+  | 'division_balance' | 'group_balance' | 'gender_mismatch' | 'scoring_note';
 
 export interface SkipReasonDetail {
   reason: SkipReason;
@@ -696,20 +699,14 @@ export async function diagnoseWaitingMatches(
 
   const enabledTypes = config?.enabled_tournaments;
 
-  // minRoundByGroup（filteredWaitingMatches ベース）
-  const filteredWaiting = (enabledTypes && enabledTypes.length > 0)
-    ? waitingMatches.filter(m => enabledTypes.includes(m.tournament_type as TournamentType))
-    : waitingMatches;
-
-  const minRoundByGroup = new Map<string, number>();
-  for (const m of filteredWaiting) {
-    const gk = getGroupKey(m);
-    const existing = minRoundByGroup.get(gk);
-    if (existing === undefined || m.round < existing) minRoundByGroup.set(gk, m.round);
-  }
+  // ラウンド規制・部門均等・グループ均等は、割り当て本体とまったく同じ基準を使う。
+  // ここで独自計算をすると「本体は止めているのに画面には理由が出ない」状態になる。
+  const minRoundByGroup = computeMinUnfinishedRound(campMatches);
+  const { ratioByTypeDiv, minRatioByType } = computeDivisionProgress(campMatches);
 
   // スコアコンテキスト（defaultRestMinutes を渡して連戦判定閾値を設定）
   const scoreCtx = buildScoreContext(campMatches, allPlayers, config ?? undefined, undefined, defaultRestMinutes);
+  const minGroupDoneByTypeDiv = computeGroupBalance(campMatches, scoreCtx);
 
   // 空きコートの性別セット（gender_mismatch 判定用）
   const emptyCourtGenders = new Set(emptyCourts.map(c => c.preferred_gender).filter(Boolean));
@@ -786,15 +783,43 @@ export async function diagnoseWaitingMatches(
       }
     }
 
-    // (4) round_locked — disabled な種目は除外済みなのでここでは filteredWaiting に含まれる試合のみ対象
+    // (4) round_locked / 均等化 — disabled な種目は判定しない
     if (!reasons.some(r => r.reason === 'disabled')) {
-      const gk = getGroupKey(match);
-      const minRound = minRoundByGroup.get(gk);
+      const minRound = minRoundByGroup.get(getGroupKey(match));
       if (minRound !== undefined && match.round > minRound) {
         reasons.push({
           reason: 'round_locked',
-          label: `下位ラウンド待ち（${minRound}回戦が先）`,
+          label: `下位ラウンド待ち（${minRound}回戦の完了待ち）`,
+          detail: `${minRound}回戦が全部終わるまで出しません`,
         });
+      }
+
+      // 部門均等: 同じ種目の中で、いちばん遅れている部より進んでいる
+      if (match.division !== undefined) {
+        const min = minRatioByType.get(match.tournament_type);
+        const mine = ratioByTypeDiv.get(`${match.tournament_type}_${match.division}`);
+        if (min !== undefined && mine !== undefined && mine > min + BALANCE_TOLERANCE) {
+          reasons.push({
+            reason: 'division_balance',
+            label: '部門均等で待機',
+            detail: `この部 ${Math.round(mine * 100)}% / いちばん遅い部 ${Math.round(min * 100)}%`,
+          });
+        }
+      }
+
+      // グループ均等: 同じ種目・部の中で、いちばん消化が少ない組より進んでいる
+      const grp = (match as any).group;
+      if ((match as any).phase === 'preliminary' && grp) {
+        const tdKey = `${match.tournament_type}_${match.division}`;
+        const minDone = minGroupDoneByTypeDiv.get(tdKey);
+        const mineDone = scoreCtx.groupProgressMap.get(`${tdKey}_${grp}`) ?? 0;
+        if (minDone !== undefined && mineDone > minDone) {
+          reasons.push({
+            reason: 'group_balance',
+            label: 'グループ均等で待機',
+            detail: `${grp}組 ${mineDone}試合 / いちばん遅い組 ${minDone}試合`,
+          });
+        }
       }
     }
 
