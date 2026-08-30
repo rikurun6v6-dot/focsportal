@@ -90,7 +90,10 @@ function LoginScreen({ onLogin, onSpectate }: {
 
         const q = query(collection(db, 'players'), where('campId', '==', selectedCampId));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const playerList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
+            const playerList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player))
+                // 棄権した選手は名前の一覧に出さない。出してしまうと、
+                // 棄権した人が入って『自分の試合』を見られてしまう。
+                .filter(p => p.is_active !== false);
             playerList.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
             setPlayers(playerList);
         }, (err) => {
