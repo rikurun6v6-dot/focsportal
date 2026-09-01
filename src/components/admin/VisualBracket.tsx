@@ -564,10 +564,20 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             return isSingles ? `${pairNo}番` : `${pairNo}番ペア`;
         }
 
-        // BYE（シード）の空いている側。相手はいないので「未定」ではない。
+        // 予選リーグのある部の決勝トーナメント枠。
+        // 誰が上がるかは予選が終わるまで決まらないが、くじ番号も持たないので
+        // ここまで落ちてくる。「未定」だけだと表を貼っても何の枠か分からない。
+        const fromPrelim = groups.length > 0 && match.phase === 'knockout';
+
+        // BYE（シード）は、進出処理が player1_id 側にだけ勝ち上がりを書く。
+        // つまり position 1 が勝ち上がり側、position 2 が空き側。
+        // 両方を「シード（不戦勝）」にすると、シード対シードという表示になる。
         if (isByeMatch(match)) {
-            return 'シード（不戦勝）';
+            if (position === 2) return 'シード（不戦勝）';
+            return fromPrelim ? '予選通過（シード）' : 'シード（不戦勝）';
         }
+
+        if (fromPrelim) return '予選通過';
 
         return "未定";
     };
