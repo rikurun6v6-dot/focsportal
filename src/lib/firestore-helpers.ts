@@ -465,6 +465,14 @@ export async function getMatchesByTournament(tournamentType: TournamentType, cam
   return getAllDocuments<Match>(COLLECTIONS.matches, constraints);
 }
 
+/** 合宿の全試合を購読する（種目をまたいで一覧したい画面用） */
+export function subscribeToMatches(callback: (matches: Match[]) => void, campId?: string) {
+  const constraints = campId
+    ? [where('campId', '==', campId), orderBy('round'), orderBy('created_at')]
+    : [orderBy('round'), orderBy('created_at')];
+  return subscribeToCollection<Match>(COLLECTIONS.matches, callback, constraints);
+}
+
 export function subscribeToMatchesByTournament(
   tournamentType: TournamentType,
   callback: (matches: Match[]) => void,

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, editMatchResultSafe, getAllDocuments, analyzeCorrectionImpact, applyRenameChain, applyCorrectionWithReplay, cancelMatchResultChain, type CorrectionImpact } from "@/lib/firestore-helpers";
+import { subscribeToMatches, subscribeToMatchesByTournament, subscribeToPlayers, updateDocument, editMatchResultSafe, getAllDocuments, analyzeCorrectionImpact, applyRenameChain, applyCorrectionWithReplay, cancelMatchResultChain, type CorrectionImpact } from "@/lib/firestore-helpers";
 import { db } from "@/lib/firebase";
 import { writeBatch, doc, where } from "firebase/firestore";
 import { useCamp } from "@/context/CampContext";
@@ -23,9 +23,11 @@ import { toastSuccess, toastInfo, toastError } from "@/lib/toast";
 import { validateMatchScore } from "@/lib/score-validation";
 import { pairSideLabel } from "@/lib/pair-label";
 import { getDivisionsInUse } from "@/lib/divisions";
+import { buildEventGroups, entryKey, groupOfType, type EventGroupId } from "@/lib/event-groups";
 
 const LS_KEY_TYPE = 'vb_tournamentType';
 const LS_KEY_DIV = 'vb_division';
+const LS_KEY_GROUP = 'vb_eventGroup';
 
 // 部門タブの配色。Tailwind は動的クラス名を解決できないので、あらかじめ書き出して循環させる。
 const DIVISION_TAB_CLASSES = [
@@ -42,6 +44,19 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             return (localStorage.getItem(LS_KEY_TYPE) as TournamentType) || 'mens_doubles';
         }
         return 'mens_doubles';
+    });
+    const [groupId, setGroupId] = useState<EventGroupId>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem(LS_KEY_GROUP);
+            if (saved === 'individual1' || saved === 'individual2') return saved;
+            // 前回の種目からくくりを推測する（旧バージョンからの移行）
+            const t = localStorage.getItem(LS_KEY_TYPE) as TournamentType | null;
+            if (t) {
+                const g = groupOfType(t);
+                if (g !== 'team') return g;
+            }
+        }
+        return 'individual1';
     });
     const [division, setDivision] = useState<Division>(() => {
         if (typeof window !== 'undefined') {
@@ -110,13 +125,9 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         setLoading(true);
 
         // リアルタイム購読
-        const unsubscribeMatches = subscribeToMatchesByTournament(
-            tournamentType,
+        // 個人戦①②をまたいで部門を並べるため、合宿の全試合を購読する
+        const unsubscribeMatches = subscribeToMatches(
             (matchList) => {
-                console.log(`🔍 [VisualBracket] Firestore取得完了: ${matchList.length}件`);
-                matchList.forEach(match => {
-                    console.log(`🔍 [VisualBracket] matches/${match.id} (round=${match.round}, match_number=${match.match_number})`);
-                });
                 setMatches(matchList);
                 setLoading(false);
             },
@@ -134,7 +145,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             unsubscribeMatches();
             unsubscribePlayers();
         };
-    }, [tournamentType, camp]);
+    }, [camp]);
 
     const getPlayerName = (playerId?: string) => {
         if (!playerId) return "未定";
@@ -536,15 +547,37 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         return "未定";
     };
 
+    // 個人戦①（男女別ダブルス）／個人戦②（混合・シングルス）に分けて、
+    // それぞれ実際に試合がある「種目 × 部」を部門として並べる。
+    const eventGroups = buildEventGroups(matches);
+    const activeGroup =
+        eventGroups.find(g => g.group.id === groupId) ?? eventGroups[0];
+    const groupEntries = activeGroup?.entries ?? [];
+    const activeEntry =
+        groupEntries.find(e => e.key === entryKey(tournamentType, division)) ?? groupEntries[0];
+
+    // 選択中の部門に合わせて種目・部を読み替える（表の描画は従来どおりこの2つを使う）
+    const activeType = activeEntry?.tournament_type ?? tournamentType;
+
+    // 部門タブと種目・部の state を揃える。
+    // 初回表示や、前回見ていた部門が無くなったときに先頭の部門へ寄せる。
+    useEffect(() => {
+        if (!activeEntry) return;
+        if (activeEntry.tournament_type !== tournamentType) setTournamentType(activeEntry.tournament_type);
+        if (activeEntry.division !== division) setDivision(activeEntry.division);
+    }, [activeEntry, tournamentType, division]);
+
     // この合宿で実際に試合がある部門（1件も無ければ既定の1〜3部）
     const divisionOptions = getDivisionsInUse(matches);
 
     // 前回開いた部門が今の合宿に無い場合（localStorage に残っているだけの場合）は先頭に寄せる。
     // そのままだとタブがどれも選ばれていない状態になり、表が出ない。
-    const activeDivision = divisionOptions.includes(division) ? division : divisionOptions[0];
+    const activeDivision = activeEntry?.division ?? (divisionOptions.includes(division) ? division : divisionOptions[0]);
 
-    // 選択した部門の試合のみをフィルタリング
-    const divisionMatches = matches.filter(m => m.division === activeDivision || !m.division);
+    // 選択した部門（種目 × 部）の試合だけに絞る
+    const divisionMatches = matches.filter(
+        m => m.tournament_type === activeType && (m.division === activeDivision || !m.division)
+    );
 
     // 予選リーグと決勝トーナメントに分類
     const preliminaryMatches = divisionMatches.filter(m => m.phase === 'preliminary');
@@ -719,22 +752,33 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4" ref={bracketRef}>
-                    <Select value={tournamentType} onValueChange={(v) => {
-                        setTournamentType(v as TournamentType);
-                        localStorage.setItem(LS_KEY_TYPE, v);
-                    }}>
-                        <SelectTrigger className="bg-white">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white text-slate-900">
-                            <SelectItem value="mens_doubles">男子ダブルス</SelectItem>
-                            <SelectItem value="womens_doubles">女子ダブルス</SelectItem>
-                            <SelectItem value="mixed_doubles">混合ダブルス</SelectItem>
-                            <SelectItem value="mens_singles">男子シングルス</SelectItem>
-                            <SelectItem value="womens_singles">女子シングルス</SelectItem>
-                            <SelectItem value="team_battle">団体戦</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    {/* 個人戦①（男女別ダブルス）／個人戦②（混合・シングルス） */}
+                    {eventGroups.length > 0 && (
+                        <div className="flex gap-2">
+                            {eventGroups.map(({ group }) => {
+                                const on = group.id === activeGroup?.group.id;
+                                return (
+                                    <button
+                                        key={group.id}
+                                        onClick={() => {
+                                            setGroupId(group.id);
+                                            localStorage.setItem(LS_KEY_GROUP, group.id);
+                                        }}
+                                        className={`flex-1 rounded-lg border-2 px-3 py-2 text-left transition-colors ${
+                                            on
+                                                ? 'border-sky-500 bg-sky-50'
+                                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        <div className={`text-sm font-bold ${on ? 'text-sky-700' : 'text-slate-700'}`}>
+                                            {group.label}
+                                        </div>
+                                        <div className="text-[11px] text-slate-500">{group.note}</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
 
                     {/* 検索フィールド */}
                     <div className="relative">
@@ -833,26 +877,37 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                         </div>
                     )}
 
-                    {/* 部門切り替えタブ（実際に試合がある部門を並べる。3部以上も出る） */}
-                    <Tabs value={String(activeDivision)} onValueChange={(v) => {
-                        setDivision(Number(v) as Division);
-                        localStorage.setItem(LS_KEY_DIV, v);
-                    }} className="w-full">
-                        <TabsList
-                            className="grid w-full"
-                            style={{ gridTemplateColumns: `repeat(${divisionOptions.length}, minmax(0, 1fr))` }}
+                    {/* 部門タブ。「種目 × 部」の組み合わせをそのまま並べる。
+                        個人戦②はシングルスと混合が混ざるので、2つを別々に選ばせない */}
+                    {groupEntries.length > 0 && (
+                        <Tabs
+                            value={activeEntry?.key ?? ''}
+                            onValueChange={(v) => {
+                                const e = groupEntries.find(x => x.key === v);
+                                if (!e) return;
+                                setTournamentType(e.tournament_type);
+                                setDivision(e.division);
+                                localStorage.setItem(LS_KEY_TYPE, e.tournament_type);
+                                localStorage.setItem(LS_KEY_DIV, String(e.division));
+                            }}
+                            className="w-full"
                         >
-                            {divisionOptions.map((d, i) => (
-                                <TabsTrigger
-                                    key={d}
-                                    value={String(d)}
-                                    className={DIVISION_TAB_CLASSES[i % DIVISION_TAB_CLASSES.length]}
-                                >
-                                    {d}部
-                                </TabsTrigger>
-                            ))}
-                        </TabsList>
-                    </Tabs>
+                            <TabsList
+                                className="grid w-full h-auto"
+                                style={{ gridTemplateColumns: `repeat(${Math.min(groupEntries.length, 3)}, minmax(0, 1fr))` }}
+                            >
+                                {groupEntries.map((e, i) => (
+                                    <TabsTrigger
+                                        key={e.key}
+                                        value={e.key}
+                                        className={`py-2 text-xs sm:text-sm ${DIVISION_TAB_CLASSES[i % DIVISION_TAB_CLASSES.length]}`}
+                                    >
+                                        <span className="truncate">{e.label}</span>
+                                    </TabsTrigger>
+                                ))}
+                            </TabsList>
+                        </Tabs>
+                    )}
 
                     {loading && <p className="text-slate-500 text-center">読み込み中...</p>}
 
