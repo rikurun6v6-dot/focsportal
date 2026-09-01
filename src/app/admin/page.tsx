@@ -124,7 +124,6 @@ export default function AdminDashboard() {
   }, []);
   const [dispatching, setDispatching] = useState(false);
   const [isSequentialMode, setIsSequentialMode] = useState(false);
-  const [finalsWaitMode, setFinalsWaitMode] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState("live");
   const [mobileNavOpen, setMobileNavOpen] = useState(false); // スマホ用ドロワーの開閉
   const [isOnline, setIsOnline] = useState(true);
@@ -282,7 +281,6 @@ export default function AdminDashboard() {
       if (config) {
         setAutoDispatchEnabled(config.auto_dispatch_enabled);
         setIsSequentialMode(config.is_sequential_mode || false);
-        setFinalsWaitMode(config.finals_wait_mode || {});
         setDefaultRestMinutes(config.default_rest_minutes || 10);
         setDispatchSuspended(config.dispatch_suspended || false);
         if (config.pause_until) {
@@ -530,16 +528,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const toggleFinalsWait = async (key: string) => {
-    try {
-      const newMode = { ...finalsWaitMode, [key]: !finalsWaitMode[key] };
-      setFinalsWaitMode(newMode);
-      await updateDocument('config', camp!.id, { finals_wait_mode: newMode });
-      toastSuccess(newMode[key] ? "決勝戦待機モードを有効化しました" : "決勝戦待機モードを解除しました");
-    } catch (error) {
-      toastError("決勝戦待機モードの切り替えに失敗しました", "通信を確認して、もう一度お試しください");
-    }
-  };
   const handleRestMinutesChange = async (value: string) => {
     try {
       const parsed = parseInt(value);
@@ -1339,50 +1327,6 @@ export default function AdminDashboard() {
                     ))}
                   </CardContent>
                 </Card>
-
-                <Card className="bg-white border-slate-200 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
-                      <Trophy className="w-5 h-5 text-purple-500" /> 決勝戦の開始タイミング
-                    </CardTitle>
-                    <CardDescription>
-                      待機モードでは、種目内の全試合終了後にセンターコートで決勝戦を開始します
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {[
-                      { type: 'mens_doubles' as TournamentType, label: '男子ダブルス' },
-                      { type: 'womens_doubles' as TournamentType, label: '女子ダブルス' },
-                      { type: 'mixed_doubles' as TournamentType, label: 'ミックスダブルス' },
-                      { type: 'mens_singles' as TournamentType, label: '男子シングルス' },
-                      { type: 'womens_singles' as TournamentType, label: '女子シングルス' }
-                    ].map(({ type, label }) => (
-                      <div key={type} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                        <p className="font-semibold text-slate-700 w-32 shrink-0 text-sm">{label}</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {DEFAULT_DIVISIONS.map(div => {
-                            const key = `${type}_${div}`;
-                            const isWaiting = finalsWaitMode[key] || false;
-                            return (
-                              <Button
-                                key={div}
-                                onClick={() => toggleFinalsWait(key)}
-                                variant={isWaiting ? "default" : "outline"}
-                                size="sm"
-                                disabled={isArchived}
-                                className={isWaiting
-                                  ? "bg-purple-500 hover:bg-purple-600 text-white h-8 px-3 text-xs"
-                                  : "border-purple-200 text-purple-700 hover:bg-purple-50 h-8 px-3 text-xs"}
-                              >
-                                {div}部 {isWaiting ? "待機" : "通常"}
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
               </TabsContent>
 
               {/* 他のタブも背景色(bg-white)を確保しているため、既存コンポーネントの表示が改善されます */}
@@ -1400,6 +1344,9 @@ export default function AdminDashboard() {
 
                 {/* 例外投入の承認カード（承認モードONの端末だけに出る） */}
                 <DispatchApprovalCards />
+
+                {/* 決勝の許可。押せる状態のものだけ、この画面に出す */}
+                <FinalsApproval readOnly={isArchived} campId={camp.id} mode="ready-only" />
 
                 {/* コート状況: 自動割り当てON/OFF ＋ コート結果（入力）を1画面に集約 */}
                 <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${autoDispatchEnabled ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'}`}>

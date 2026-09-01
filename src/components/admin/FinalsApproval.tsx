@@ -26,9 +26,16 @@ import { Trophy, Lock, Check } from "lucide-react";
 export default function FinalsApproval({
   readOnly = false,
   campId,
+  /**
+   * 'full'       … 種目ごとの許可制ON/OFFと、全部の決勝を並べる（種目設定タブ）
+   * 'ready-only' … 選手が決まっていて許可待ちの決勝だけを出す（コート状況タブ）
+   *                まだ勝ち上がりが決まっていない「未定 vs 未定」は出さない
+   */
+  mode = "full",
 }: {
   readOnly?: boolean;
   campId: string;
+  mode?: "full" | "ready-only";
 }) {
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -120,6 +127,51 @@ export default function FinalsApproval({
     }
   };
 
+  // コート状況では「いま押せるもの」だけ出す。
+  // 選手が未確定の決勝を並べても操作できず、画面が埋まるだけなので落とす。
+  const readyNow = groups.flatMap(g =>
+    g.matches
+      .filter(m =>
+        required[g.key] &&
+        !approved.includes(m.id) &&
+        m.status === "waiting" &&
+        !!m.player1_id && !!m.player2_id
+      )
+      .map(m => ({ group: g, match: m }))
+  );
+
+  if (mode === "ready-only") {
+    if (readyNow.length === 0) return null;
+    return (
+      <div className="space-y-2 mb-4">
+        {readyNow.map(({ group, match: m }) => (
+          <div
+            key={m.id}
+            className="flex items-center justify-between gap-2 rounded-xl border-2 border-purple-400 bg-purple-50 px-4 py-3 flex-wrap"
+          >
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-purple-900 flex items-center gap-1.5">
+                <Trophy className="w-4 h-4" />
+                {group.label} {m.subtitle === "3位決定戦" ? "3位決定戦" : "決勝"} が待っています
+              </div>
+              <div className="text-sm text-slate-800 break-words">
+                {pairSideLabel(m, 1, nameOf)} vs {pairSideLabel(m, 2, nameOf)}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              disabled={readOnly || busy === m.id}
+              onClick={() => approve(m)}
+              className="bg-purple-600 hover:bg-purple-700 text-white shrink-0"
+            >
+              <Check className="w-3.5 h-3.5 mr-1" /> いま入れる
+            </Button>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (groups.length === 0) {
     return <p className="text-sm text-slate-500">決勝戦がまだ作られていません</p>;
   }
@@ -171,10 +223,18 @@ export default function FinalsApproval({
                       {pairSideLabel(m, 1, nameOf)} vs {pairSideLabel(m, 2, nameOf)}
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      {done ? "終了" : running ? "コート上" : isApproved ? "許可済み・コート待ち" : "許可待ち"}
+                      {done
+                        ? "終了"
+                        : running
+                        ? "コート上"
+                        : !m.player1_id || !m.player2_id
+                        ? "勝ち上がり待ち（まだ押せません）"
+                        : isApproved
+                        ? "許可済み・コート待ち"
+                        : "許可待ち"}
                     </div>
                   </div>
-                  {!done && !running && (
+                  {!done && !running && !!m.player1_id && !!m.player2_id && (
                     isApproved ? (
                       <Button size="sm" variant="ghost" disabled={readOnly || busy === m.id}
                         onClick={() => revoke(m)} className="text-slate-500">
