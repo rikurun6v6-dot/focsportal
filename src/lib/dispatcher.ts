@@ -26,6 +26,39 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
 
   const allMatches = await getAllDocuments<Match>('matches');
   const matches = campId ? allMatches.filter(m => m.campId === campId) : allMatches;
+
+  // ── コートから外れた「進行中」を待機に戻す ──
+  //
+  // status が calling / playing なのに、どのコートもその試合を持っていないことがある。
+  // こうなるとその選手はずっと「試合中」の扱いになり、同じ選手が出る残りの試合が
+  // 二度と入らない。コート状況にもカードが出ないので、そこからは終わらせられない。
+  // リハーサルでは、これで男子1部B組の残り4試合が完全に止まった。
+  //
+  // 割り当て自体は claimCourtForMatch が1つの取引でコートと試合の両方を書くので、
+  // 正常な経路ではこの状態にならない。ここに引っかかるのは、通信断や手動操作で
+  // 片方だけ残ったものだけ。休憩の予約は status:waiting のままなので対象外。
+  const heldMatchIds = new Set(
+    courts.map(c => c.current_match_id).filter((id): id is string => !!id)
+  );
+  const orphaned = matches.filter(
+    m => (m.status === 'calling' || m.status === 'playing') && !heldMatchIds.has(m.id)
+  );
+  if (orphaned.length > 0) {
+    console.warn(
+      '[autoDispatchAll] コートから外れた進行中の試合を待機に戻します:',
+      orphaned.map(m => m.id)
+    );
+    await Promise.all(
+      orphaned.map(m =>
+        updateDocument('matches', m.id, { status: 'waiting', court_id: null }).catch(() => {})
+      )
+    );
+    for (const m of orphaned) {
+      m.status = 'waiting';
+      m.court_id = null;
+    }
+  }
+
   const allWaitingMatches = matches.filter(m => m.status === 'waiting');
 
   // ── 進行制御: 最上流で enabled_tournaments フィルタを適用（絶対ブロック） ──
