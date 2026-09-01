@@ -450,7 +450,16 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
      * 各ラウンドの実戦試合のみをフィルタリング
      */
     const getActualMatchesInRound = (round: number): Match[] => {
-        const matchesInRound = knockoutMatches.filter(m => m.round === round);
+        // ここは必ず match_number 順に並べてから数える。
+        //
+        // カードに出す「第N試合」は roundGroups（match_number でソート済み）を数えており、
+        // ここを並べ替えずに数えると、同じ試合が別の番号になる。
+        // 実際、混合ダブルス2部で 1回戦のカードが「第1試合」なのに、
+        // 2回戦の相手欄が「1回戦 第4試合の勝者」と出ていた。
+        const matchesInRound = knockoutMatches
+            .filter(m => m.round === round)
+            .slice()
+            .sort((a, b) => (a.match_number || 0) - (b.match_number || 0));
         // 1回戦のみByeを除外
         if (round === 1) {
             return matchesInRound.filter(m => !isByeMatch(m));
