@@ -265,6 +265,25 @@ export default function AdminDashboard() {
       toastError("合宿を選択してください");
       return;
     }
+    // このボタンは config を作り直す（上書き）。確認なしで押せると、
+    // 大会中に種目の進行制御・決勝の許可制・コートの性別配分がまとめて消える。
+    // 実際に準備中の合宿で消えて、手で入れ直すことになった。
+    const okToInit = await confirm({
+      title: '⚠️ システムを初期化',
+      message: `コートを作り直し、設定を初期状態に戻します。
+
+次の設定が消えます:
+・種目の進行制御（いま動かしている種目）
+・決勝の許可制と、許可済みの決勝
+・コートの性別配分
+
+選手と試合、結果は消えません。
+大会中は押さないでください。`,
+      confirmText: '初期化する',
+      cancelText: 'やめる',
+      type: 'danger',
+    });
+    if (!okToInit) return;
     setInitializing(true);
     const courtsSuccess = await initializeCourts(camp.court_count, camp.id);
     const configSuccess = await initializeConfig(camp.id);
