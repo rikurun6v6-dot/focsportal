@@ -1971,3 +1971,38 @@ BYE（シード）の試合は誰とも対戦しないので `completed` にな�
 
 - 根本的には `initializeConfig` が `setDoc` で上書きしているのが原因。
   merge にするか、初期化対象を絞るのが本筋。大会後に直す。
+
+## fix/bracket-number-sort
+
+- 日付: 2026-09-02
+- 担当者: Claude Code（菊池指摘）
+- ブランチ: `fix/bracket-number-sort`
+
+### 変更内容
+
+`src/components/admin/VisualBracket.tsx` の `getActualMatchesInRound` で、
+ラウンド内の試合を `match_number` 順に並べてから採番するようにした。
+
+### 変更理由
+
+トーナメント表で、同じ試合が2つの異なる番号で出ていた。
+
+```
+1回戦 第1試合 = 17番ペア vs 16番ペア →「勝者 → 2回戦 第1試合へ」
+2回戦 第1試合 = 1番ペア vs「1回戦 第4試合の勝者」   ← 同じ試合を第4試合と表示
+```
+
+カードのバッジ「第N試合」は `roundGroups` を数えており、これは
+`match_number` でソート済み（同ファイル内でソートしている）。
+一方 `getActualMatchesInRound` は `knockoutMatches` をそのまま使っており、
+Firestore が返した順のまま数えていた。並び順が違うので番号がずれる。
+
+1回戦にシードがある部（混合D2部・男子D2部・3部）で特に目立つ。
+表を貼り出しても、どの試合の勝者がどこへ行くのか読めない。
+
+### 影響範囲
+
+- `src/components/admin/VisualBracket.tsx` の表示のみ
+- 試合の結線（`next_match_id` / `next_match_position`）は元から正しい。
+  ずれていたのは表示上の番号だけ
+- カード側のバッジは元から正しかったので変化なし
