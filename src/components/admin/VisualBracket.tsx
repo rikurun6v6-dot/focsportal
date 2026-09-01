@@ -553,16 +553,20 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             return `予選 [${match.group}] ${position}位`;
         }
 
-        // BYE（シード）の空いている側。相手はいないので「未定」ではない。
-        if (isByeMatch(match)) {
-            return 'シード（不戦勝）';
-        }
-
         // 当日くじ待ち: 選手はまだ入っていないが、ペア番号は決まっている。
         // 「未定」だと表を貼り出しても誰がどこか分からないので、くじの番号を出す。
+        //
+        // ここは BYE の判定より必ず先に見る。BYE 試合は「シードのペア」と「空き」の
+        // 組み合わせなので、先に BYE で捕まえると番号を持っている側まで
+        // 「シード（不戦勝）」になり、シード対シードという表示になってしまう。
         const pairNo = position === 1 ? match.pair_no_p1 : match.pair_no_p2;
         if (pairNo) {
             return isSingles ? `${pairNo}番` : `${pairNo}番ペア`;
+        }
+
+        // BYE（シード）の空いている側。相手はいないので「未定」ではない。
+        if (isByeMatch(match)) {
+            return 'シード（不戦勝）';
         }
 
         return "未定";
