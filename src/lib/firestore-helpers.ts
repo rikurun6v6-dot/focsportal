@@ -1048,6 +1048,60 @@ export async function cancelMatchResultChain(
   }
 }
 
+/**
+ * 準決勝の敗者を3位決定戦の枠へ送る。
+ *
+ * 3位決定戦は生成時に「空のまま」作られる。生成側のコメントには
+ * 「準決勝終了後に管理画面の『3位決定戦を作成』で敗者を流し込む」とあるが、
+ * その画面はどこにも無い。つまり敗者を入れる導線が存在せず、
+ * 3位決定戦は選手が入らないまま永久に始まらない。
+ * 結果を確定したこの場で入れる。
+ *
+ * 上下の位置は準決勝の並び順（match_number）で決める。
+ */
+async function propagateLoserToThirdPlace(current: Match, winnerId: string): Promise<void> {
+  if (current.subtitle === '3位決定戦') return;
+  if (!current.round) return;
+
+  const all = await getAllDocuments<Match>(COLLECTIONS.matches);
+  const same = all.filter(m =>
+    m.campId === current.campId &&
+    m.tournament_type === current.tournament_type &&
+    m.division === current.division
+  );
+  const third = same.find(m => m.subtitle === '3位決定戦');
+  if (!third || !third.round) return;
+  // 準決勝＝3位決定戦の1つ前のラウンド
+  if (current.round !== third.round - 1) return;
+
+  const semis = same
+    .filter(m => m.round === current.round && m.subtitle !== '3位決定戦')
+    .sort((a, b) => (a.match_number ?? 0) - (b.match_number ?? 0));
+  const idx = semis.findIndex(m => m.id === current.id);
+  if (idx !== 0 && idx !== 1) return;
+  const position: 1 | 2 = idx === 0 ? 1 : 2;
+
+  const isWinner1 = winnerId === current.player1_id;
+  const loserMain = isWinner1 ? current.player2_id : current.player1_id;
+  const loserPartner = isWinner1 ? current.player4_id : current.player3_id;
+  const loserThird = isWinner1 ? current.player6_id : current.player5_id;
+  if (!loserMain) return;
+
+  const update: Record<string, unknown> = { updated_at: Timestamp.now() };
+  if (position === 1) {
+    update.player1_id = loserMain;
+    if (loserPartner) update.player3_id = loserPartner;
+    if (loserThird) update.player5_id = loserThird;
+  } else {
+    update.player2_id = loserMain;
+    if (loserPartner) update.player4_id = loserPartner;
+    if (loserThird) update.player6_id = loserThird;
+  }
+
+  console.log(`[3位決定戦] ${current.id} の敗者を ${third.id} (pos ${position}) へ`);
+  await updateDoc(doc(db, COLLECTIONS.matches, third.id), update);
+}
+
 export async function updateMatchResult(
   matchId: string,
   scoreP1: number,
@@ -1126,6 +1180,14 @@ export async function updateMatchResult(
 
       console.log(`[進出処理] Match ${matchId} → Next Match ${currentMatch.next_match_id} (position ${nextPosition})`);
       await updateDoc(nextMatchRef, nextMatchUpdate);
+    }
+
+    // 準決勝なら、敗者を3位決定戦へ送る。
+    // 失敗しても結果の確定自体は成立しているので、ここでは止めない。
+    try {
+      await propagateLoserToThirdPlace(currentMatch, winnerId);
+    } catch (e) {
+      console.error('[3位決定戦] 敗者の反映に失敗:', e);
     }
 
     // 選手の休息時間を記録
