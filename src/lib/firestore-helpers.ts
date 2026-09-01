@@ -248,20 +248,53 @@ export async function deleteMatchesByCategory(
   return matches.length;
 }
 
+/**
+ * 購読が切れたあと、張り直すまでの待ち時間（ミリ秒）。
+ * 何度も切れるときは間隔を広げて、通信を叩き続けないようにする。
+ */
+const RESUBSCRIBE_DELAYS = [1000, 2000, 5000, 10000, 20000, 30000];
+
 export function subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void, constraints: QueryConstraint[] = []) {
-  const collectionRef = collection(db, collectionName);
-  const q = constraints.length > 0 ? query(collectionRef, ...constraints) : collectionRef;
-  return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-    // hasPendingWritesやfromCacheに関係なく、常にUIを即座に更新
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as T[];
-    callback(data);
-  }, (error: any) => {
-    if (isOfflineError(error)) {
-      console.warn(`[subscribeToCollection] オフラインエラー (${collectionName}):`, error?.code || error?.message);
-    } else {
-      console.error(`Error in ${collectionName} listener:`, error);
-    }
-  });
+  // onSnapshot はエラーを1度返すと、そこで購読を終える。
+  // 以前はログを出すだけで張り直していなかったため、一度切れると
+  // 画面が古いまま止まった。コートに試合が入っているのに「フリー」と
+  // 表示され続け、動いている試合の結果を入力できない状態になる。
+  // リハーサルでは matches の購読が数分おきに failed-precondition で切れた。
+  // 切れたら必ず張り直す。
+  let stopped = false;
+  let unsubscribe: (() => void) | null = null;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const start = () => {
+    if (stopped) return;
+    const collectionRef = collection(db, collectionName);
+    const q = constraints.length > 0 ? query(collectionRef, ...constraints) : collectionRef;
+    unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+      attempt = 0;
+      // hasPendingWritesやfromCacheに関係なく、常にUIを即座に更新
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as T[];
+      callback(data);
+    }, (error: any) => {
+      if (isOfflineError(error)) {
+        console.warn(`[subscribeToCollection] 購読が切れました (${collectionName}):`, error?.code || error?.message);
+      } else {
+        console.error(`Error in ${collectionName} listener:`, error);
+      }
+      if (stopped) return;
+      const wait = RESUBSCRIBE_DELAYS[Math.min(attempt, RESUBSCRIBE_DELAYS.length - 1)];
+      attempt++;
+      timer = setTimeout(start, wait);
+    });
+  };
+
+  start();
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    unsubscribe?.();
+  };
 }
 
 export function subscribeToDocument<T>(collectionName: string, docId: string, callback: (data: T | null) => void) {
@@ -269,22 +302,44 @@ export function subscribeToDocument<T>(collectionName: string, docId: string, ca
     callback(null);
     return () => { }; // Return empty unsubscribe function
   }
-  const docRef = doc(db, collectionName, docId);
-  return onSnapshot(docRef, { includeMetadataChanges: true }, (snapshot) => {
-    // hasPendingWritesやfromCacheに関係なく、常にUIを即座に更新
-    if (snapshot.exists()) {
-      const data = { id: snapshot.id, ...snapshot.data() } as T;
-      callback(data);
-    } else {
-      callback(null);
-    }
-  }, (error: any) => {
-    if (isOfflineError(error)) {
-      console.warn(`[subscribeToDocument] オフラインエラー (${collectionName}/${docId}):`, error?.code || error?.message);
-    } else {
-      console.error(`Error in ${collectionName}/${docId} listener:`, error);
-    }
-  });
+  // コレクションと同じ理由で、切れたら張り直す
+  let stopped = false;
+  let unsubscribe: (() => void) | null = null;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const start = () => {
+    if (stopped) return;
+    const docRef = doc(db, collectionName, docId);
+    unsubscribe = onSnapshot(docRef, { includeMetadataChanges: true }, (snapshot) => {
+      attempt = 0;
+      // hasPendingWritesやfromCacheに関係なく、常にUIを即座に更新
+      if (snapshot.exists()) {
+        const data = { id: snapshot.id, ...snapshot.data() } as T;
+        callback(data);
+      } else {
+        callback(null);
+      }
+    }, (error: any) => {
+      if (isOfflineError(error)) {
+        console.warn(`[subscribeToDocument] 購読が切れました (${collectionName}/${docId}):`, error?.code || error?.message);
+      } else {
+        console.error(`Error in ${collectionName}/${docId} listener:`, error);
+      }
+      if (stopped) return;
+      const wait = RESUBSCRIBE_DELAYS[Math.min(attempt, RESUBSCRIBE_DELAYS.length - 1)];
+      attempt++;
+      timer = setTimeout(start, wait);
+    });
+  };
+
+  start();
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    unsubscribe?.();
+  };
 }
 
 // Court functions
