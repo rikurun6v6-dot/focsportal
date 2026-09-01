@@ -75,13 +75,22 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
   const autoMinutes = topConfig?.approval_auto_minutes ?? 3;
   const nowMs = Date.now();
 
+  // 1巡ぶんの共有データ。以前はコート1面ごとに全件読み直していて、
+  // 8面だと全件読みが32回走っていた。ここで1回だけ読んで使い回す。
+  const shared = {
+    config: topConfig,
+    allMatches,
+    allPlayers: await getAllDocuments<Player>('players'),
+    allCourts,
+  };
+
   for (const court of emptyCourts) {
     // 団体戦マルチコートとして既に確保済みのコートはスキップ
     if (claimedCourtIds.has(court.id)) continue;
 
     const divPref = courtDivisionPreference.get(court.id);
     const blockInfo: DispatchBlockInfo = { overridable: [] };
-    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, divPref, blockInfo);
+    const assigned = await dispatchToEmptyCourt(court, waitingMatches, defaultRestMinutes, assignedMatchIds, divPref, blockInfo, shared);
 
     if (!assigned) {
       await handleStuckCourt(court, blockInfo, nowMs, stuckSeconds, autoMinutes);
@@ -102,6 +111,13 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
       const idx = waitingMatches.findIndex(m => m.id === assigned.id);
       if (idx >= 0) waitingMatches.splice(idx, 1);
 
+      // 共有データを手で進める。ここを忘れると、次のコートは
+      // 「この試合はまだ待機中・この選手は空いている」と誤認して二重に出してしまう。
+      const shm = shared.allMatches.find(m => m.id === assigned.id);
+      if (shm) { shm.status = 'calling'; shm.court_id = court.id; }
+      const shc = shared.allCourts.find(c => c.id === court.id);
+      if (shc) shc.current_match_id = assigned.id;
+
       // 団体戦: 同一試合を最大3面に同時割り当て（追加2面分）
       if (assigned.tournament_type === 'team_battle') {
         let extraCount = 0;
@@ -113,6 +129,8 @@ export async function autoDispatchAll(campId?: string, defaultRestMinutes: numbe
             const ok = await claimExtraCourt(extraCourt.id, assigned.id);
             if (!ok) continue; // 他の端末が先に取っていた
             claimedCourtIds.add(extraCourt.id);
+            const shec = shared.allCourts.find(c => c.id === extraCourt.id);
+            if (shec) shec.current_match_id = assigned.id;
             dispatchedCount++;
             extraCount++;
           } catch {
@@ -140,7 +158,23 @@ export async function dispatchToEmptyCourt(
   defaultRestMinutes: number = 10,
   assignedMatchIds: Set<string> = new Set(),
   divisionPreference?: Division,
-  blockInfo?: DispatchBlockInfo
+  blockInfo?: DispatchBlockInfo,
+  /**
+   * 1巡ぶんの共有データ。autoDispatchAll が最初に1回だけ読んで渡す。
+   *
+   * 以前はコート1面ごとに matches / players / courts / config を全件読み直していた。
+   * 8面だと1巡で全件読みが32回走り、空の8面が埋まるまで37秒かかっていた。
+   *
+   * 渡されないときは従来どおり自前で読む（単発の呼び出し用）。
+   * 呼び出し元は、割り当てが決まった試合の status を配列の中で 'calling' に
+   * 書き換えること。そうしないと次のコートがその選手を空いていると誤認する。
+   */
+  shared?: {
+    config: Config | null;
+    allMatches: Match[];
+    allPlayers: Player[];
+    allCourts: Court[];
+  }
 ): Promise<Match | null> {
   const now = Date.now();
   // 同一ループ内で既に割り当て済みの試合を除外（二重割り当て防止の第二防衛線）
@@ -150,7 +184,7 @@ export async function dispatchToEmptyCourt(
 
   // ── 進行制御フィルタを最初に適用（予約パス含む全パスで有効） ──
   // config を先に読み込み、enabled_tournaments に含まれない種目を完全排除する
-  const config = await getDocument<Config>('config', court.campId || 'system');
+  const config = shared ? shared.config : await getDocument<Config>('config', court.campId || 'system');
   const enabledTypesEarly = config?.enabled_tournaments;
   if (enabledTypesEarly && enabledTypesEarly.length > 0) {
     waitingMatches = waitingMatches.filter(m =>
@@ -196,7 +230,7 @@ export async function dispatchToEmptyCourt(
     }
   }
 
-  const allMatches = await getAllDocuments<Match>('matches');
+  const allMatches = shared ? shared.allMatches : await getAllDocuments<Match>('matches');
   const activeMatches = allMatches.filter(m =>
     (court.campId ? m.campId === court.campId : true) &&
     (m.status === 'calling' || m.status === 'playing')
@@ -213,7 +247,7 @@ export async function dispatchToEmptyCourt(
 
   // 休息時間チェック用の設定を取得
   // Use the defaultRestMinutes parameter passed from admin page
-  const allPlayers = await getAllDocuments<Player>('players');
+  const allPlayers = shared ? shared.allPlayers : await getAllDocuments<Player>('players');
 
   // 合宿の全試合（スコアコンテキスト構築用）
   const campMatches = court.campId ? allMatches.filter(m => m.campId === court.campId) : allMatches;
@@ -485,7 +519,7 @@ export async function dispatchToEmptyCourt(
   // Firestore 再取得（awaited write 反映済み）が唯一の真実なので、これだけを使う。
   // ※ 以前は batchAssignedDivisions をマージしていたが、バッチで割り当て済みのコートが
   //   「再取得分」と「batch分」で二重計上され、ペナルティが過剰に効くバグがあったため撤去。
-  const allCourts = await getAllDocuments<Court>('courts');
+  const allCourts = shared ? shared.allCourts : await getAllDocuments<Court>('courts');
   const campCourts = court.campId ? allCourts.filter(c => c.campId === court.campId) : allCourts;
   const adjacentCourtDivisions = getActiveCourtDivisions(campCourts, allMatches);
 
