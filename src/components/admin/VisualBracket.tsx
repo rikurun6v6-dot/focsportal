@@ -525,6 +525,14 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             if (byeNo) {
                 return isSingles ? `${byeNo}番` : `${byeNo}番ペア`;
             }
+
+            // 予選のある部は、BYE 元にくじ番号もない。ここで諦めると
+            // 「準決勝の勝者」に落ちるが、同じ欄のもう片方も「準決勝 第N試合の勝者」
+            // になるため、どちらがどちらか読めない。
+            // BYE は戦わずに上がる枠なので、勝者ではなくその枠自体を出す。
+            if (groups.length > 0) {
+                return '予選通過（シード）';
+            }
         }
 
         // Firestoreに保存済みのplayer_idがある場合（実際の試合結果で確定した選手）
