@@ -6,7 +6,7 @@ import { Timestamp } from 'firebase/firestore';
 import { buildScoreContext, calcMatchScore, getGroupKey, detectPhase, hasRecentPlayer, ScorePhase,
   filterByGroupBalance, filterByDivisionBalance, filterByCompletedRound,
   computeDivisionProgress, computeGroupBalance, computeMinUnfinishedRound,
-  BALANCE_TOLERANCE } from './matchScoring';
+  BALANCE_TOLERANCE, isFinalsRound } from './matchScoring';
 import { getDivisionsInUse } from './divisions';
 
 export async function autoDispatchAll(campId?: string, defaultRestMinutes: number = 10): Promise<number> {
@@ -160,6 +160,8 @@ export async function dispatchToEmptyCourt(
   if (waitingMatches.length === 0) return null;
 
   const finalsWaitMode = config?.finals_wait_mode || {};
+  const finalsApprovalRequired = config?.finals_approval_required || {};
+  const finalsApprovedIds = new Set(config?.finals_approved_match_ids || []);
 
   // ✅ 予約優先: このコートに予約されている試合があるかチェック
   const reservedMatch = waitingMatches.find(m =>
@@ -291,6 +293,14 @@ export async function dispatchToEmptyCourt(
     if (nextReservedMatch && !canUseForShortMatch && match.id !== nextReservedMatch.id) {
       return false;
     }
+    // 決勝の許可制: 運営が「いま入れる」を押した決勝だけを出す。
+    // finals_wait_mode と違い、条件が揃っても勝手には解放しない。
+    const apprKey = `${match.tournament_type}_${match.division}`;
+    if (finalsApprovalRequired[apprKey] && isFinalsRound(match, campMatches)
+        && !finalsApprovedIds.has(match.id)) {
+      return false;
+    }
+
     // Finals wait mode check（1部・2部の準決勝以下が両方揃ったら同時解放）
     const key = `${match.tournament_type}_${match.division}`;
     if (finalsWaitMode[key]) {
@@ -712,7 +722,7 @@ function getActiveCourtDivisions(
 // ===== アサイン診断 =====
 
 export type SkipReason = 'disabled' | 'busy' | 'resting' | 'round_locked'
-  | 'division_balance' | 'group_balance' | 'gender_mismatch' | 'scoring_note';
+  | 'division_balance' | 'group_balance' | 'gender_mismatch' | 'finals_hold' | 'scoring_note';
 
 export interface SkipReasonDetail {
   reason: SkipReason;
@@ -914,7 +924,21 @@ export async function diagnoseWaitingMatches(
       }
     }
 
-    // (5) gender_mismatch — 利用可能な空きコートが性別的に合わない
+    // (5) 決勝の許可待ち
+    {
+      const apprKey = `${match.tournament_type}_${match.division}`;
+      const required = config?.finals_approval_required?.[apprKey];
+      const approved = new Set(config?.finals_approved_match_ids || []);
+      if (required && isFinalsRound(match, campMatches) && !approved.has(match.id)) {
+        reasons.push({
+          reason: 'finals_hold',
+          label: '決勝の許可待ち',
+          detail: '「決勝の許可」で運営が入れるまで出しません',
+        });
+      }
+    }
+
+    // (6) gender_mismatch — 利用可能な空きコートが性別的に合わない
     const matchGender = getPreferredGender(match); // null = neutral
     if (matchGender && !hasUngenderedCourt) {
       const hasMatchingCourt = emptyCourtGenders.has(matchGender);

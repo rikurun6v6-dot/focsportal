@@ -259,6 +259,13 @@ export interface Config {
   approval_stuck_seconds?: number;
   /** 例外承認: 無応答のとき自動投入するまでの分数（0 で自動投入しない。既定3） */
   approval_auto_minutes?: number;
+  /**
+   * 決勝戦を「運営が許可するまで出さない」種目。キー: `${tournament_type}_${division}`
+   * finals_wait_mode（条件が揃うと自動で解放される）とは別物で、こちらは人が押すまで出ない。
+   */
+  finals_approval_required?: Record<string, boolean>;
+  /** 上記で許可済みの決勝戦の試合ID。ここに入った試合だけが割り当て対象になる */
+  finals_approved_match_ids?: string[];
 }
 
 /**

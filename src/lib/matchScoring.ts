@@ -527,3 +527,20 @@ export function filterByCompletedRound(matches: Match[], allMatches: Match[]): M
     return limit === undefined || m.round <= limit;
   });
 }
+
+/**
+ * その試合が「その種目・部の最終ラウンド」か。決勝と3位決定戦がこれに当たる。
+ *
+ * 決勝の許可制（運営が押すまで出さない）と、決勝のセンターコート寄せの両方で使う。
+ * 判定を各所に散らすとズレるので、ここに1つだけ置く。
+ */
+export function isFinalsRound(match: Match, allMatches: Match[]): boolean {
+  let max = 0;
+  for (const m of allMatches) {
+    if (m.tournament_type !== match.tournament_type) continue;
+    if (m.division !== match.division) continue;
+    if ((m as any).phase === 'preliminary') continue;
+    if (m.round > max) max = m.round;
+  }
+  return max > 0 && match.round === max && (match as any).phase !== 'preliminary';
+}

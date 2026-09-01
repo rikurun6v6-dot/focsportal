@@ -23,6 +23,7 @@ import PlayerManager from "@/components/admin/PlayerManager";
 import AdminGuard from "@/components/admin/AdminGuard";
 import TournamentTypeControl from "@/components/admin/TournamentTypeControl";
 import CourtGenderSplit from "@/components/admin/CourtGenderSplit";
+import FinalsApproval from "@/components/admin/FinalsApproval";
 import dynamic from "next/dynamic";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 // 重い/低頻度のタブは [最適化D] 遅延読み込み（下部の dynamic() 定義を参照）
@@ -1283,6 +1284,20 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <CourtGenderSplit readOnly={isArchived} campId={camp.id} />
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-slate-200 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
+                      <Trophy className="w-5 h-5 text-purple-500" /> 決勝の許可
+                    </CardTitle>
+                    <CardDescription>
+                      許可制にした決勝は、運営が「いま入れる」を押すまで自動割り当てに出ません
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <FinalsApproval readOnly={isArchived} campId={camp.id} />
                   </CardContent>
                 </Card>
 
