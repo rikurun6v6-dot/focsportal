@@ -1018,7 +1018,7 @@ export default function AdminDashboard() {
                           variant="outline"
                           className="w-full border-slate-300 hover:bg-slate-50 bg-white"
                         >
-                          {initializing ? "初期化中..." : "コートを初期化（6面）"}
+                          {initializing ? "初期化中..." : `コートを初期化（${camp.court_count}面）`}
                         </Button>
                         <Button
                           onClick={handleInitializeSystem}

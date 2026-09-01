@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { getDocument, updateDocument } from "@/lib/firestore-helpers";
 import type { Config, TournamentType } from "@/types";
+import { EVENT_GROUPS } from "@/lib/event-groups";
 
 const TOURNAMENT_TYPES: { value: TournamentType; label: string }[] = [
   { value: "mens_doubles", label: "男子ダブルス" },
@@ -28,6 +29,16 @@ export default function TournamentTypeControl({ readOnly = false, campId }: { re
     setLoading(false);
   };
 
+  /** 個人戦①／②のどちらかだけを有効にする（当日のフェーズ切り替え用） */
+  const applyGroup = async (types: TournamentType[]) => {
+    setEnabledTypes(types);
+    await updateDocument("config", campId, { enabled_tournaments: types });
+  };
+
+  /** そのくくりだけが有効になっているか */
+  const isGroupActive = (types: TournamentType[]) =>
+    enabledTypes.length === types.length && types.every(t => enabledTypes.includes(t));
+
   const toggleType = async (type: TournamentType) => {
     const newEnabled = enabledTypes.includes(type)
       ? enabledTypes.filter(t => t !== type)
@@ -46,6 +57,40 @@ export default function TournamentTypeControl({ readOnly = false, campId }: { re
           ? "すべての種目が有効です（フィルタなし）"
           : `${enabledTypes.length}種目が有効です`}
       </p>
+
+      {/* 当日はここで前半・後半を切り替える。下の種目ボタンは細かく直したいときだけ使う */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {EVENT_GROUPS.map(g => {
+          const on = isGroupActive(g.types);
+          return (
+            <Button
+              key={g.id}
+              onClick={() => applyGroup(g.types)}
+              disabled={readOnly}
+              variant="outline"
+              className={`h-auto flex-col items-start py-2 ${
+                on ? "border-sky-500 bg-sky-50 text-sky-800" : "bg-white border-slate-300 text-slate-700"
+              }`}
+            >
+              <span className="text-sm font-bold">{g.label}だけ有効</span>
+              <span className="text-[11px] font-normal text-slate-500">{g.note}</span>
+            </Button>
+          );
+        })}
+        <Button
+          onClick={() => applyGroup([])}
+          disabled={readOnly}
+          variant="outline"
+          className={`h-auto flex-col items-start py-2 ${
+            enabledTypes.length === 0
+              ? "border-sky-500 bg-sky-50 text-sky-800"
+              : "bg-white border-slate-300 text-slate-700"
+          }`}
+        >
+          <span className="text-sm font-bold">すべて有効</span>
+          <span className="text-[11px] font-normal text-slate-500">フィルタなし</span>
+        </Button>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         {TOURNAMENT_TYPES.map(({ value, label }) => (
           <Button
