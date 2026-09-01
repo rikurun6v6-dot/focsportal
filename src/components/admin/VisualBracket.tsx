@@ -526,6 +526,13 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
             return `予選 [${match.group}] ${position}位`;
         }
 
+        // 当日くじ待ち: 選手はまだ入っていないが、ペア番号は決まっている。
+        // 「未定」だと表を貼り出しても誰がどこか分からないので、くじの番号を出す。
+        const pairNo = position === 1 ? match.pair_no_p1 : match.pair_no_p2;
+        if (pairNo) {
+            return isSingles ? `${pairNo}番` : `${pairNo}番ペア`;
+        }
+
         return "未定";
     };
 
