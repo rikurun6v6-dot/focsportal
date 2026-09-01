@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { calculateGroupStandings, rankStandings, needsManualIntervention, compareStandings, getLossRatio, type GroupStanding } from '@/lib/group-ranking';
 import { getDivisionsInUse } from '@/lib/divisions';
-import { getMatchesByTournament, getAllPlayers, updateDocument, getDocument } from '@/lib/firestore-helpers';
+import { getMatchesByTournament, getAllPlayers, updateDocument, getDocument, propagateByePlayerChange } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import type { Match, Player, TournamentType, Division, TeamGroup, Config } from '@/types';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
@@ -240,6 +240,34 @@ export default function GroupRankingManager() {
           player2_id: remBottoms[i].playerId,
           player4_id: remBottoms[i].partnerId || '',
         });
+      }
+
+      // シード（BYE）は試合をしないので、勝ち上がりを自分で次のラウンドへ送る。
+      // ここを呼ばないと、決勝の片側が空のまま残る。
+      // 相手が決まらないので割り当ての対象にもならず、決勝が永久に始まらない。
+      // 3グループの部（男子2部・3部）は必ずシードが1枠できるので、毎回起きる。
+      const byeUpdates = new Map<string, Record<string, string>>();
+      for (let i = 0; i < Math.min(byeSeeds.length, byeSlots.length); i++) {
+        const seed = byeSeeds[i];
+        byeUpdates.set(byeSlots[i].id, {
+          player1_id: seed.playerId,
+          player3_id: seed.partnerId || '',
+          player2_id: '',
+          player4_id: '',
+        });
+      }
+      const merged = matches.map(m => {
+        const u = byeUpdates.get(m.id);
+        return u ? ({ ...m, ...u } as typeof m) : m;
+      });
+      for (const id of byeUpdates.keys()) {
+        const updated = merged.find(m => m.id === id);
+        if (!updated) continue;
+        try {
+          await propagateByePlayerChange(updated, merged);
+        } catch (e) {
+          console.error('[進出] BYE伝播に失敗:', id, e);
+        }
       }
 
       toastSuccess('全グループの進出者を決勝トーナメントに設定しました');

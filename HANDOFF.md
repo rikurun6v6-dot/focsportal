@@ -1858,3 +1858,46 @@ BYE は戦わずに上がる枠なので、「勝者」ではなく枠そのも�
 
 - 予選かどうかの判定は `m.group` の有無で行っている。
   `phase` は未設定の試合があり得るため使っていない。
+
+## fix/bye-propagate-on-assign
+
+- 日付: 2026-09-02
+- 担当者: Claude Code（菊池指示）
+- ブランチ: `fix/bye-propagate-on-assign`
+
+### 変更内容
+
+`propagateByePlayerChange`（BYEの勝ち上がりを次ラウンドへ送る処理）を、
+次の2か所からも呼ぶようにした。
+
+- `src/components/admin/PairAssignManager.tsx`（番号で割り当て → 表に反映）
+- `src/components/admin/GroupRankingManager.tsx`（予選順位 → 決勝Tへ進出）
+
+### 変更理由
+
+BYE（シード）の試合は誰とも対戦しないので `completed` にならない。
+そのため勝ち上がりは `propagateByePlayerChange` で明示的に送る必要があるが、
+この関数は `PairSeedManager` / `VisualSeedingEditor` / `SafetyTab`（棄権）からしか
+呼ばれておらず、**当日必ず通る上記2経路から呼ばれていなかった。**
+
+結果、リハーサルで次の状態になった。
+
+```
+準決勝(実戦)  completed → 決勝の position 2 に伝播 ✓
+準決勝(BYE)   waiting / is_walkover:true / p1あり p2なし → 完了しない
+決勝          p1なし p2あり → dispatcher の !player1_id で永久に弾かれる
+```
+
+- 男子D2部・3部（3グループ→4枠→シード1）は**決勝が永久に始まらない**
+- 混合D2部はシードが10組あるため、2回戦の枠が10個空のままになる
+
+### 影響範囲
+
+- 上記2ファイルのみ。`propagateByePlayerChange` 自体は変更していない
+- BYE 以外の試合には触らない（`is_walkover` かつ今回書き込んだ試合だけを対象）
+- 伝播が失敗しても本処理は止めない（console にだけ出す）
+
+### 注意点
+
+- 当日すでに進出させたあとに気づいた場合は、**ペア・シード管理（試合ごとに直す）**で
+  該当のシード枠を開いて保存し直すと、そこから伝播が走る。

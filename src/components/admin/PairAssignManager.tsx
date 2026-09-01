@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getMatchesByTournament, getAllPlayers } from '@/lib/firestore-helpers';
+import { getMatchesByTournament, getAllPlayers, propagateByePlayerChange } from '@/lib/firestore-helpers';
 import { useCamp } from '@/context/CampContext';
 import { getDivisionsInUse } from '@/lib/divisions';
 import { matchesQuery, matchRank } from '@/lib/kana';
@@ -207,6 +207,40 @@ export default function PairAssignManager({ readOnly = false }: { readOnly?: boo
       }
 
       await batch.commit();
+
+      // BYE（シード）は試合をしないので、勝ち上がりを自分で次のラウンドへ送る。
+      // ここを呼ばないと、シードのペアが2回戦の枠に入らないまま止まる。
+      // 混合ダブルス2部のようにシードが10組ある種目では、そのぶん枠が空のままになり、
+      // 相手が永久に決まらず割り当ての対象にもならない。
+      const written = new Map<string, Record<string, string>>();
+      for (const m of divisionMatches) {
+        const u: Record<string, string> = {};
+        if (m.pair_no_p1 && byNumber.has(m.pair_no_p1)) {
+          const mem = byNumber.get(m.pair_no_p1)!;
+          u.player1_id = mem[0] ?? '';
+          if (!isSingles) { u.player3_id = mem[1] ?? ''; u.player5_id = mem[2] ?? ''; }
+        }
+        if (m.pair_no_p2 && byNumber.has(m.pair_no_p2)) {
+          const mem = byNumber.get(m.pair_no_p2)!;
+          u.player2_id = mem[0] ?? '';
+          if (!isSingles) { u.player4_id = mem[1] ?? ''; u.player6_id = mem[2] ?? ''; }
+        }
+        if (Object.keys(u).length > 0) written.set(m.id, u);
+      }
+      const merged = matches.map(m => {
+        const u = written.get(m.id);
+        return u ? ({ ...m, ...u } as typeof m) : m;
+      });
+      for (const m of merged) {
+        if (!m.is_walkover) continue;
+        if (!written.has(m.id)) continue;
+        try {
+          await propagateByePlayerChange(m, merged);
+        } catch (e) {
+          console.error('[ペア割り当て] BYE伝播に失敗:', m.id, e);
+        }
+      }
+
       const remaining = drafts.length - filled.length;
       toastSuccess(
         `${filled.length}組を${touched}試合に反映しました`,
