@@ -1936,3 +1936,38 @@ BYE（シード）の試合は誰とも対戦しないので `completed` にな�
 
 - 3位決定戦は最終ラウンド扱いなので、決勝の許可制を ON にしていると
   3位決定戦も「いま入れる」を押すまで出ない（従来どおりの挙動）。
+
+## fix/guard-system-init
+
+- 日付: 2026-09-02
+- 担当者: Claude Code（菊池指示）
+- ブランチ: `fix/guard-system-init`
+
+### 変更内容
+
+`src/app/admin/page.tsx` の「システムを初期化」に確認ダイアログを付けた。
+消えるものを具体的に並べ、「大会中は押さないでください」と書いた。
+
+### 変更理由
+
+`handleInitializeSystem` は確認なしで `initializeConfig` を呼ぶ。
+`initializeConfig` は `setDoc`（merge なし）なので、config が丸ごと作り直される。
+
+準備中の 2026夏合宿 で実際にこれが走り、次の設定が消えた。
+
+- `enabled_tournaments`（種目の進行制御）
+- `finals_approval_required` / `finals_approved_match_ids`（決勝の許可制）
+- コートの性別配分（`initializeCourts` がコートを作り直すため）
+
+選手・試合・結果は消えないので気づきにくい。大会中に押されると進行が壊れる。
+
+### 影響範囲
+
+- `src/app/admin/page.tsx` の `handleInitializeSystem` のみ
+- 初期化そのものの動きは変えていない。押す前に一度止めるだけ
+- Hard Reset は元から二重確認があるので触っていない
+
+### 注意点
+
+- 根本的には `initializeConfig` が `setDoc` で上書きしているのが原因。
+  merge にするか、初期化対象を絞るのが本筋。大会後に直す。
