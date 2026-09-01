@@ -22,6 +22,7 @@ import ResultsTab from "@/components/admin/ResultsTab";
 import PlayerManager from "@/components/admin/PlayerManager";
 import AdminGuard from "@/components/admin/AdminGuard";
 import TournamentTypeControl from "@/components/admin/TournamentTypeControl";
+import CourtGenderSplit from "@/components/admin/CourtGenderSplit";
 import dynamic from "next/dynamic";
 import TournamentDebug from "@/components/admin/TournamentDebug";
 // 重い/低頻度のタブは [最適化D] 遅延読み込み（下部の dynamic() 定義を参照）
@@ -1270,6 +1271,18 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <TournamentTypeControl readOnly={isArchived} campId={camp.id} />
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-slate-200 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-slate-800 flex items-center gap-2 text-lg">
+                      <Users className="w-5 h-5 text-violet-500" /> コートの性別配分
+                    </CardTitle>
+                    <CardDescription>男子用・女子用の面数をまとめて切り替え（混合ダブルスは指定なしに）</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CourtGenderSplit readOnly={isArchived} campId={camp.id} />
                   </CardContent>
                 </Card>
 
