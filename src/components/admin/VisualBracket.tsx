@@ -461,10 +461,19 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
     /**
      * 実戦試合の採番（各ラウンドで1から開始）
      */
-    const getActualMatchNumber = (match: Match): number => {
+    const getActualMatchNumber = (match: Match): number | null => {
         const actualMatches = getActualMatchesInRound(match.round);
         const index = actualMatches.findIndex(m => m.id === match.id);
-        return index >= 0 ? index + 1 : match.match_number || 0;
+        // 見つからない = BYE など採番の対象外。ここで match_number を返すと
+        // 実戦試合に振り直した番号と衝突して「第4試合の勝者」が2箇所に出てしまう。
+        return index >= 0 ? index + 1 : null;
+    };
+
+    /** 「1回戦 第3試合の勝者」。採番できない試合なら番号なしで返す */
+    const winnerOfLabel = (m: Match): string => {
+        const n = getActualMatchNumber(m);
+        const round = getUnifiedRoundName(m, maxRound);
+        return n === null ? `${round}の勝者` : `${round} 第${n}試合の勝者`;
     };
 
     const getPlayerDisplay = (playerId: string | undefined, match: Match, position: 1 | 2) => {
@@ -485,8 +494,7 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
         // Firestore に player_id が入っていてもゴミデータ（誤伝播）の可能性があるため
         // 「X回戦の勝者」表示にフォールバックし、名前を出さない
         if (sourceMatch && !isByeMatch(sourceMatch) && sourceMatch.status !== 'completed') {
-            const actualMatchNum = getActualMatchNumber(sourceMatch);
-            return `${getUnifiedRoundName(sourceMatch, maxRound)} 第${actualMatchNum}試合の勝者`;
+            return winnerOfLabel(sourceMatch);
         }
 
         // ソース試合がBYEの場合: 常にソース試合から選手名を再計算（保存済みの古いplayer_idを無視）
@@ -508,6 +516,15 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
                 }
                 return mainPlayerName;
             }
+
+            // 当日くじ前は BYE 元にも選手が入っていない。
+            // ここで諦めると後ろの「第N試合の勝者」に落ちるが、BYE は実戦試合の
+            // 採番から除かれているため、番号が実戦の試合と衝突して嘘の表示になる。
+            // シードで上がってくるペアは番号が分かっているので、それを出す。
+            const byeNo = sourceMatch.pair_no_p1 ?? sourceMatch.pair_no_p2;
+            if (byeNo) {
+                return isSingles ? `${byeNo}番` : `${byeNo}番ペア`;
+            }
         }
 
         // Firestoreに保存済みのplayer_idがある場合（実際の試合結果で確定した選手）
@@ -528,13 +545,17 @@ export default function VisualBracket({ readOnly = false }: { readOnly?: boolean
 
         // player_idが空: 非BYEのソース試合からの勝者表示
         if (sourceMatch) {
-            const actualMatchNum = getActualMatchNumber(sourceMatch);
-            return `${getUnifiedRoundName(sourceMatch, maxRound)} 第${actualMatchNum}試合の勝者`;
+            return winnerOfLabel(sourceMatch);
         }
 
         // 予選リーグからの勝ち上がり
         if (match.phase === 'knockout' && match.round === 1 && match.group) {
             return `予選 [${match.group}] ${position}位`;
+        }
+
+        // BYE（シード）の空いている側。相手はいないので「未定」ではない。
+        if (isByeMatch(match)) {
+            return 'シード（不戦勝）';
         }
 
         // 当日くじ待ち: 選手はまだ入っていないが、ペア番号は決まっている。
