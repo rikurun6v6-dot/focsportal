@@ -1,4 +1,5 @@
 import type { Player, TournamentType, Division, Gender } from '@/types';
+import { isValidDivision } from './divisions';
 
 /**
  * ダブルス用のペアをランダムに生成
@@ -201,7 +202,10 @@ export function generateTournamentBracket(pairCount: number): {
  */
 export function getEffectiveDivision(player: Player, tournamentType: TournamentType): Division {
   const ov = player.division_overrides?.[tournamentType];
-  return (ov === 1 || ov === 2) ? ov : player.division;
+  // 以前は 1部・2部 しか受け付けておらず、3部への振り替えが黙って無視されていた。
+  // 混合ダブルスで「2部男子 × 1,2部女子」のように部をまたいで組むとき、
+  // 3部側への振り替えができないと組めない。
+  return isValidDivision(ov) ? ov : player.division;
 }
 
 export function getEligiblePlayersForSingles(
