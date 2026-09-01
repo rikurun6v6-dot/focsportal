@@ -12,6 +12,18 @@ import { useCamp } from "@/context/CampContext";
 import type { Match, Player, TournamentType } from "@/types";
 import { Users, Award, Save } from "lucide-react";
 
+// 部ごとの配色。Tailwind はクラス名を静的に拾うので、テンプレート文字列で
+// 組み立てず、完成したクラス名をここに書いておく。
+import { getDivisionsInUse } from '@/lib/divisions';
+
+const DIVISION_COLOR: Record<number, {
+  head: string; card: string; label: string;
+}> = {
+  1: { head: 'text-sky-700 border-sky-200',       card: 'border-sky-200 bg-sky-50/30',       label: 'text-sky-700' },
+  2: { head: 'text-purple-700 border-purple-200', card: 'border-purple-200 bg-purple-50/30', label: 'text-purple-700' },
+  3: { head: 'text-amber-700 border-amber-200',   card: 'border-amber-200 bg-amber-50/30',   label: 'text-amber-700' },
+};
+
 export default function PairSeedManager({ readOnly = false }: { readOnly?: boolean }) {
     const { camp } = useCamp();
     const [tournamentType, setTournamentType] = useState<TournamentType>("mens_doubles");
@@ -145,6 +157,11 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
 
     const isDoubles = tournamentType.includes('doubles');
 
+    // 実際に試合がある部だけを出す（無ければ既定の1〜3部）
+
+    const divisionsInUse = getDivisionsInUse(matches);
+
+
     return (
         <div className="space-y-4">
             <Card>
@@ -195,30 +212,33 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                 1回戦の試合一覧（{matches.length}試合）
                             </p>
 
-                            {/* 1部の試合 */}
-                            {(() => {
-                                const division1Matches = matches.filter(m => m.division === 1 || !m.division);
-                                if (division1Matches.length === 0) return null;
+                            {/* 部ごとの試合。以前は1部・2部を別々にベタ書きしていて3部が画面に出なかった */}
+                            {divisionsInUse.map(div => {
+                                const divMatches = matches.filter(m =>
+                                    m.division === div || (!m.division && div === divisionsInUse[0])
+                                );
+                                if (divMatches.length === 0) return null;
+                                const c = DIVISION_COLOR[div] ?? DIVISION_COLOR[1];
                                 return (
                                     <div className="space-y-4">
-                                        <h3 className="text-base font-bold text-sky-700 flex items-center gap-2 border-b-2 border-sky-200 pb-2">
+                                        <h3 className={`text-base font-bold flex items-center gap-2 border-b-2 pb-2 ${c.head}`}>
                                             <Users className="w-5 h-5" />
-                                            1部（{division1Matches.length}試合）
+                                            {div}部（{divMatches.length}試合）
                                         </h3>
-                                        {division1Matches.map((match, idx) => {
+                                        {divMatches.map((match, idx) => {
                                             const matchIndex = matches.indexOf(match);
                                             return (
-                                            <Card key={match.id} className="border-2 border-sky-200 bg-sky-50/30">
+                                            <Card key={match.id} className={`border-2 ${c.card}`}>
                                                 <CardContent className="p-4 space-y-4">
-                                                    <div className="flex items-center gap-2 text-sm font-bold text-sky-700">
+                                                    <div className={`flex items-center gap-2 text-sm font-bold ${c.label}`}>
                                                         <Users className="w-4 h-4" />
-                                                        1部 試合 {idx + 1}
+                                                        {div}部 試合 {idx + 1}
                                                     </div>
 
                                         {/* ペア1 */}
-                                        <div className="bg-sky-50 p-3 rounded space-y-2">
+                                        <div className="bg-slate-50 p-3 rounded space-y-2">
                                             <div className="flex items-center gap-2">
-                                                <span className="text-xs font-bold text-sky-700 w-16">ペア1</span>
+                                                <span className={`text-xs font-bold w-16 ${c.label}`}>ペア1</span>
                                                 <Input
                                                     type="number"
                                                     placeholder="シード"
@@ -335,146 +355,7 @@ export default function PairSeedManager({ readOnly = false }: { readOnly?: boole
                                         })}
                                     </div>
                                 );
-                            })()}
-
-                            {/* 2部の試合 */}
-                            {(() => {
-                                const division2Matches = matches.filter(m => m.division === 2);
-                                if (division2Matches.length === 0) return null;
-                                return (
-                                    <div className="space-y-4">
-                                        <h3 className="text-base font-bold text-purple-700 flex items-center gap-2 border-b-2 border-purple-200 pb-2">
-                                            <Users className="w-5 h-5" />
-                                            2部（{division2Matches.length}試合）
-                                        </h3>
-                                        {division2Matches.map((match, idx) => (
-                                            <Card key={match.id} className="border-2 border-purple-200 bg-purple-50/30">
-                                                <CardContent className="p-4 space-y-4">
-                                                    <div className="flex items-center gap-2 text-sm font-bold text-purple-700">
-                                                        <Users className="w-4 h-4" />
-                                                        2部 試合 {idx + 1}
-                                                    </div>
-
-                                                    {/* ペア1 */}
-                                                    <div className="bg-sky-50 p-3 rounded space-y-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-bold text-sky-700 w-16">ペア1</span>
-                                                            <Input
-                                                                type="number"
-                                                                placeholder="シード"
-                                                                value={match.seed_p1 || ''}
-                                                                onChange={(e) => handleSeedChange(matches.indexOf(match), 'seed_p1', e.target.value)}
-                                                                disabled={readOnly}
-                                                                className="w-20 h-8 text-sm bg-white"
-                                                            />
-                                                            {match.seed_p1 && (
-                                                                <span className="text-xs text-amber-600 font-medium">第{match.seed_p1}シード</span>
-                                                            )}
-                                                            {match.player5_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
-                                                        </div>
-                                                        <div className="flex gap-2 flex-wrap">
-                                                            <Select value={match.player1_id} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player1_id', v)} disabled={readOnly}>
-                                                                <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
-                                                                    <SelectValue placeholder="選手1" />
-                                                                </SelectTrigger>
-                                                                <SelectContent className="bg-white max-h-[200px]">
-                                                                    {players.map(p => (
-                                                                        <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                            {isDoubles && (
-                                                                <Select value={match.player3_id || ''} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player3_id', v)} disabled={readOnly}>
-                                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
-                                                                        <SelectValue placeholder="選手2" />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent className="bg-white max-h-[200px]">
-                                                                        {players.map(p => (
-                                                                            <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
-                                                            {isDoubles && (
-                                                                <Select value={match.player5_id || '__none__'} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player5_id', v === '__none__' ? '' : v)} disabled={readOnly}>
-                                                                    <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
-                                                                        <SelectValue placeholder="3人目（任意）" />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent className="bg-white max-h-[200px]">
-                                                                        <SelectItem value="__none__">— 3人目なし —</SelectItem>
-                                                                        {players.map(p => (
-                                                                            <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* VS */}
-                                                    <div className="text-center text-xs font-bold text-slate-400">VS</div>
-
-                                                    {/* ペア2 */}
-                                                    <div className="bg-slate-50 p-3 rounded space-y-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-bold text-slate-700 w-16">ペア2</span>
-                                                            <Input
-                                                                type="number"
-                                                                placeholder="シード"
-                                                                value={match.seed_p2 || ''}
-                                                                onChange={(e) => handleSeedChange(matches.indexOf(match), 'seed_p2', e.target.value)}
-                                                                disabled={readOnly}
-                                                                className="w-20 h-8 text-sm bg-white"
-                                                            />
-                                                            {match.seed_p2 && (
-                                                                <span className="text-xs text-amber-600 font-medium">第{match.seed_p2}シード</span>
-                                                            )}
-                                                            {match.player6_id && <span className="text-xs text-amber-600 font-bold ml-1">3人組</span>}
-                                                        </div>
-                                                        <div className="flex gap-2 flex-wrap">
-                                                            <Select value={match.player2_id} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player2_id', v)} disabled={readOnly}>
-                                                                <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
-                                                                    <SelectValue placeholder="選手1" />
-                                                                </SelectTrigger>
-                                                                <SelectContent className="bg-white max-h-[200px]">
-                                                                    {players.map(p => (
-                                                                        <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                            {isDoubles && (
-                                                                <Select value={match.player4_id || ''} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player4_id', v)} disabled={readOnly}>
-                                                                    <SelectTrigger className="flex-1 h-9 bg-white text-sm min-w-[100px]">
-                                                                        <SelectValue placeholder="選手2" />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent className="bg-white max-h-[200px]">
-                                                                        {players.map(p => (
-                                                                            <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
-                                                            {isDoubles && (
-                                                                <Select value={match.player6_id || '__none__'} onValueChange={(v) => handlePlayerChange(matches.indexOf(match), 'player6_id', v === '__none__' ? '' : v)} disabled={readOnly}>
-                                                                    <SelectTrigger className="flex-1 h-9 bg-amber-50 text-sm min-w-[100px] border-amber-300">
-                                                                        <SelectValue placeholder="3人目（任意）" />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent className="bg-white max-h-[200px]">
-                                                                        <SelectItem value="__none__">— 3人目なし —</SelectItem>
-                                                                        {players.map(p => (
-                                                                            <SelectItem key={p.id} value={p.id!}>{p.name}</SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                );
-                            })()}
+                            })}
                         </div>
                     )}
                 </CardContent>

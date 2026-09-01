@@ -5,7 +5,7 @@ import { collection, query, where, doc, getDoc, updateDoc } from "firebase/fires
 import { db } from "@/lib/firebase";
 import { safeGetDocs } from "@/lib/firestore-helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Lock, RefreshCw, TrendingUp, BarChart2, AlertTriangle, CheckCircle2, Sparkles, Bot, SlidersHorizontal } from "lucide-react";
+import { RefreshCw, TrendingUp, BarChart2, AlertTriangle, CheckCircle2, Sparkles, Bot, SlidersHorizontal } from "lucide-react";
 import type { AIDiagnosePayload } from "@/app/api/ai-diagnose/route";
 import type { Match, Court, Player } from "@/types";
 import { getDivisionsInUse } from "@/lib/divisions";
@@ -15,7 +15,6 @@ interface Props {
 }
 
 const ROUND_COEFFICIENT = 100;
-const PASSWORD = "1203";
 
 function getMatchGender(m: Match): "male" | "female" | null {
   if (m.tournament_type === "mens_singles" || m.tournament_type === "mens_doubles") return "male";
@@ -70,8 +69,8 @@ interface DivisionData {
 }
 
 export default function AdvancedAnalytics({ campId }: Props) {
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
+  // 応用機能のパスワードロックは撤去した（オーナー判断）。
+  // 当日に運営が入力で止まるのを避けるため、常に解除済みで扱う。
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -92,22 +91,6 @@ export default function AdvancedAnalytics({ campId }: Props) {
   const [weightSaving, setWeightSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && sessionStorage.getItem("adv_analytics_unlocked") === "1") {
-      setIsUnlocked(true);
-    }
-  }, []);
-
-  const handleUnlock = () => {
-    if (passwordInput === PASSWORD) {
-      setIsUnlocked(true);
-      if (typeof window !== "undefined") sessionStorage.setItem("adv_analytics_unlocked", "1");
-      setError("");
-    } else {
-      setError("パスワードが違います");
-      setPasswordInput("");
-    }
-  };
 
   const fetchData = useCallback(async () => {
     if (!campId) return;
@@ -369,12 +352,12 @@ export default function AdvancedAnalytics({ campId }: Props) {
   }, [fetchData, runAIDiagnosis]);
 
   useEffect(() => {
-    if (isUnlocked) fetchData();
-  }, [isUnlocked, fetchData]);
+    fetchData();
+  }, [fetchData]);
 
   // 重み設定をFirestoreからロード
   useEffect(() => {
-    if (!isUnlocked || !campId) return;
+    if (!campId) return;
     (async () => {
       try {
         const snap = await getDoc(doc(db, "config", campId));
@@ -387,7 +370,7 @@ export default function AdvancedAnalytics({ campId }: Props) {
         }
       } catch { /* ロード失敗は無視 */ }
     })();
-  }, [isUnlocked, campId]);
+  }, [campId]);
 
   // デバウンスしてFirestoreに保存（スライダー操作から500ms後）
   const saveWeights = useCallback((rw: number, gp: number, dbm: number, wf: number) => {
@@ -416,40 +399,6 @@ export default function AdvancedAnalytics({ campId }: Props) {
   };
 
   const freeCourtsCount = courts.filter(c => c.is_active && !c.current_match_id && !c.manually_freed).length;
-
-  if (!isUnlocked) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-sm border-t-4 border-t-violet-500">
-          <CardHeader className="text-center pb-2">
-            <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center mx-auto mb-3">
-              <Lock className="w-6 h-6 text-violet-600" />
-            </div>
-            <CardTitle className="text-lg">応用機能</CardTitle>
-            <p className="text-xs text-slate-500 mt-1">パスワードを入力してください</p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <input
-              type="password"
-              value={passwordInput}
-              onChange={e => setPasswordInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleUnlock()}
-              placeholder="パスワード"
-              className="w-full border rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400"
-              autoFocus
-            />
-            {error && <p className="text-xs text-red-500 text-center">{error}</p>}
-            <button
-              onClick={handleUnlock}
-              className="w-full bg-violet-600 hover:bg-violet-700 text-white rounded-lg py-2 text-sm font-medium transition-colors"
-            >
-              ロック解除
-            </button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">

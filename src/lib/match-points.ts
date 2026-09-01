@@ -1,26 +1,41 @@
 // src/lib/match-points.ts
 //
-// 試合の点数（11点 / 15点 / 21点）を、大会の構造から自動で決める。
+// 試合の点数（15点 / 21点）を、大会の構造から自動で決める。
+// 2026 Foc's 夏合宿 大会要項に合わせている。
 //
-// 以前は「基本点数」「ラウンド別点数」を運営が画面から登録していたが、
-// ブロックの人数によって点数を変える運用（4人ブロックだけ11点）が表現できず、
-// 登録の手間も大きかったため、構造から導出する方式に変更した。
+//   男女別ダブルス（女子1部を含む）
+//     予選ブロックの総当り        → 15点
+//     決勝トーナメント（全ラウンド）→ 21点
+//     ※女子1部はトーナメント方式のみなので、全試合21点になる
 //
-//   4人ブロックの総当り        → 11点
-//   3人ブロックの総当り        → 15点
-//   決勝T 準々決勝より前       → 15点
-//   準決勝・決勝・3位決定戦    → 21点
+//   男女混合ダブルス / シングルス
+//     準決勝より前                → 15点
+//     準決勝・決勝・3位決定戦     → 21点
+//
+// 以前は「4人ブロックだけ11点」という案Bの試算値を使っていたが、
+// 要項では予選は人数によらず15点に統一されたため、11点は使わない。
 
-/** 4ペア以上のブロックの総当り戦 */
-export const POINTS_BLOCK_LARGE = 11;
-/** 3ペアのブロックの総当り戦・決勝トーナメントの準々決勝より前 */
+import type { TournamentType } from '@/types';
+
+/** 予選ブロックの総当り・決勝Tの準決勝より前 */
 export const POINTS_STANDARD = 15;
-/** 準決勝・決勝・3位決定戦 */
+/** 決勝トーナメント（男女別ダブルス）／準決勝以降（混合・シングルス） */
 export const POINTS_FINALS = 21;
 
-/** ブロックが4ペア以上なら11点、それ未満なら15点 */
-export function pointsForGroupMatch(groupSize: number): number {
-  return groupSize >= 4 ? POINTS_BLOCK_LARGE : POINTS_STANDARD;
+/**
+ * 男女別ダブルスか。
+ * この2種目だけ「予選15点・決勝T全部21点」という別ルールになる。
+ */
+function isGenderedDoubles(tournamentType?: TournamentType): boolean {
+  return tournamentType === 'mens_doubles' || tournamentType === 'womens_doubles';
+}
+
+/**
+ * 予選ブロックの点数。要項では人数によらず15点。
+ * （引数の groupSize は呼び出し側の意図を残すために受け取るが、点数には影響しない）
+ */
+export function pointsForGroupMatch(_groupSize?: number): number {
+  return POINTS_STANDARD;
 }
 
 /**
@@ -31,23 +46,32 @@ export type PointsOverride = number | null;
 
 /**
  * 決勝トーナメントの点数。
- * 準決勝（totalRounds - 1）以降は21点、それより前は15点。
- * 3位決定戦は決勝と同じラウンド番号で作られるため、同じく21点になる。
+ *
+ * - 男女別ダブルス: 1回戦から決勝まで全部21点
+ * - 混合・シングルス: 準決勝（totalRounds - 1）以降が21点、それより前は15点
+ *
+ * 3位決定戦は決勝と同じラウンド番号で作られるため、どちらの種目でも21点になる。
  */
-export function pointsForKnockoutMatch(round: number, totalRounds: number): number {
+export function pointsForKnockoutMatch(
+  round: number,
+  totalRounds: number,
+  tournamentType?: TournamentType
+): number {
+  if (isGenderedDoubles(tournamentType)) return POINTS_FINALS;
   return round >= totalRounds - 1 ? POINTS_FINALS : POINTS_STANDARD;
 }
 
-/** 予選ブロック: 明示指定があればそれを、なければブロック人数から決める */
-export function resolveGroupPoints(override: PointsOverride, groupSize: number): number {
+/** 予選ブロック: 明示指定があればそれを、なければ要項どおり15点 */
+export function resolveGroupPoints(override: PointsOverride, groupSize?: number): number {
   return override ?? pointsForGroupMatch(groupSize);
 }
 
-/** 決勝T: 明示指定があればそれを、なければラウンドから決める */
+/** 決勝T: 明示指定があればそれを、なければ種目とラウンドから決める */
 export function resolveKnockoutPoints(
   override: PointsOverride,
   round: number,
-  totalRounds: number
+  totalRounds: number,
+  tournamentType?: TournamentType
 ): number {
-  return override ?? pointsForKnockoutMatch(round, totalRounds);
+  return override ?? pointsForKnockoutMatch(round, totalRounds, tournamentType);
 }

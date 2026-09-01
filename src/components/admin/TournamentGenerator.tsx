@@ -534,7 +534,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // 最初の byeCount 枠が上位シードのBYE。残りは予選後に選手が入るプレースホルダー。
         for (let pos = 1; pos <= round1Total; pos++) {
           const isBye = pos <= byeCount;
-          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, 1, totalRounds);
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, 1, totalRounds, currentState.tournamentType);
           const nextPos = Math.ceil(pos / 2);
           const nextMatchNum = totalRounds >= 2 ? matchNumMap.get(`2_${nextPos}`) : undefined;
           const nextMatchPos: 1 | 2 = pos % 2 === 1 ? 1 : 2;
@@ -570,7 +570,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // --- 2回戦以降（準々決勝・準決勝・決勝）---
         for (let round = 2; round <= totalRounds; round++) {
           const matchesInRound = bracketSize / Math.pow(2, round);
-          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, round, totalRounds);
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, round, totalRounds, currentState.tournamentType);
           const isLastRound = round === totalRounds;
 
           for (let pos = 1; pos <= matchesInRound; pos++) {
@@ -609,7 +609,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
         // subtitle: '3位決定戦' を付けることでVisualBracketのフィルターが正しく除外し、
         // 決勝は round=totalRounds に唯一の1試合として表示される
         if (has3rdPlace) {
-          const pointsFor3rd = resolveKnockoutPoints(currentState.pointsPerGame, totalRounds, totalRounds);
+          const pointsFor3rd = resolveKnockoutPoints(currentState.pointsPerGame, totalRounds, totalRounds, currentState.tournamentType);
           knockoutMatches.push({
             campId: camp.id,
             tournament_type: currentState.tournamentType,
@@ -729,7 +729,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
 
         // 各スロットを試合データに変換してFirestoreに保存
         for (const slot of bracket.slots) {
-          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, slot.roundNumber, bracket.totalRounds);
+          const pointsForRound = resolveKnockoutPoints(currentState.pointsPerGame, slot.roundNumber, bracket.totalRounds, currentState.tournamentType);
 
           // ドキュメントIDの強制固定: getFinalMatchId()を使用
           const matchDocId = getFinalMatchId(
@@ -913,7 +913,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
             end_time: null,
             created_at: serverTimestamp(),
             updated_at: serverTimestamp(),
-            points_per_match: resolveKnockoutPoints(currentState.pointsPerGame, bracket.totalRounds, bracket.totalRounds),
+            points_per_match: resolveKnockoutPoints(currentState.pointsPerGame, bracket.totalRounds, bracket.totalRounds, currentState.tournamentType),
             subtitle: '3位決定戦',
           });
           batchCount++;
@@ -1310,7 +1310,7 @@ export default function TournamentGenerator({ readOnly = false }: { readOnly?: b
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500 leading-relaxed">
-                自動のとき: 4人ブロックの総当り 11点 / 3人ブロックと準々決勝より前 15点 / 準決勝・決勝・3位決定戦 21点
+                自動のとき（大会要項準拠）: 男女別ダブルスは 予選15点・決勝トーナメント21点 / 混合ダブルスとシングルスは 通常15点・準決勝以降21点
               </p>
             </div>
           </div>

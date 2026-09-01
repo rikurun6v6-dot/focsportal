@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { pairSideLabel } from '@/lib/pair-label';
 import { Input } from '@/components/ui/input';
 import { getAllMatches, getAllPlayers } from '@/lib/firestore-helpers';
 import { getTournamentTypeName } from '@/lib/tournament-logic';
@@ -71,8 +72,9 @@ export default function MatchPicker({ value, onChange, statuses, placeholder }: 
     const p2 = nameOf(m.player2_id);
     const p3 = nameOf(m.player3_id);
     const p4 = nameOf(m.player4_id);
-    const side1 = [p1, p3].filter(Boolean).join('・') || '未定';
-    const side2 = [p2, p4].filter(Boolean).join('・') || '未定';
+    // 当日くじ待ちの枠は「未定」ではなくくじ番号を出す（pairSideLabel）
+    const side1 = [p1, p3].filter(Boolean).join('・') || pairSideLabel(m, 1, nameOf);
+    const side2 = [p2, p4].filter(Boolean).join('・') || pairSideLabel(m, 2, nameOf);
     const court = m.court_id ? `コート${String(m.court_id).replace(/^court_.*_/, '').replace('court_', '')}` : '';
     return {
       title: `${side1} vs ${side2}`,
