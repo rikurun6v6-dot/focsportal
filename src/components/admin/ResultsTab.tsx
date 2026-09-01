@@ -141,9 +141,17 @@ export default function ResultsTab() {
       try {
         const allMatches = await getAllDocuments<Match>('matches');
 
-        // 種目ごとの最大ラウンドを計算（全試合ベース）
+        // 種目ごとの最大ラウンドを計算。
+        //
+        // 「決勝までの残り段数」を出すための数なので、決勝トーナメントの試合だけで数える。
+        // 予選リーグの round は総当たりの巡目であって段数ではない。混ぜると、
+        // 4ペア総当たり（round 1〜3）のある部で max が 3 になり、
+        // 決勝（round 1）が getRoundName(1, 3) で「準々決勝」と表示されていた。
+        // 他の合宿の試合も同じキーに入るので、この合宿だけに絞る。
         const byType: Record<string, number> = {};
         allMatches.forEach(m => {
+          if (m.campId !== camp.id) return;
+          if (m.group) return;
           if (!m.tournament_type || !m.division || !m.round) return;
           const key = `${m.tournament_type}_${m.division}`;
           if (!byType[key] || m.round > byType[key]) byType[key] = m.round;
