@@ -1679,6 +1679,7 @@ export default function ResultsTab() {
                   round_locked: 'bg-blue-50 text-blue-700 border-blue-300',
                   division_balance: 'bg-teal-50 text-teal-700 border-teal-300',
                   group_balance: 'bg-teal-50 text-teal-700 border-teal-300',
+                  finals_hold: 'bg-purple-50 text-purple-700 border-purple-300',
                   gender_mismatch: 'bg-violet-50 text-violet-700 border-violet-300',
                 };
                 const reasonIcon: Record<string, string> = {
@@ -1688,6 +1689,7 @@ export default function ResultsTab() {
                   round_locked: '🔒',
                   division_balance: '⚖',
                   group_balance: '⚖',
+                  finals_hold: '🏆',
                   gender_mismatch: '♂♀',
                 };
                 return (
