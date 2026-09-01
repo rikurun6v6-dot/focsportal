@@ -201,6 +201,21 @@ export default function GroupRankingManager() {
     const byeSlots = knockoutMatches.filter(m => m.is_walkover);
     const realSlots = knockoutMatches.filter(m => !m.is_walkover);
 
+    // 進出者の数と決勝トーナメントの枠が合っているか先に確かめる。
+    //
+    // ここを見ていなかったため、枠が1試合しかない部で「上位2名」を押すと
+    // 4組が進出扱いになり、下の書き込みループが Math.min で打ち切られて
+    // 2組が黙って捨てられていた。エラーは出ず、決勝が
+    // 「A組1位 vs B組2位」になっても気づけない。合わないなら止める。
+    const capacity = byeSlots.length + realSlots.length * 2;
+    if (flat.length !== capacity) {
+      toastError(
+        '進出者の数が決勝トーナメントの枠と合いません',
+        `進出${flat.length}組に対して枠は${capacity}組です。もう一方のボタンを試してください`
+      );
+      return;
+    }
+
     const byeSeeds = flat.slice(0, byeSlots.length);
     const remainders = flat.slice(byeSlots.length);
     const remHalf = Math.floor(remainders.length / 2);
@@ -358,11 +373,11 @@ export default function GroupRankingManager() {
                   <div className="pt-4 border-t">
                     <p className="text-sm text-gray-600 mb-3">全グループの順位確定後、決勝トーナメントへ一括進出</p>
                     <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => handlePromoteAllToKnockout(2)} variant="default" className="h-11">
-                        全グループ上位2名を決勝Tへ
-                      </Button>
-                      <Button onClick={() => handlePromoteAllToKnockout(1)} variant="outline" className="h-11">
+                      <Button onClick={() => handlePromoteAllToKnockout(1)} variant="default" className="h-11">
                         全グループ1位のみ決勝Tへ
+                      </Button>
+                      <Button onClick={() => handlePromoteAllToKnockout(2)} variant="outline" className="h-11">
+                        全グループ上位2名を決勝Tへ
                       </Button>
                     </div>
                   </div>
